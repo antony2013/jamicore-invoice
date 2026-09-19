@@ -6,6 +6,10 @@ import { db } from "@/db";
 import { staff } from "@/db/schema";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  // Required behind reverse proxies (Coolify/Traefik terminates HTTPS and
+  // forwards plain HTTP): without this Auth.js rejects the host and all
+  // /api/auth/* routes 500.
+  trustHost: true,
   providers: [
     Credentials({
       name: "Staff Credentials",
