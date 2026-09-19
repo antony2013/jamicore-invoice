@@ -451,7 +451,7 @@ export default function App() {
                   style={styles.input}
                   value={serverUrl}
                   onChangeText={setServerUrlState}
-                  placeholder="http://192.168.1.13:3000"
+                  placeholder="https://ac.jamicore.com"
                   placeholderTextColor="#64748B"
                   autoCapitalize="none"
                 />

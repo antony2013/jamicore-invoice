@@ -3,8 +3,8 @@
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { printToFileAsync } from "expo-print";
 
-// Default to LAN IP so physical devices on Wi-Fi and emulators can both connect
-let currentApiBaseUrl = "http://192.168.1.13:3000";
+// Production backend. Override anytime from inside the app (tap the API badge).
+let currentApiBaseUrl = "https://ac.jamicore.com";
 
 let clientAuthToken: string | null = null;
 declare const require: (module: string) => any;
