@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Invoice Scanner",
+    "slug": "jamicore-invoice-scanner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jamicore.invoicescanner",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera access is needed to scan invoices and receipts.",
+        "NSPhotoLibraryUsageDescription": "Photo library access is needed to select invoice photos as a fallback."
+      }
+    },
+    "android": {
+      "package": "com.jamicore.invoicescanner",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-secure-store",
+      [
+        "react-native-document-scanner-plugin",
+        {
+          "cameraPermission": "Camera access is needed to scan invoices and receipts."
+        }
+      ],
+      "expo-dev-client"
+    ]
+  }
+}

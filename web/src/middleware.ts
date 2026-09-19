@@ -1,0 +1,49 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Only protect /admin/* and /staff/* routes
+  const isAdminRoute = pathname.startsWith("/admin");
+  const isStaffRoute = pathname.startsWith("/staff");
+
+  if (!isAdminRoute && !isStaffRoute) {
+    return NextResponse.next();
+  }
+
+  const secret = process.env.NEXTAUTH_SECRET;
+  if (!secret && process.env.NODE_ENV === "production") {
+    return new NextResponse("Server misconfigured", { status: 500 });
+  }
+  const token = await getToken({
+    req: request,
+    secret: secret || "dev-only-nextauth-secret-do-not-use-in-production-12",
+  });
+
+  // Not logged in -> Redirect to login page
+  if (!token) {
+    const url = new URL("/login", request.url);
+    url.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(url);
+  }
+
+  const userRole = token.role as string;
+
+  // Protect /admin routes: only 'admin' allowed
+  if (isAdminRoute && userRole !== "admin") {
+    return NextResponse.redirect(new URL("/staff/dashboard", request.url));
+  }
+
+  // Protect /staff routes: 'admin' and 'staff' allowed
+  if (isStaffRoute && userRole !== "admin" && userRole !== "staff") {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/admin/:path*", "/staff/:path*"],
+};
