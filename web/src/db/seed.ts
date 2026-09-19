@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env" });
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
-import { db, client } from "./index";
+import { db, closeDb } from "./index";
 import { staff } from "./schema";
 
 async function seed() {
@@ -64,7 +64,7 @@ async function seed() {
   }
 
   console.log("Seeding completed successfully!");
-  await client.end();
+  await closeDb();
 }
 
 seed().catch((err) => {
