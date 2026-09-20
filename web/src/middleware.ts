@@ -17,9 +17,22 @@ export async function middleware(request: NextRequest) {
   if (!secret && process.env.NODE_ENV === "production") {
     return new NextResponse("Server misconfigured", { status: 500 });
   }
+
+  // The auth route (trustHost:true) names the session cookie from the
+  // EXTERNAL protocol (https via x-forwarded-proto). Mirror that here —
+  // otherwise the middleware looks for the plain cookie while the browser
+  // holds __Secure-, every authed page bounces to /login forever.
+  // (Inside the container traffic is plain http; only the header tells truth.)
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const isSecure =
+    forwardedProto === "https" || request.nextUrl.protocol === "https:";
   const token = await getToken({
     req: request,
     secret: secret || "dev-only-nextauth-secret-do-not-use-in-production-12",
+    secureCookie: isSecure,
+    cookieName: isSecure
+      ? "__Secure-authjs.session-token"
+      : "authjs.session-token",
   });
 
   // Not logged in -> Redirect to login page
