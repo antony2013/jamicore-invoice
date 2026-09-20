@@ -22,13 +22,20 @@ export default function LoginPage() {
         redirect: false,
         email,
         password,
+        callbackUrl: "/admin/dashboard",
       });
 
-      if (res?.error) {
-        setError("Invalid email or password");
+      // Surface failures loudly instead of bouncing back to /login silently:
+      // res is undefined when the sign-in request itself fails.
+      if (!res || res.error || !res.ok) {
+        setError(
+          res?.error
+            ? `Sign-in failed (${res.error}). Check credentials or contact admin.`
+            : "Sign-in failed: no response from server. Check connection and try again."
+        );
       } else {
         // Redirect to admin dashboard or home
-        router.push("/admin/dashboard");
+        router.push(res.url || "/admin/dashboard");
         router.refresh();
       }
     } catch (err: any) {
