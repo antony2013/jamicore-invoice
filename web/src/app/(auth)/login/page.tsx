@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { Lock, Mail, ShieldAlert, ArrowLeft } from "lucide-react";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,9 +32,10 @@ export default function LoginPage() {
             : "Sign-in failed: no response from server. Check connection and try again."
         );
       } else {
-        // Redirect to admin dashboard or home
-        router.push(res.url || "/admin/dashboard");
-        router.refresh();
+        // Full-page navigation (not router.push): guarantees the browser
+        // re-sends cookies and the middleware evaluates a fresh session.
+        // router.push + router.refresh can race and leave you on /login.
+        window.location.assign(res.url || "/admin/dashboard");
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
