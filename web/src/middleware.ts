@@ -5,11 +5,12 @@ import { getToken } from "next-auth/jwt";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Only protect /admin/* and /staff/* routes
+  // Only protect /admin/* and /staff/* routes (+ /login redirect below)
   const isAdminRoute = pathname.startsWith("/admin");
   const isStaffRoute = pathname.startsWith("/staff");
+  const isLoginRoute = pathname === "/login";
 
-  if (!isAdminRoute && !isStaffRoute) {
+  if (!isAdminRoute && !isStaffRoute && !isLoginRoute) {
     return NextResponse.next();
   }
 
@@ -35,14 +36,22 @@ export async function middleware(request: NextRequest) {
       : "authjs.session-token",
   });
 
-  // Not logged in -> Redirect to login page
+  // Not logged in -> Redirect to login page (but never redirect /login to itself)
   if (!token) {
+    if (isLoginRoute) return NextResponse.next();
     const url = new URL("/login", request.url);
     url.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(url);
   }
 
   const userRole = token.role as string;
+
+  // Already logged in and visiting /login -> send to role home
+  if (isLoginRoute) {
+    return NextResponse.redirect(
+      new URL(userRole === "admin" ? "/admin/dashboard" : "/staff/dashboard", request.url)
+    );
+  }
 
   // Protect /admin routes: only 'admin' allowed
   if (isAdminRoute && userRole !== "admin") {
@@ -58,5 +67,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/staff/:path*"],
+  matcher: ["/admin/:path*", "/staff/:path*", "/login"],
 };

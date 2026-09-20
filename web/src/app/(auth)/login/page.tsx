@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import { Lock, Mail, ShieldAlert, ArrowLeft } from "lucide-react";
 
 export default function LoginPage() {
@@ -32,10 +32,20 @@ export default function LoginPage() {
             : "Sign-in failed: no response from server. Check connection and try again."
         );
       } else {
+        // Role-based landing: admins always land on the admin dashboard,
+        // staff on the staff dashboard — a stale ?callbackUrl=/staff/...
+        // must never drop an admin into the staff portal (or vice versa).
+        // Same-role deep links are still honored.
+        const session = await getSession();
+        const role = (session?.user as any)?.role as string | undefined;
+        const home = role === "admin" ? "/admin/dashboard" : "/staff/dashboard";
+        const cb = new URLSearchParams(window.location.search).get("callbackUrl");
+        const sameRole =
+          !!cb &&
+          (role === "admin" ? cb.startsWith("/admin/") : cb.startsWith("/staff/"));
         // Full-page navigation (not router.push): guarantees the browser
         // re-sends cookies and the middleware evaluates a fresh session.
-        // router.push + router.refresh can race and leave you on /login.
-        window.location.assign(res.url || "/admin/dashboard");
+        window.location.assign(sameRole ? (cb as string) : home);
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
