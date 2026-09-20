@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -110,6 +111,22 @@ export async function checkObjectExistsInS3(s3Key: string): Promise<{ exists: bo
     }
     console.error(`[S3] HeadObject failed for "${s3Key}":`, error);
     return { exists: false };
+  }
+}
+
+/**
+ * Delete an object from S3 (client upload withdrawal).
+ * Returns true on success (or if already gone); false on error.
+ */
+export async function deleteObjectFromS3(s3Key: string): Promise<boolean> {
+  try {
+    await s3Client.send(
+      new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: s3Key })
+    );
+    return true;
+  } catch (error: unknown) {
+    console.error(`[S3] DeleteObject failed for "${s3Key}":`, error);
+    return false;
   }
 }
 

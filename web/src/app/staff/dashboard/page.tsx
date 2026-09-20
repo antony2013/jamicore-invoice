@@ -17,6 +17,8 @@ import { signOut } from "next-auth/react";
 export default function StaffDashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState<string>("");
 
   async function loadAssignedInvoices() {
     setLoading(true);
@@ -36,6 +38,44 @@ export default function StaffDashboard() {
   useEffect(() => {
     loadAssignedInvoices();
   }, []);
+
+  const visibleInvoices = invoices.filter((inv) => {
+    if (statusFilter !== "all") {
+      if (statusFilter === "in_progress") {
+        if (!["in_review", "needs_info"].includes(inv.status)) return false;
+      } else if (statusFilter === "finished") {
+        if (!["collected", "disputed"].includes(inv.status)) return false;
+      } else if (inv.status !== statusFilter) {
+        return false;
+      }
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const hay = [
+        inv.id,
+        inv.client?.name,
+        inv.client?.phone,
+        inv.client?.email,
+        inv.outlet?.name,
+        inv.ocrData?.vendor,
+        inv.ocrData?.invoiceNo,
+        inv.ocrData?.amount != null ? String(inv.ocrData.amount) : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const STATUS_OPTIONS = [
+    { value: "all", label: "All" },
+    { value: "assigned", label: "To Start" },
+    { value: "in_progress", label: "In Progress" },
+    { value: "verified", label: "Verified" },
+    { value: "finished", label: "Finished" },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -117,17 +157,45 @@ export default function StaffDashboard() {
         </div>
 
         {/* Invoice Grid / List */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex flex-col sm:flex-row items-center gap-3">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {STATUS_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                onClick={() => setStatusFilter(o.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  statusFilter === o.value
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search client, vendor, invoice no…"
+            className="flex-1 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
+          />
+          <span className="text-[11px] text-slate-400 whitespace-nowrap">
+            {visibleInvoices.length} shown
+          </span>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {invoices.length === 0 ? (
+          {visibleInvoices.length === 0 ? (
             <div className="col-span-full py-16 bg-white rounded-2xl border border-slate-200 text-center text-slate-400">
               <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-              <p className="text-sm font-medium text-slate-600">No invoices assigned to you yet.</p>
+              <p className="text-sm font-medium text-slate-600">
+                {invoices.length === 0 ? "No invoices assigned to you yet." : "No invoices match the filter."}
+              </p>
               <p className="text-xs text-slate-400 mt-1">
                 New invoices assigned by admin will appear here automatically.
               </p>
             </div>
           ) : (
-            invoices.map((inv) => (
+            visibleInvoices.map((inv) => (
               <div
                 key={inv.id}
                 className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition p-5 flex flex-col justify-between"

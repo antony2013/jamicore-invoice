@@ -264,6 +264,8 @@ export async function getMyInvoices() {
     status: string;
     priority: string;
     outlet: { id: string; name: string } | null;
+    clientNote?: string | null;
+    pageNotes?: string[] | null;
     ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
     createdAt: string;
     updatedAt: string;
@@ -299,6 +301,87 @@ export async function confirmInvoiceUpload(s3Key: string, note?: string, pageNot
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || "Failed to confirm upload.");
+  }
+  return data;
+}
+
+function requireAuth(): string {
+  if (!clientAuthToken) {
+    throw new Error("Client is not authenticated. Please log in first.");
+  }
+  return clientAuthToken;
+}
+
+/**
+ * 8. Signed view URL for my own invoice document (image or PDF).
+ */
+export async function getMyInvoiceViewUrl(invoiceId: string) {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}/image-url`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to load document.");
+  }
+  return data as { url: string; expiresIn: number; contentType: string; isPdf: boolean };
+}
+
+export type ClientInvoiceUpdate = {
+  note?: string | null;
+  pageNotes?: string[];
+  outletId?: string | null;
+};
+
+/**
+ * 9. Edit my own invoice (notes/outlet). Only before the office takes it —
+ * server returns 409 once assigned or beyond.
+ */
+export async function updateMyInvoice(invoiceId: string, update: ClientInvoiceUpdate) {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(update),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to update invoice.");
+  }
+  return data;
+}
+
+/**
+ * 10. Withdraw my own upload (deletes record + file). Only before the
+ * office takes it — server returns 409 once assigned or beyond.
+ */
+export async function deleteMyInvoice(invoiceId: string) {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to withdraw invoice.");
+  }
+  return data;
+}
+
+/**
+ * 11. Change my own login password.
+ */
+export async function changeMyPassword(oldPassword: string, newPassword: string) {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-auth/change-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to change password.");
   }
   return data;
 }

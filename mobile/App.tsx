@@ -16,6 +16,7 @@ import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import * as WebBrowser from "expo-web-browser";
 import * as ImagePicker from "expo-image-picker";
 import {
   loginWithPassword,
@@ -23,6 +24,10 @@ import {
   getUploadUrl,
   getMyInvoices,
   getMyOutlets,
+  getMyInvoiceViewUrl,
+  updateMyInvoice,
+  deleteMyInvoice,
+  changeMyPassword,
   buildInvoicePdf,
   uploadBytesToS3,
   confirmInvoiceUpload,
@@ -42,6 +47,8 @@ type HistoryInvoice = {
   status: string;
   priority: string;
   outlet: { id: string; name: string } | null;
+  clientNote?: string | null;
+  pageNotes?: string[] | null;
   ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
   createdAt: string;
   updatedAt: string;
@@ -154,7 +161,8 @@ function GlassButton({
 
 export default function App() {
   // Navigation: login -> outlet gate (if 2+ outlets) -> scan <-> history -> success
-  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history">("login");
+  // + detail (invoice view/edit) + account (password)
+  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account">("login");
   // Admin-provided credentials (no OTP)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -173,7 +181,30 @@ export default function App() {
   // History state
   const [history, setHistory] = useState<HistoryInvoice[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Detail / edit state
+  const [selected, setSelected] = useState<HistoryInvoice | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editNote, setEditNote] = useState("");
+  const [editPageNotes, setEditPageNotes] = useState<string[]>([]);
+  const [editOutletId, setEditOutletId] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [viewUrl, setViewUrl] = useState<string | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  // Account state
+  const [oldPw, setOldPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
+
+  /** Client-editable while the office hasn't taken it. Mirrors server rule. */
+  const isEditable = (status: string) =>
+    ["uploaded", "ocr_pending", "ocr_done", "ocr_failed"].includes(status);
+
+  const counts = {
+    total: history.length,
+    active: history.filter((h) => !["collected", "disputed"].includes(h.status)).length,
+    done: history.filter((h) => ["collected", "disputed"].includes(h.status)).length,
+  };
 
   // Restore persisted JWT (SecureStore) on launch
   useEffect(() => {
@@ -218,6 +249,8 @@ export default function App() {
         setSelectedOutletId(null);
         setScreen("scan");
       }
+      // Silent history preload for My-counts chips (ignore failures)
+      getMyInvoices().then(setHistory).catch(() => undefined);
     } catch (err: any) {
       Alert.alert("Login Failed", err.message);
     } finally {
@@ -234,6 +267,13 @@ export default function App() {
     setOutlets([]);
     setSelectedOutletId(null);
     setHistory([]);
+    setSelected(null);
+    setEditing(false);
+    setViewUrl(null);
+    setOldPw("");
+    setNewPw("");
+    setConfirmPw("");
+    setPwMsg(null);
     setScreen("login");
   };
 
@@ -248,6 +288,131 @@ export default function App() {
       Alert.alert("History Failed", err.message);
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  // 2b. Open invoice detail (viewer + edit + withdraw)
+  const openDetail = (inv: HistoryInvoice) => {
+    setSelected(inv);
+    setEditing(false);
+    setViewUrl(null);
+    setScreen("detail");
+  };
+
+  const refreshSelected = async (id: string) => {
+    try {
+      const items = await getMyInvoices();
+      setHistory(items);
+      const fresh = items.find((x) => x.id === id) || null;
+      setSelected(fresh);
+      if (!fresh) setScreen("history");
+    } catch {
+      // keep stale view on refresh failure
+    }
+  };
+
+  // 2c. View document: images inline, PDFs in system browser viewer
+  const handleViewDocument = async () => {
+    if (!selected) return;
+    setViewLoading(true);
+    try {
+      const info = await getMyInvoiceViewUrl(selected.id);
+      if (info.isPdf) {
+        await WebBrowser.openBrowserAsync(info.url);
+      } else {
+        setViewUrl(info.url);
+      }
+    } catch (err: any) {
+      Alert.alert("View Failed", err.message);
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  // 2d. Edit my invoice (notes/outlet) — server enforces pre-assignment rule
+  const handleStartEdit = () => {
+    if (!selected) return;
+    setEditNote(selected.clientNote || "");
+    const n = selected.pageNotes || [];
+    setEditPageNotes(n);
+    setEditOutletId(selected.outlet?.id || null);
+    setEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selected) return;
+    setSavingEdit(true);
+    try {
+      await updateMyInvoice(selected.id, {
+        note: editNote,
+        pageNotes: editPageNotes,
+        outletId: editOutletId,
+      });
+      setEditing(false);
+      Alert.alert("Saved", "Invoice updated.");
+      await refreshSelected(selected.id);
+    } catch (err: any) {
+      Alert.alert("Save Failed", err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // 2e. Withdraw my upload (server enforces pre-assignment rule)
+  const handleDeleteInvoice = () => {
+    if (!selected) return;
+    Alert.alert(
+      "Withdraw Invoice?",
+      "This deletes the upload and its file. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Withdraw",
+          style: "destructive",
+          onPress: async () => {
+            setSavingEdit(true);
+            try {
+              const res = await deleteMyInvoice(selected.id);
+              Alert.alert("Withdrawn", res.message || "Invoice withdrawn.");
+              setSelected(null);
+              await handleLoadHistory();
+            } catch (err: any) {
+              Alert.alert("Withdraw Failed", err.message);
+            } finally {
+              setSavingEdit(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // 2f. Change my login password
+  const handleChangePassword = async () => {
+    if (!oldPw || !newPw || !confirmPw) {
+      setPwMsg("Fill all three fields.");
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setPwMsg("New passwords do not match.");
+      return;
+    }
+    if (newPw.length < 8) {
+      setPwMsg("New password must be at least 8 characters.");
+      return;
+    }
+    setSavingEdit(true);
+    setPwMsg(null);
+    try {
+      await changeMyPassword(oldPw, newPw);
+      setOldPw("");
+      setNewPw("");
+      setConfirmPw("");
+      setPwMsg("Password changed successfully.");
+    } catch (err: any) {
+      setPwMsg(err.message);
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -584,14 +749,35 @@ export default function App() {
             {/* Screen 2: Document Scanner & Upload */}
             {screen === "scan" && (
               <GlassCard>
-                <View style={styles.userBadgeRow}>
-                  <View style={styles.userBadge}>
-                    <Text style={styles.userBadgeText}>◍ {client?.name}</Text>
-                  </View>
-                  <TouchableOpacity onPress={handleLogout}>
-                    <Text style={styles.linkText}>Log out</Text>
-                  </TouchableOpacity>
-                </View>
+            <View style={styles.userBadgeRow}>
+              <View style={styles.userBadge}>
+                <Text style={styles.userBadgeText}>◍ {client?.name}</Text>
+              </View>
+              <View style={styles.userBadgeActions}>
+                <TouchableOpacity onPress={() => { setPwMsg(null); setScreen("account"); }}>
+                  <Text style={styles.linkText}>👤 Account</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleLogout}>
+                  <Text style={styles.linkText}>Log out</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* My counts */}
+            <View style={styles.countsRow}>
+              <View style={styles.countChip}>
+                <Text style={styles.countNum}>{counts.total}</Text>
+                <Text style={styles.countLabel}>Uploads</Text>
+              </View>
+              <View style={styles.countChip}>
+                <Text style={[styles.countNum, { color: "#FCD34D" }]}>{counts.active}</Text>
+                <Text style={styles.countLabel}>In Progress</Text>
+              </View>
+              <View style={styles.countChip}>
+                <Text style={[styles.countNum, { color: "#6EE7B7" }]}>{counts.done}</Text>
+                <Text style={styles.countLabel}>Done</Text>
+              </View>
+            </View>
 
                 <Text style={styles.cardTitle}>Scan Invoice</Text>
                 <Text style={styles.instruction}>
@@ -740,18 +926,16 @@ export default function App() {
                 <Text style={styles.instruction}>
                   {history.length === 0
                     ? "No uploads yet. Scan your first invoice to see it here."
-                    : `${history.length} upload${history.length === 1 ? "" : "s"} — tap one for its timeline.`}
+                    : `${history.length} upload${history.length === 1 ? "" : "s"} — tap one to view, edit or withdraw it.`}
                 </Text>
 
-                {history.map((inv) => {
-                  const expanded = expandedId === inv.id;
-                  return (
-                    <TouchableOpacity
-                      key={inv.id}
-                      activeOpacity={0.9}
-                      onPress={() => setExpandedId(expanded ? null : inv.id)}
-                      style={[styles.historyItem, expanded && styles.historyItemActive]}
-                    >
+                {history.map((inv) => (
+                  <TouchableOpacity
+                    key={inv.id}
+                    activeOpacity={0.9}
+                    onPress={() => openDetail(inv)}
+                    style={styles.historyItem}
+                  >
                       <View style={styles.historyRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.historyVendor}>
@@ -765,33 +949,10 @@ export default function App() {
                           </Text>
                         </View>
                         <StatusPill status={inv.status} />
+                        <Text style={styles.historyChevron}>›</Text>
                       </View>
-                      {expanded && (
-                        <View style={styles.timeline}>
-                          {inv.statusLogs.length === 0 ? (
-                            <Text style={styles.timelineNote}>No status events yet.</Text>
-                          ) : (
-                            inv.statusLogs.map((log, i) => (
-                              <View key={`${inv.id}-${i}`} style={styles.timelineRow}>
-                                <LinearGradient
-                                  colors={["#FBBF24", "#F97316"]}
-                                  style={styles.timelineDot}
-                                />
-                                <View style={{ flex: 1 }}>
-                                  <Text style={styles.timelineStatus}>{log.status}</Text>
-                                  <Text style={styles.timelineNote}>
-                                    {new Date(log.timestamp).toLocaleString()}
-                                    {log.note ? ` — ${log.note}` : ""}
-                                  </Text>
-                                </View>
-                              </View>
-                            ))
-                          )}
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
+                  </TouchableOpacity>
+                ))}
 
                 <View style={styles.historyActions}>
                   <View style={{ flex: 1 }}>
@@ -806,6 +967,209 @@ export default function App() {
                     />
                   </View>
                 </View>
+              </GlassCard>
+            )}
+
+            {/* Screen: Invoice Detail (view document, edit, withdraw) */}
+            {screen === "detail" && selected && (
+              <GlassCard>
+                <View style={styles.userBadgeRow}>
+                  <StatusPill status={selected.status} />
+                  <TouchableOpacity onPress={() => { setSelected(null); setEditing(false); setViewUrl(null); setScreen("history"); }}>
+                    <Text style={styles.linkText}>← History</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.cardTitle}>{selected.ocrData?.vendor || "Invoice"}</Text>
+                <Text style={styles.instruction}>
+                  {new Date(selected.createdAt).toLocaleString()}
+                  {selected.outlet ? ` • ${selected.outlet.name}` : " • No outlet"}
+                  {selected.ocrData?.amount ? ` • $${selected.ocrData.amount}` : ""}
+                  {selected.ocrData?.invoiceNo ? ` • ${selected.ocrData.invoiceNo}` : ""}
+                </Text>
+
+                {!viewUrl ? (
+                  <GlassButton
+                    title={viewLoading ? "Loading…" : "👁 View Document"}
+                    onPress={handleViewDocument}
+                    disabled={viewLoading}
+                    loading={viewLoading}
+                  />
+                ) : (
+                  <View style={styles.docPreview}>
+                    <Image source={{ uri: viewUrl }} style={styles.docImage} />
+                    <Text style={styles.historyMeta}>Link expires in 5 minutes — reopen if expired.</Text>
+                  </View>
+                )}
+
+                {!editing && (
+                  <>
+                    {selected.clientNote ? (
+                      <View style={styles.detailNoteBox}>
+                        <Text style={styles.label}>My note</Text>
+                        <Text style={styles.detailNoteText}>{selected.clientNote}</Text>
+                      </View>
+                    ) : null}
+                    {(selected.pageNotes || []).some((n) => n && n.trim()) && (
+                      <View style={styles.detailNoteBox}>
+                        <Text style={styles.label}>Page notes</Text>
+                        {(selected.pageNotes || []).map((n, i) =>
+                          n && n.trim() ? (
+                            <Text key={i} style={styles.detailNoteText}>
+                              p{i + 1}: {n}
+                            </Text>
+                          ) : null
+                        )}
+                      </View>
+                    )}
+                    <View style={styles.timeline}>
+                      {selected.statusLogs.map((log, i) => (
+                        <View key={`${selected.id}-${i}`} style={styles.timelineRow}>
+                          <LinearGradient
+                            colors={["#FBBF24", "#F97316"]}
+                            style={styles.timelineDot}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.timelineStatus}>{log.status}</Text>
+                            <Text style={styles.timelineNote}>
+                              {new Date(log.timestamp).toLocaleString()}
+                              {log.note ? ` — ${log.note}` : ""}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {editing ? (
+                  <View style={styles.editBox}>
+                    <Text style={styles.label}>My note</Text>
+                    <TextInput
+                      style={[styles.input, styles.noteInput]}
+                      placeholder="Note for office…"
+                      placeholderTextColor="#64748B"
+                      value={editNote}
+                      onChangeText={setEditNote}
+                      multiline
+                      maxLength={500}
+                    />
+                    <Text style={styles.label}>Page notes</Text>
+                    {Array.from({ length: Math.max(selected.pageNotes?.length || 0, 1) }).map((_, i) => (
+                      <View key={i}>
+                        <Text style={styles.pageNoteTitle}>Page {i + 1}</Text>
+                        <TextInput
+                          style={[styles.input, styles.pageNoteInput]}
+                          placeholder={`Note for page ${i + 1} (optional)…`}
+                          placeholderTextColor="#64748B"
+                          value={editPageNotes[i] || ""}
+                          onChangeText={(t) => {
+                            const next = [...editPageNotes];
+                            next[i] = t.slice(0, 500);
+                            setEditPageNotes(next);
+                          }}
+                          multiline
+                          maxLength={500}
+                        />
+                      </View>
+                    ))}
+                    {outlets.length > 0 && (
+                      <>
+                        <Text style={styles.label}>Outlet</Text>
+                        <View style={styles.editOutletRow}>
+                          {outlets.map((o) => (
+                            <TouchableOpacity
+                              key={o.id}
+                              onPress={() => setEditOutletId(o.id)}
+                              style={[styles.editOutletChip, editOutletId === o.id && styles.editOutletChipActive]}
+                            >
+                              <Text style={[styles.editOutletChipText, editOutletId === o.id && styles.editOutletChipTextActive]}>
+                                {o.name}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </>
+                    )}
+                    <PrimaryButton
+                      title="Save Changes"
+                      onPress={handleSaveEdit}
+                      disabled={savingEdit}
+                      loading={savingEdit}
+                      loadingText="Saving..."
+                    />
+                    <GlassButton title="Cancel" onPress={() => setEditing(false)} />
+                  </View>
+                ) : (
+                  isEditable(selected.status) && (
+                    <View style={styles.detailActions}>
+                      <View style={{ flex: 1 }}>
+                        <GlassButton title="✏️ Edit" onPress={handleStartEdit} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <GlassButton title="🗑 Withdraw" onPress={handleDeleteInvoice} />
+                      </View>
+                    </View>
+                  )
+                )}
+                {!isEditable(selected.status) && !editing && (
+                  <Text style={styles.lockNote}>
+                    🔒 With the office (status: {selected.status}) — contact them for changes.
+                  </Text>
+                )}
+              </GlassCard>
+            )}
+
+            {/* Screen: Account (change password) */}
+            {screen === "account" && (
+              <GlassCard>
+                <Text style={styles.cardTitle}>👤 Account</Text>
+                <Text style={styles.instruction}>
+                  Signed in as {client?.name}. Change your login password below.
+                </Text>
+                {pwMsg && (
+                  <View style={styles.pwMsgBox}>
+                    <Text style={styles.pwMsgText}>{pwMsg}</Text>
+                  </View>
+                )}
+                <Text style={styles.label}>Current password</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  placeholderTextColor="#64748B"
+                  value={oldPw}
+                  onChangeText={setOldPw}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                <Text style={styles.label}>New password (min 8)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  placeholderTextColor="#64748B"
+                  value={newPw}
+                  onChangeText={setNewPw}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                <Text style={styles.label}>Confirm new password</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  placeholderTextColor="#64748B"
+                  value={confirmPw}
+                  onChangeText={setConfirmPw}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+                <PrimaryButton
+                  title="Change Password"
+                  onPress={handleChangePassword}
+                  disabled={savingEdit}
+                  loading={savingEdit}
+                  loadingText="Saving..."
+                />
+                <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
               </GlassCard>
             )}
           </ScrollView>
@@ -1043,7 +1407,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 12,
+  },
+  userBadgeActions: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "center",
+  },
+  countsRow: {
+    flexDirection: "row",
+    gap: 8,
     marginBottom: 14,
+  },
+  countChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  countNum: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#F8FAFC",
+  },
+  countLabel: {
+    fontSize: 10,
+    color: "#94A3B8",
+    marginTop: 2,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   userBadge: {
     backgroundColor: "rgba(125,211,252,0.14)",
@@ -1345,6 +1740,89 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  historyChevron: {
+    fontSize: 22,
+    color: "#64748B",
+    fontWeight: "700",
+  },
+  docPreview: {
+    borderRadius: 14,
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  docImage: {
+    width: "100%",
+    height: 320,
+    resizeMode: "contain",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 14,
+  },
+  detailNoteBox: {
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.35)",
+    backgroundColor: "rgba(251,191,36,0.08)",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  detailNoteText: {
+    fontSize: 13,
+    color: "#FDE68A",
+    marginTop: 2,
+  },
+  editBox: {
+    marginTop: 4,
+  },
+  detailActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  lockNote: {
+    fontSize: 12,
+    color: "#94A3B8",
+    textAlign: "center",
+    marginTop: 12,
+  },
+  editOutletRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 6,
+  },
+  editOutletChip: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
+  editOutletChipActive: {
+    backgroundColor: "rgba(251,191,36,0.9)",
+    borderColor: "rgba(251,191,36,0.9)",
+  },
+  editOutletChipText: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  editOutletChipTextActive: {
+    color: "#1C0A00",
+  },
+  pwMsgBox: {
+    borderWidth: 1,
+    borderColor: "rgba(125,211,252,0.35)",
+    backgroundColor: "rgba(125,211,252,0.10)",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  pwMsgText: {
+    fontSize: 13,
+    color: "#7DD3FC",
+    textAlign: "center",
   },
   timeline: {
     marginTop: 12,

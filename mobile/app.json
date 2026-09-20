@@ -38,7 +38,8 @@
           "cameraPermission": "Camera access is needed to scan invoices and receipts."
         }
       ],
-      "expo-dev-client"
+      "expo-dev-client",
+      "expo-web-browser"
     ]
   }
 }
