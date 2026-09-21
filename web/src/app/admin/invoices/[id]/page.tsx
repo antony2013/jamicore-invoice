@@ -437,7 +437,7 @@ export default function AdminInvoiceDetailPage({
                       required
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-slate-50"
                     >
-                      {staffList.map((st) => (
+                      {staffList.filter((st) => st.role === "staff").map((st) => (
                         <option key={st.id} value={st.id}>
                           {st.name} ({st.email}) — {st.role}
                         </option>

@@ -383,7 +383,7 @@ export default function AdminDashboard() {
               className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white outline-none"
             >
               <option value="">Select staff…</option>
-              {staffList.map((st) => (
+              {staffList.filter((st) => st.role === "staff").map((st) => (
                 <option key={st.id} value={st.id}>
                   {st.name} ({st.role})
                 </option>
@@ -551,7 +551,7 @@ export default function AdminDashboard() {
                             <button
                               onClick={() => {
                                 setSelectedInvoice(inv);
-                                setSelectedStaffId(staffList[0]?.id || "");
+                                setSelectedStaffId(staffList.find((x) => x.role === "staff")?.id || "");
                               }}
                               className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition"
                             >
@@ -562,7 +562,7 @@ export default function AdminDashboard() {
                             <button
                               onClick={() => {
                                 setSelectedInvoice(inv);
-                                setSelectedStaffId(inv.assignedTo || staffList[0]?.id || "");
+                                setSelectedStaffId(inv.assignedTo || staffList.find((x) => x.role === "staff")?.id || "");
                               }}
                               className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium transition"
                               title="Fix a mis-assignment"
@@ -615,7 +615,7 @@ export default function AdminDashboard() {
                     required
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none bg-slate-50"
                   >
-                    {staffList.map((st) => (
+                    {staffList.filter((st) => st.role === "staff").map((st) => (
                       <option key={st.id} value={st.id}>
                         {st.name} ({st.email}) &bull; {st.role}
                       </option>

@@ -63,13 +63,14 @@ export async function POST(
       );
     }
 
-    // Ensure target staff exists and is active
+    // Ensure target exists and is a STAFF account (never an admin —
+    // admins can't open the staff portal, so such invoices would strand).
     const targetStaff = await db.query.staff.findFirst({
       where: eq(staff.id, staffId),
     });
 
-    if (!targetStaff) {
-      return NextResponse.json({ error: "Selected staff member does not exist." }, { status: 400 });
+    if (!targetStaff || targetStaff.role !== "staff") {
+      return NextResponse.json({ error: "Select a valid staff member (admin accounts cannot take invoices)." }, { status: 400 });
     }
 
     // Execute assignment in transaction
