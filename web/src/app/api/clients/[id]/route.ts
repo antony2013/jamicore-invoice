@@ -96,9 +96,9 @@ export async function PATCH(
       .where(eq(clients.id, id))
       .returning();
 
-    // Backlog sweep: every unassigned ocr_done/ocr_failed invoice of this
+    // Backlog sweep: every unassigned uploaded (or legacy OCR-processed) invoice of this
     // client routes to the new default staff immediately (admin is the
-    // assigner). Future uploads auto-route via the OCR worker.
+    // assigner). Future uploads auto-route at confirm time.
     let swept = 0;
     if (assignedStaffId) {
       const backlog = await db.query.invoices.findMany({

@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Jamicore Invoice Collection System",
-  description: "Secure Invoice Collection, OCR Processing & Management Platform",
+  description: "Secure Invoice Collection & Management Platform",
 };
 
 export default function RootLayout({

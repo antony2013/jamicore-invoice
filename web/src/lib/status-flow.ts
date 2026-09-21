@@ -14,18 +14,24 @@ export type InvoiceStatus =
  * Centralized allowed transition matrix.
  * No status transitions outside this table are permitted.
  * Terminal states have empty arrays.
+ *
+ * NOTE: automated OCR was removed — new invoices go `uploaded -> assigned`
+ * directly (manual assign, backlog sweep, or client-default auto-assign at
+ * upload). The ocr_* states below are LEGACY only: old rows still sitting in
+ * them can move forward to `assigned`, but nothing new ever enters them.
+ * (Enum values stay in Postgres; dropping enum values is deliberately avoided.)
  */
 export const ALLOWED_TRANSITIONS: Record<InvoiceStatus, readonly InvoiceStatus[]> = {
-  uploaded: ["ocr_pending"],
-  ocr_pending: ["ocr_done", "ocr_failed"],
-  ocr_done: ["assigned"],
-  ocr_failed: ["assigned"],
+  uploaded: ["assigned"],
+  ocr_pending: ["ocr_done", "ocr_failed"], // legacy
+  ocr_done: ["assigned"], // legacy drain
+  ocr_failed: ["assigned"], // legacy drain
   assigned: ["in_review"],
   in_review: ["needs_info", "verified"],
   needs_info: ["in_review"],
   verified: ["collected", "disputed"],
   collected: [], // Terminal
-  disputed: [],  // Terminal
+  disputed: [], // Terminal
 } as const;
 
 /**

@@ -253,13 +253,13 @@ export default function AdminDashboard() {
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Unassigned Queue</div>
             <div className="text-2xl font-bold text-slate-900 mt-2">
-              {invoices.filter((i) => !i.assignedTo && ["ocr_done", "ocr_failed"].includes(i.status)).length}
+              {invoices.filter((i) => !i.assignedTo && ["uploaded", "ocr_done", "ocr_failed"].includes(i.status)).length}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">OCR Processing</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">New Uploads</div>
             <div className="text-2xl font-bold text-blue-600 mt-2">
-              {invoices.filter((i) => ["uploaded", "ocr_pending"].includes(i.status)).length}
+              {invoices.filter((i) => i.status === "uploaded").length}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -288,9 +288,9 @@ export default function AdminDashboard() {
             >
               <option value="all">All Invoices</option>
               <option value="uploaded">Uploaded</option>
-              <option value="ocr_pending">OCR Pending</option>
-              <option value="ocr_done">OCR Done (Ready to assign)</option>
-              <option value="ocr_failed">OCR Failed (Manual review)</option>
+              
+              <option value="ocr_done">OCR Done (legacy)</option>
+              <option value="ocr_failed">OCR Failed (legacy)</option>
               <option value="assigned">Assigned</option>
               <option value="in_review">In Review</option>
               <option value="needs_info">Needs Info</option>
@@ -440,7 +440,7 @@ export default function AdminDashboard() {
                   <th className="px-6 py-3.5">Client</th>
                   <th className="px-6 py-3.5">Outlet</th>
                   <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5">OCR Preview</th>
+                  <th className="px-6 py-3.5">Details</th>
                   <th className="px-6 py-3.5">Assigned To</th>
                   <th className="px-6 py-3.5">Priority</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
@@ -455,7 +455,7 @@ export default function AdminDashboard() {
                   </tr>
                 ) : (
                   visibleInvoices.map((inv) => {
-                    const isAssignReady = inv.status === "ocr_done" || inv.status === "ocr_failed";
+                    const isAssignReady = inv.status === "uploaded" || inv.status === "ocr_done" || inv.status === "ocr_failed";
                     return (
                       <tr key={inv.id} className="hover:bg-slate-50/80 transition">
                         <td className="px-4 py-4">
@@ -521,7 +521,7 @@ export default function AdminDashboard() {
                               <AlertTriangle className="w-3.5 h-3.5" /> Manual entry needed
                             </span>
                           ) : (
-                            <span className="text-slate-400 text-[11px] italic">Awaiting OCR...</span>
+                            <span className="text-slate-400 text-[11px] italic">Manual entry</span>
                           )}
                         </td>
                         <td className="px-6 py-4">

@@ -292,7 +292,7 @@ export default function StaffInvoiceVerifyPage({
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
                 <div>
-                  <h4 className="text-sm font-bold text-amber-900">OCR did not extract data</h4>
+                  <h4 className="text-sm font-bold text-amber-900">No extracted data yet</h4>
                   <p className="text-xs text-amber-800">
                     Automatic extraction failed or is pending — please enter the invoice fields manually below.
                   </p>

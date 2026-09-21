@@ -145,7 +145,7 @@ export default function StaffDashboard() {
           <div>
             <h2 className="text-xl font-bold text-slate-900">Assigned Verification Queue</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Review document scans, verify and correct OCR fields, and manage collection lifecycle
+              Review document scans, verify and enter invoice data, and manage collection lifecycle
             </p>
           </div>
           <button

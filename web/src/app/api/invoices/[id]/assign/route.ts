@@ -47,9 +47,8 @@ export async function POST(
     }
 
     // Strictly validate against status transition matrix.
-    // First-time assign: only ocr_done/ocr_failed -> assigned.
-    // Re-assign (already assigned): allowed to stay in `assigned` with a
-    // new assignee — otherwise a mis-assignment would be unfixable.
+    // Assignable: freshly uploaded invoices, plus legacy ocr_done/ocr_failed
+    // rows draining from before automated OCR was removed.
     const isReassign = currentInvoice.status === "assigned";
     const allowed = isReassign
       ? true
@@ -57,7 +56,7 @@ export async function POST(
     if (!allowed) {
       return NextResponse.json(
         {
-          error: `Cannot assign invoice in current status '${currentInvoice.status}'. Invoices must be in 'ocr_done' or 'ocr_failed' state.`,
+          error: `Cannot assign invoice in current status '${currentInvoice.status}'. Only uploaded (or legacy OCR-processed) invoices can be assigned.`,
         },
         { status: 400 }
       );

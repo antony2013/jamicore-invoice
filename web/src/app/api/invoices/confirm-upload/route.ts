@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices, invoiceStatusLog, outlets } from "@/db/schema";
+import { clients, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { checkObjectExistsInS3, MAX_UPLOAD_BYTES } from "@/lib/s3";
 
@@ -107,7 +107,23 @@ export async function POST(request: Request) {
       outletId = outlet.id;
     }
 
-    // 5. Insert invoice record in 'uploaded' status within a transaction.
+    // Client default-staff routing: if this client has a default staff
+    // member, new uploads skip straight to `assigned` (no OCR in between).
+    let autoAssignee: { id: string; name: string } | null = null;
+    {
+      const owner = await db.query.clients.findFirst({
+        where: eq(clients.id, client.sub),
+      });
+      const defaultId = (owner as { assignedStaffId?: string | null })?.assignedStaffId;
+      if (defaultId) {
+        const target = await db.query.staff.findFirst({ where: eq(staff.id, defaultId) });
+        if (target && (target as { role?: string }).role === "staff") {
+          autoAssignee = { id: target.id, name: target.name };
+        }
+      }
+    }
+
+    // 5. Insert invoice record within a transaction.
     // Race-safe: the s3_key unique constraint is the arbiter. If two
     // concurrent confirms race past the idempotency check, the loser
     // catches 23505 and returns the winner's row instead of a 500.
@@ -119,7 +135,8 @@ export async function POST(request: Request) {
           clientId: client.sub, // Derived from JWT, never trusted from body
           s3Key: s3Key,
           imageUrl: s3Key, // Internal private reference
-          status: "uploaded",
+          status: autoAssignee ? "assigned" : "uploaded",
+          assignedTo: autoAssignee ? autoAssignee.id : null,
           priority: "normal",
           clientNote: clientNote,
           pageNotes: pageNotes,
@@ -135,12 +152,23 @@ export async function POST(request: Request) {
         note: "Invoice uploaded by client",
       });
 
+      if (autoAssignee) {
+        await tx.insert(invoiceStatusLog).values({
+          invoiceId: inserted.id,
+          status: "assigned",
+          changedBy: null,
+          note: `Auto-assigned to ${autoAssignee.name} (client default staff)`,
+        });
+      }
+
       return inserted;
       });
 
       return NextResponse.json({
         success: true,
-        message: "Invoice successfully uploaded and queued for processing",
+        message: autoAssignee
+          ? `Invoice uploaded and assigned to ${autoAssignee.name}`
+          : "Invoice successfully uploaded",
         invoice: newInvoice,
       });
     } catch (txError: unknown) {

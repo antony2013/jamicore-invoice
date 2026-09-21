@@ -14,8 +14,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:reset": "tsx src/db/reset-prod.ts",
-    "db:studio": "drizzle-kit studio",
-    "worker:ocr": "tsx src/workers/ocr-poller.ts"
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",

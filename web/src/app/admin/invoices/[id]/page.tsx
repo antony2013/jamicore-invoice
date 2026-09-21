@@ -328,11 +328,11 @@ export default function AdminInvoiceDetailPage({
                 </div>
               )}
 
-              {/* OCR Extracted Data */}
+              {/* Invoice Data */}
               <div className="pt-3 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                    OCR Extracted Data
+                    Invoice Data
                   </span>
                   {invoice.ocrData?.confidence && (
                     <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
@@ -421,7 +421,7 @@ export default function AdminInvoiceDetailPage({
             </div>
 
             {/* Assignment Card (Slice 3: detail view + assign + priority) */}
-            {(invoice.status === "ocr_done" || invoice.status === "ocr_failed" || invoice.status === "assigned") && (
+            {(invoice.status === "uploaded" || invoice.status === "ocr_done" || invoice.status === "ocr_failed" || invoice.status === "assigned") && (
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
                   {invoice.status === "assigned" ? "Re-assign Staff" : "Assign to Staff"}
