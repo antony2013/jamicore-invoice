@@ -3,6 +3,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices, clients, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { touchPresence } from "@/lib/presence";
 
 export async function GET(request: Request) {
   try {
@@ -10,6 +11,10 @@ export async function GET(request: Request) {
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
     }
+
+    const role = (session.user as any).role as string;
+    const staffId = (session.user as any).id as string;
+    touchPresence(staffId);
 
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get("status");
@@ -24,8 +29,12 @@ export async function GET(request: Request) {
       conditions.push(eq(invoices.status, statusParam as any));
     }
 
-    if (assignedToParam === "me") {
-      conditions.push(eq(invoices.assignedTo, (session.user as any).id));
+    // Strict separation: staff can only ever list their OWN invoices.
+    // Any assigned_to value they pass is ignored in favor of their id.
+    if (role !== "admin") {
+      conditions.push(eq(invoices.assignedTo, staffId));
+    } else if (assignedToParam === "me") {
+      conditions.push(eq(invoices.assignedTo, staffId));
     } else if (assignedToParam) {
       conditions.push(eq(invoices.assignedTo, assignedToParam));
     }

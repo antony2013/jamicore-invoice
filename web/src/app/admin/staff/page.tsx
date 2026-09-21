@@ -6,7 +6,7 @@ import { ArrowLeft, RefreshCw, UserPlus, ShieldCheck } from "lucide-react";
 
 export default function AdminStaffPage() {
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [stats, setStats] = useState<Record<string, { assigned: number; inProgress: number; verified: number; collected: number; disputed: number; total: number }>>({});
+  const [stats, setStats] = useState<Record<string, { assigned: number; inProgress: number; verified: number; collected: number; disputed: number; total: number; clients: number }>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -186,24 +186,36 @@ export default function AdminStaffPage() {
                 <th className="px-6 py-3.5">Name</th>
                 <th className="px-6 py-3.5">Email</th>
                 <th className="px-6 py-3.5">Role</th>
+                <th className="px-6 py-3.5">Status</th>
                 <th className="px-6 py-3.5 text-center" title="Assigned, waiting to start">Assigned</th>
                 <th className="px-6 py-3.5 text-center" title="In review / needs info">In Progress</th>
                 <th className="px-6 py-3.5 text-center" title="Verified, ready for collection">Verified</th>
                 <th className="px-6 py-3.5 text-center" title="Collected — finished">Finished ✅</th>
                 <th className="px-6 py-3.5 text-center">Total</th>
+                <th className="px-6 py-3.5 text-center" title="Distinct clients currently assigned">Clients</th>
                 <th className="px-6 py-3.5">Joined</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {staffList.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={11} className="px-6 py-12 text-center text-slate-400">
                     {loading ? "Loading staff..." : "No staff accounts yet."}
                   </td>
                 </tr>
               ) : (
                 staffList.map((s) => {
-                  const st = stats[s.id] || { assigned: 0, inProgress: 0, verified: 0, collected: 0, disputed: 0, total: 0 };
+                  const st = stats[s.id] || { assigned: 0, inProgress: 0, verified: 0, collected: 0, disputed: 0, total: 0, clients: 0 };
+                  const lastSeen = (s as any).lastSeenAt ? new Date((s as any).lastSeenAt).getTime() : 0;
+                  const online = Date.now() - lastSeen < 5 * 60 * 1000;
+                  const ago = !(s as any).lastSeenAt
+                    ? "Never"
+                    : online
+                      ? "now"
+                      : (() => {
+                          const m = Math.floor((Date.now() - lastSeen) / 60000);
+                          return m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago`;
+                        })();
                   return (
                   <tr key={s.id} className="hover:bg-slate-50/80">
                     <td className="px-6 py-4 font-medium text-slate-800">{s.name}</td>
@@ -213,11 +225,18 @@ export default function AdminStaffPage() {
                         {s.role}
                       </span>
                     </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold ${online ? "text-emerald-700" : "text-slate-400"}`}>
+                        <span className={`w-2 h-2 rounded-full ${online ? "bg-emerald-500" : "bg-slate-300"}`} />
+                        {online ? "Online" : `Offline · ${ago}`}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-center font-bold text-purple-700">{st.assigned}</td>
                     <td className="px-6 py-4 text-center font-bold text-amber-600">{st.inProgress}</td>
                     <td className="px-6 py-4 text-center font-bold text-blue-700">{st.verified}</td>
                     <td className="px-6 py-4 text-center font-bold text-emerald-700">{st.collected}</td>
                     <td className="px-6 py-4 text-center font-bold text-slate-800">{st.total}</td>
+                    <td className="px-6 py-4 text-center font-bold text-slate-600">{st.clients}</td>
                     <td className="px-6 py-4">{new Date(s.createdAt).toLocaleDateString()}</td>
                   </tr>
                   );

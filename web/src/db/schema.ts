@@ -29,6 +29,10 @@ export const clients = pgTable("clients", {
   passwordHash: text("password_hash"),
   phone: text("phone").unique(),
   email: text("email").unique(),
+  // Default staff for this client: ALL of their invoices (current backlog
+  // via bulk-assign, new ones via OCR auto-assign) route to this person.
+  // Null = manual assignment per invoice.
+  assignedStaffId: uuid("assigned_staff_id").references(() => staff.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -51,6 +55,8 @@ export const staff = pgTable("staff", {
   email: text("email").notNull().unique(),
   role: roleEnum("role").notNull().default("staff"),
   passwordHash: text("password_hash").notNull(),
+  // Last activity heartbeat (page navs + key API calls). Online = < 5 min.
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -103,9 +109,13 @@ export const invoiceStatusLog = pgTable("invoice_status_log", {
 });
 
 // Relations
-export const clientsRelations = relations(clients, ({ many }) => ({
+export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
   outlets: many(outlets),
+  assignedStaff: one(staff, {
+    fields: [clients.assignedStaffId],
+    references: [staff.id],
+  }),
 }));
 
 export const outletsRelations = relations(outlets, ({ one, many }) => ({

@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceStatusLog } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { touchPresence } from "@/lib/presence";
 
 /**
  * Activity / history feed for web roles.
@@ -19,6 +20,7 @@ export async function GET(request: Request) {
 
     const role = (session.user as any).role as string;
     const staffId = (session.user as any).id as string;
+    touchPresence(staffId);
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10) || 100, 200);
 

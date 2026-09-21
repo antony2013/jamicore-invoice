@@ -6,6 +6,7 @@ import { ArrowLeft, RefreshCw, Users, UserPlus } from "lucide-react";
 
 export default function AdminClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
+  const [staffList, setStaffList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -29,9 +30,16 @@ export default function AdminClientsPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/clients");
-      const data = await res.json();
+      const [clientRes, staffRes] = await Promise.all([
+        fetch("/api/clients"),
+        fetch("/api/staff"),
+      ]);
+      const data = await clientRes.json();
+      const staffData = await staffRes.json();
       if (data.success) setClients(data.clients);
+      if (staffData.success) {
+        setStaffList(staffData.staff.filter((s: any) => s.role === "staff"));
+      }
     } catch (err) {
       console.error("Failed to load clients:", err);
     } finally {
@@ -196,6 +204,39 @@ export default function AdminClientsPage() {
     }
   }
 
+  async function handleDefaultStaff(clientId: string, staffId: string) {
+    setFormError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedStaffId: staffId || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to set default staff");
+      setClients((prev) =>
+        prev.map((c) =>
+          c.id === clientId
+            ? {
+                ...c,
+                assignedStaffId: staffId || null,
+                assignedStaffName: staffId
+                  ? staffList.find((s) => s.id === staffId)?.name || null
+                  : null,
+              }
+            : c
+        )
+      );
+      setSuccess(
+        staffId
+          ? `All invoices of this client will route to ${staffList.find((s) => s.id === staffId)?.name}.`
+          : "Default staff cleared — invoices need manual assignment."
+      );
+    } catch (err: any) {
+      setFormError(err.message);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200">
@@ -325,6 +366,7 @@ export default function AdminClientsPage() {
                 <th className="px-6 py-3.5">Phone</th>
                 <th className="px-6 py-3.5">Email</th>
                 <th className="px-6 py-3.5">Outlets</th>
+                <th className="px-6 py-3.5" title="All invoices of this client route here">Default Staff</th>
                 <th className="px-6 py-3.5">Invoices</th>
                 <th className="px-6 py-3.5">Joined</th>
                 <th className="px-6 py-3.5 text-right">Actions</th>
@@ -333,7 +375,7 @@ export default function AdminClientsPage() {
             <tbody className="divide-y divide-slate-100">
               {clients.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
                     {loading ? "Loading clients..." : "No clients yet."}
                   </td>
                 </tr>
@@ -353,6 +395,21 @@ export default function AdminClientsPage() {
                         >
                           {(outletsByClient[c.id]?.length ?? "…")} outlets {expandedClient === c.id ? "▾" : "▸"}
                         </button>
+                      </td>
+                      <td className="px-6 py-4">
+                        <select
+                          value={c.assignedStaffId || ""}
+                          onChange={(e) => handleDefaultStaff(c.id, e.target.value)}
+                          className="px-2 py-1 border border-slate-300 rounded text-xs bg-slate-50 outline-none max-w-[150px]"
+                          title="Every invoice of this client routes to this staff member"
+                        >
+                          <option value="">Manual…</option>
+                          {staffList.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-6 py-4">{c.totalInvoices}</td>
                       <td className="px-6 py-4">{new Date(c.createdAt).toLocaleDateString()}</td>
@@ -393,7 +450,7 @@ export default function AdminClientsPage() {
                   </tr>
                   {expandedClient === c.id && (
                     <tr key={`${c.id}-outlets`} className="bg-purple-50/50">
-                      <td colSpan={8} className="px-6 py-4">
+                      <td colSpan={9} className="px-6 py-4">
                         <div className="max-w-2xl">
                           <h4 className="text-xs font-bold text-slate-800 mb-2">
                             Outlets / Shops of {c.name}

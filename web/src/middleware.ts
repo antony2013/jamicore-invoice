@@ -53,14 +53,19 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // Protect /admin routes: only 'admin' allowed
+  // Protect /admin routes: only 'admin' allowed (staff go to their home)
   if (isAdminRoute && userRole !== "admin") {
-    return NextResponse.redirect(new URL("/staff/dashboard", request.url));
+    return NextResponse.redirect(
+      new URL(userRole === "staff" ? "/staff/dashboard" : "/login", request.url)
+    );
   }
 
-  // Protect /staff routes: 'admin' and 'staff' allowed
-  if (isStaffRoute && userRole !== "admin" && userRole !== "staff") {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // Protect /staff routes: only 'staff' allowed. Admin and staff surfaces
+  // are fully separate — admins manage via /admin/*, never the staff portal.
+  if (isStaffRoute && userRole !== "staff") {
+    return NextResponse.redirect(
+      new URL(userRole === "admin" ? "/admin/dashboard" : "/login", request.url)
+    );
   }
 
   return NextResponse.next();

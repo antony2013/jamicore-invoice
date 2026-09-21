@@ -45,7 +45,7 @@ export async function GET() {
       total: string | number;
     }>;
 
-    const stats: Record<string, { assigned: number; inProgress: number; verified: number; collected: number; disputed: number; total: number }> = {};
+    const stats: Record<string, { assigned: number; inProgress: number; verified: number; collected: number; disputed: number; total: number; clients: number }> = {};
     for (const r of rows) {
       stats[r.staffId] = {
         assigned: Number(r.assigned),
@@ -54,7 +54,25 @@ export async function GET() {
         collected: Number(r.collected),
         disputed: Number(r.disputed),
         total: Number(r.total),
+        clients: 0,
       };
+    }
+
+    // Distinct clients currently routed to each staff (tracking)
+    const rawClients = await db.execute(sql`
+      SELECT assigned_to AS "staffId", COUNT(DISTINCT client_id) AS "clients"
+      FROM invoices
+      WHERE assigned_to IS NOT NULL
+      GROUP BY assigned_to
+    `);
+    const clientRows = (Array.isArray(rawClients)
+      ? rawClients
+      : (rawClients as { rows?: unknown }).rows ?? []) as Array<{
+      staffId: string;
+      clients: string | number;
+    }>;
+    for (const r of clientRows) {
+      if (stats[r.staffId]) stats[r.staffId].clients = Number(r.clients);
     }
 
     return NextResponse.json({ success: true, stats });

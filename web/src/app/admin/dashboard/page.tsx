@@ -236,12 +236,6 @@ export default function AdminDashboard() {
             >
               History
             </Link>
-            <Link
-              href="/staff/dashboard"
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-            >
-              Staff Portal
-            </Link>
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 transition"

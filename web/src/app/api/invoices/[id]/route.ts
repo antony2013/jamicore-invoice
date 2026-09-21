@@ -31,6 +31,12 @@ export async function GET(
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
+    // Strict separation: staff see only invoices assigned to them.
+    const role = (session.user as any).role as string;
+    if (role !== "admin" && invoice.assignedTo !== (session.user as any).id) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+
     // Fetch audit trail history
     const logs = await db.query.invoiceStatusLog.findMany({
       where: eq(invoiceStatusLog.invoiceId, id),
@@ -100,6 +106,12 @@ export async function PATCH(
     });
 
     if (!currentInvoice) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+
+    // Strict separation: staff mutate only their own assigned invoices.
+    const actorRole = (session.user as any).role as string;
+    if (actorRole !== "admin" && currentInvoice.assignedTo !== staffId) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 

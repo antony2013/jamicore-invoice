@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { assignments, clients, invoices, invoiceStatusLog, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { isValidTransition } from "@/lib/status-flow";
 
 const phoneSchema = z
   .string()
@@ -25,6 +26,8 @@ const updateClientSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters").max(128).optional(),
   phone: phoneSchema.nullable().optional(),
   email: z.string().email("Invalid email address").toLowerCase().trim().nullable().optional(),
+  // Default staff for this client (all invoices route here). Null clears it.
+  assignedStaffId: z.string().uuid("Invalid staff ID").nullable().optional(),
 });
 
 export async function PATCH(
@@ -52,7 +55,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const { name, username, password, phone, email } = result.data;
+    const { name, username, password, phone, email, assignedStaffId } = result.data;
 
     // Duplicate check for changed unique fields
     if (username && username !== (current as any).username) {
@@ -74,6 +77,18 @@ export async function PATCH(
     if (password !== undefined) (patch as any).passwordHash = await bcrypt.hash(password, 10);
     if (phone !== undefined) (patch as any).phone = phone;
     if (email !== undefined) (patch as any).email = email;
+    if (assignedStaffId !== undefined) {
+      if (assignedStaffId !== null) {
+        const target = await db.query.staff.findFirst({ where: eq(staff.id, assignedStaffId) });
+        if (!target || target.role !== "staff") {
+          return NextResponse.json(
+            { error: "Default staff must be an existing staff account." },
+            { status: 400 }
+          );
+        }
+      }
+      (patch as any).assignedStaffId = assignedStaffId;
+    }
 
     const [updated] = await db
       .update(clients)
@@ -81,9 +96,44 @@ export async function PATCH(
       .where(eq(clients.id, id))
       .returning();
 
+    // Backlog sweep: every unassigned ocr_done/ocr_failed invoice of this
+    // client routes to the new default staff immediately (admin is the
+    // assigner). Future uploads auto-route via the OCR worker.
+    let swept = 0;
+    if (assignedStaffId) {
+      const backlog = await db.query.invoices.findMany({
+        where: and(eq(invoices.clientId, id), isNull(invoices.assignedTo)),
+      });
+      for (const inv of backlog) {
+        if (!isValidTransition(inv.status as any, "assigned")) continue;
+        await db.transaction(async (tx) => {
+          await tx
+            .update(invoices)
+            .set({ status: "assigned", assignedTo: assignedStaffId, updatedAt: new Date() })
+            .where(eq(invoices.id, inv.id));
+          await tx.insert(assignments).values({
+            invoiceId: inv.id,
+            staffId: assignedStaffId,
+            assignedBy: (session.user as any).id,
+          });
+          await tx.insert(invoiceStatusLog).values({
+            invoiceId: inv.id,
+            status: "assigned",
+            changedBy: (session.user as any).id,
+            note: `Bulk-assigned via client default staff`,
+          });
+        });
+        swept++;
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: password ? "Client credentials updated. Share the new password with the client." : "Client updated.",
+      message: password
+        ? "Client credentials updated. Share the new password with the client."
+        : assignedStaffId
+          ? `Default staff set. ${swept} pending invoice(s) routed; future uploads auto-route.`
+          : "Client updated.",
       client: {
         id: updated.id,
         name: updated.name,
@@ -91,6 +141,7 @@ export async function PATCH(
         phone: (updated as any).phone ?? null,
         email: (updated as any).email ?? null,
       },
+      swept,
     });
   } catch (error: any) {
     console.error("Error updating client:", error);

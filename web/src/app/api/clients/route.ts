@@ -5,6 +5,7 @@ import { desc, eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { touchPresence } from "@/lib/presence";
 
 const phoneSchema = z
   .string()
@@ -48,16 +49,24 @@ export async function GET() {
     if (!session?.user || (session.user as any).role !== "admin") {
       return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
     }
+    touchPresence((session.user as any).id);
 
     const clientList = await db.query.clients.findMany({
       with: {
         invoices: true,
+        assignedStaff: true,
       },
       orderBy: [desc(clients.createdAt)],
     });
 
     const formatted = clientList.map((c) => ({
-      ...toPublicClient(c),
+      id: c.id,
+      name: c.name,
+      phone: (c as { phone?: string | null }).phone ?? null,
+      email: (c as { email?: string | null }).email ?? null,
+      assignedStaffId: (c as { assignedStaffId?: string | null }).assignedStaffId ?? null,
+      assignedStaffName: (c as any).assignedStaff?.name ?? null,
+      createdAt: c.createdAt,
       totalInvoices: c.invoices.length,
     }));
 

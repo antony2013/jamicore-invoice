@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { touchPresence } from "@/lib/presence";
 
 const createStaffSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
@@ -19,6 +20,7 @@ export async function GET() {
     if (!session?.user || (session.user as unknown as { role?: string }).role !== "admin") {
       return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
     }
+    touchPresence((session.user as unknown as { id?: string }).id);
 
     const staffList = await db.query.staff.findMany({
       columns: {
@@ -26,6 +28,7 @@ export async function GET() {
         name: true,
         email: true,
         role: true,
+        lastSeenAt: true,
         createdAt: true,
       },
     });

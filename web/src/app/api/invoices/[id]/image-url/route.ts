@@ -25,6 +25,12 @@ export async function GET(
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
+    // Strict separation: staff view only their own assigned invoices.
+    const role = (session.user as any).role as string;
+    if (role !== "admin" && invoice.assignedTo !== (session.user as any).id) {
+      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    }
+
     // Generate fresh short-lived signed GET URL (5 min TTL)
     const signedViewUrl = await generatePresignedViewUrl(invoice.s3Key);
 

@@ -1,6 +1,6 @@
 import { sql, eq } from "drizzle-orm";
 import { db } from "../db";
-import { invoices, invoiceStatusLog } from "../db/schema";
+import { invoices, invoiceStatusLog, staff } from "../db/schema";
 import { isValidTransition } from "../lib/status-flow";
 
 /**
@@ -94,6 +94,37 @@ async function processInvoiceOcr(s3Key: string): Promise<OcrResult> {
 }
 
 type ClaimedRow = { id: string; s3_key: string; ocr_retry_count: number; status: string };
+
+/**
+ * Client default-staff routing: if the invoice's client has an assigned
+ * default staff member, move ocr_done/ocr_failed straight to `assigned`.
+ * Runs inside the worker's transaction (atomic with the OCR update).
+ * No `assignments` row is written (assignedBy requires a human); the
+ * status log carries the auto-assign note instead.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function autoAssignToClientDefault(tx: any, invoiceId: string, fromStatus: "ocr_done" | "ocr_failed") {
+  if (!isValidTransition(fromStatus, "assigned")) return;
+  const row = await tx.query.invoices.findFirst({
+    where: eq(invoices.id, invoiceId),
+    with: { client: true },
+  });
+  const defaultStaffId = (row?.client as { assignedStaffId?: string | null } | undefined)?.assignedStaffId;
+  if (!row || !defaultStaffId) return;
+  const target = await tx.query.staff.findFirst({ where: eq(staff.id, defaultStaffId) });
+  if (!target || (target as { role?: string }).role !== "staff") return;
+  await tx
+    .update(invoices)
+    .set({ status: "assigned", assignedTo: defaultStaffId, updatedAt: new Date() })
+    .where(eq(invoices.id, invoiceId));
+  await tx.insert(invoiceStatusLog).values({
+    invoiceId,
+    status: "assigned",
+    changedBy: null,
+    note: `Auto-assigned to ${target.name} (client default staff)`,
+  });
+  console.log(`[OCR Worker] Invoice ${invoiceId} auto-assigned to ${target.name} (client default)`);
+}
 
 function normalizeRows(raw: unknown): ClaimedRow[] {
   if (Array.isArray(raw)) return raw as ClaimedRow[];
@@ -203,6 +234,9 @@ export async function runOcrPollingCycle() {
             changedBy: null,
             note: `OCR extraction successful (Confidence: ${ocrResult.confidence}%)`,
           });
+
+          // Client default-staff routing (same transaction)
+          await autoAssignToClientDefault(tx, inv.id, "ocr_done");
         });
 
         console.log(`[OCR Worker] Invoice ${inv.id} successfully processed -> ocr_done`);
@@ -248,6 +282,12 @@ export async function runOcrPollingCycle() {
               ? `OCR failed after 3 attempts. Error: ${ocrResult.errorMessage}`
               : `OCR attempt ${newRetryCount} failed; will retry (stays ocr_pending). Error: ${ocrResult.errorMessage}`,
           });
+
+          // Terminal OCR failure also routes to the client default staff
+          // (manual data entry happens there).
+          if (reachedMaxRetries) {
+            await autoAssignToClientDefault(tx, inv.id, "ocr_failed");
+          }
         });
 
         console.warn(`[OCR Worker] Invoice ${inv.id} failed attempt ${newRetryCount} -> ${nextStatus}`);
