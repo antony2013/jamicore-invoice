@@ -1,6 +1,6 @@
 // Mobile API Service communicating with Jamicore Backend
 // Client auth: admin-created user ID + password (no OTP).
-import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import { manipulateAsync, SaveFormat, FlipType } from "expo-image-manipulator";
 import { printToFileAsync } from "expo-print";
 
 // Production backend. Override anytime from inside the app (tap the API badge).
@@ -150,7 +150,7 @@ export async function uploadBytesToS3(uploadUrl: string, base64: string, content
   return { byteLength: len };
 }
 
-export type InvoicePage = { uri: string; note: string };
+export type InvoicePage = { uri: string; note: string; rotation: 0 | 90 | 180 | 270; flipH: boolean };
 
 function escapeHtml(s: string): string {
   return s
@@ -182,9 +182,13 @@ export async function buildInvoicePdf(
   const built: Array<{ b64: string; note: string }> = [];
   for (let i = 0; i < pages.length; i++) {
     onProgress?.(`Preparing page ${i + 1} of ${pages.length}...`);
+    const actions: Array<{ rotate: number } | { flip: FlipType } | { resize: { width?: number } }> = [];
+    if (pages[i].rotation) actions.push({ rotate: pages[i].rotation });
+    if (pages[i].flipH) actions.push({ flip: FlipType.Horizontal });
+    actions.push({ resize: { width: 1240 } });
     const out = await manipulateAsync(
       pages[i].uri,
-      [{ resize: { width: 1240 } }],
+      actions as any,
       { compress: 0.75, format: SaveFormat.JPEG, base64: true }
     );
     if (!out.base64) {
@@ -266,11 +270,84 @@ export async function getMyInvoices() {
     outlet: { id: string; name: string } | null;
     clientNote?: string | null;
     pageNotes?: string[] | null;
+    uploadedByName?: string | null;
     ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
     createdAt: string;
     updatedAt: string;
     statusLogs: Array<{ status: string; note?: string | null; timestamp: string }>;
   }>;
+}
+
+export type TeamMember = {
+  id: string;
+  name: string;
+  username: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+/**
+ * 12. Team management (client OWNER only — staff get 403).
+ */
+export async function getTeam(): Promise<TeamMember[]> {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-team`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to fetch team.");
+  }
+  return data.team;
+}
+
+export async function addTeamMember(name: string, username: string, pin: string) {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-team`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name, username, pin }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to add team member.");
+  }
+  return data;
+}
+
+export async function updateTeamMember(
+  id: string,
+  update: { name?: string; pin?: string; isActive?: boolean }
+) {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-team/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(update),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to update team member.");
+  }
+  return data;
+}
+
+/**
+ * 13. Team staff change their OWN PIN (owner uses Account screen instead).
+ */
+export async function changeMyPin(oldPin: string, newPin: string) {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-team/change-pin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ oldPin, newPin }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to change PIN.");
+  }
+  return data;
 }
 
 /**

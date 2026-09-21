@@ -3,7 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { desc, eq, or } from "drizzle-orm";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, clientStaff } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { touchPresence } from "@/lib/presence";
 
@@ -98,14 +98,16 @@ export async function POST(request: Request) {
 
     const { name, username, password, phone, email } = result.data;
 
-    // Duplicate check on username, phone and/or email
+    // Duplicate check on username, phone and/or email.
+    // Usernames must ALSO be unique across team staff (single login field).
     const dupConditions = [eq(clients.username, username)];
     if (phone) dupConditions.push(eq(clients.phone, phone));
     if (email) dupConditions.push(eq(clients.email, email));
-    const existing = await db.query.clients.findFirst({
-      where: or(...dupConditions),
-    });
-    if (existing) {
+    const [existing, staffDup] = await Promise.all([
+      db.query.clients.findFirst({ where: or(...dupConditions) }),
+      db.query.clientStaff.findFirst({ where: eq(clientStaff.username, username) }),
+    ]);
+    if (existing || staffDup) {
       return NextResponse.json(
         { error: "A client with this user ID, phone number or email already exists." },
         { status: 409 }

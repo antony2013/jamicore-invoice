@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Rate-limiting: Max 30 upload-url requests per hour per client
+    // 2. Rate-limiting: Max 30 upload-url requests per hour per login identity
     const rateLimitKey = `upload:${client.sub}`;
     const rateLimit = checkRateLimit(rateLimitKey, 30, 60 * 60 * 1000);
 
@@ -55,9 +55,10 @@ export async function POST(request: Request) {
     const extension =
       contentType === "application/pdf" ? "pdf" : contentType === "image/png" ? "png" : "jpg";
 
-    // 4. Generate unique, scoped s3Key
+    // 4. Generate unique s3Key scoped to the OWNING CLIENT
+    // (team staff share the client's folder — attribution is per-row).
     const invoiceFileId = crypto.randomUUID();
-    const s3Key = `invoices/${client.sub}/${invoiceFileId}.${extension}`;
+    const s3Key = `invoices/${client.clientId}/${invoiceFileId}.${extension}`;
 
     // 5. Generate presigned PUT URL (Does NOT insert into DB yet)
     const uploadUrl = await generatePresignedUploadUrl(s3Key, contentType, contentLength);

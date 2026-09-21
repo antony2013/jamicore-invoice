@@ -44,7 +44,7 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const found = await ownInvoiceOr404(id, client.sub);
+    const found = await ownInvoiceOr404(id, client.clientId);
     if ("error" in found) return found.error;
     const current = found.invoice;
 
@@ -67,7 +67,7 @@ export async function PATCH(
     const { note, pageNotes, outletId } = result.data;
     if (outletId !== undefined && outletId !== null) {
       const outlet = await db.query.outlets.findFirst({ where: eq(outlets.id, outletId) });
-      if (!outlet || outlet.clientId !== client.sub) {
+      if (!outlet || outlet.clientId !== client.clientId) {
         return NextResponse.json({ error: "Invalid outlet for this client." }, { status: 400 });
       }
     }
@@ -119,7 +119,7 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const found = await ownInvoiceOr404(id, client.sub);
+    const found = await ownInvoiceOr404(id, client.clientId);
     if ("error" in found) return found.error;
     const current = found.invoice;
 

@@ -20,8 +20,8 @@ export async function GET(request: Request) {
     }
 
     const rows = await db.query.invoices.findMany({
-      where: eq(invoices.clientId, client.sub),
-      with: { outlet: true },
+      where: eq(invoices.clientId, client.clientId),
+      with: { outlet: true, uploadedBy: true },
       orderBy: [desc(invoices.createdAt)],
       limit: 100,
     });
@@ -48,6 +48,7 @@ export async function GET(request: Request) {
             : null,
           clientNote: (inv as any).clientNote ?? null,
           pageNotes: ((inv as any).pageNotes as string[] | null) ?? null,
+          uploadedByName: (inv as any).uploadedBy?.name ?? null,
           createdAt: inv.createdAt,
           updatedAt: inv.updatedAt,
           statusLogs: logs.map((l) => ({

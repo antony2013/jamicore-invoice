@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, integer, jsonb, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, integer, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // Enums
@@ -33,6 +33,20 @@ export const clients = pgTable("clients", {
   // via bulk-assign, new ones via OCR auto-assign) route to this person.
   // Null = manual assignment per invoice.
   assignedStaffId: uuid("assigned_staff_id").references(() => staff.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// 2b. Client Staff Table — shop workers created by the CLIENT OWNER inside
+// the mobile app (Team screen). They sign in with user ID + short PIN
+// (bcrypt-hashed) and upload files on behalf of the client. Deactivation
+// (isActive=false) blocks login but preserves upload attribution.
+export const clientStaff = pgTable("client_staff", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  username: text("username").notNull().unique(),
+  pinHash: text("pin_hash").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -85,6 +99,8 @@ export const invoices = pgTable("invoices", {
   pageNotes: jsonb("page_notes").$type<string[] | null>(),
   // Which outlet of the client this invoice came from (null = Unspecified)
   outletId: uuid("outlet_id").references(() => outlets.id),
+  // Which client-staff member uploaded (null = client owner themself)
+  uploadedByStaffId: uuid("uploaded_by_staff_id").references(() => clientStaff.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -112,10 +128,19 @@ export const invoiceStatusLog = pgTable("invoice_status_log", {
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
   outlets: many(outlets),
+  team: many(clientStaff),
   assignedStaff: one(staff, {
     fields: [clients.assignedStaffId],
     references: [staff.id],
   }),
+}));
+
+export const clientStaffRelations = relations(clientStaff, ({ one, many }) => ({
+  client: one(clients, {
+    fields: [clientStaff.clientId],
+    references: [clients.id],
+  }),
+  uploads: many(invoices),
 }));
 
 export const outletsRelations = relations(outlets, ({ one, many }) => ({
@@ -145,6 +170,10 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   outlet: one(outlets, {
     fields: [invoices.outletId],
     references: [outlets.id],
+  }),
+  uploadedBy: one(clientStaff, {
+    fields: [invoices.uploadedByStaffId],
+    references: [clientStaff.id],
   }),
   assignments: many(assignments),
   statusLogs: many(invoiceStatusLog),

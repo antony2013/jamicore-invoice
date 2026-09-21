@@ -37,6 +37,11 @@ export async function POST(request: Request) {
       );
     }
 
+    // Owner-only: team staff change/reset PINs via the owner-managed Team screen.
+    if (client.role !== "client") {
+      return NextResponse.json({ error: "Only the client owner can change this password." }, { status: 403 });
+    }
+
     const body = await request.json();
     const result = schema.safeParse(body);
     if (!result.success) {

@@ -286,6 +286,14 @@ export default function StaffInvoiceVerifyPage({
               ) : (
                 <span className="text-slate-400 italic">No outlet specified</span>
               )}
+              <span className="text-slate-400 font-medium ml-2">Uploaded by:</span>
+              {invoice.uploadedBy ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 text-[11px] font-semibold">
+                  📤 {invoice.uploadedBy.name} (team)
+                </span>
+              ) : (
+                <span className="text-slate-500">📤 Owner</span>
+              )}
             </div>
             {/* OCR-failed banner: explains blank fields */}
             {invoice && (invoice.status === "assigned" || invoice.status === "in_review") && !invoice.ocrData && (

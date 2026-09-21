@@ -24,6 +24,7 @@ export async function GET(
         client: true,
         assignedStaff: true,
         outlet: true,
+        uploadedBy: true,
       },
     });
 

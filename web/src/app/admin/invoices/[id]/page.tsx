@@ -278,6 +278,15 @@ export default function AdminInvoiceDetailPage({
                   <div className="text-slate-400 font-medium mb-1">Uploaded By (Client)</div>
                   <div className="font-semibold text-slate-800">{invoice.client?.name}</div>
                   <div className="text-slate-500">{invoice.client?.phone || invoice.client?.email}</div>
+                  <div className="mt-1 text-[11px]">
+                    {invoice.uploadedBy ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 font-semibold">
+                        📤 {invoice.uploadedBy.name} (team)
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">📤 Owner upload</span>
+                    )}
+                  </div>
                   <div className="mt-1">
                     {invoice.outlet ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">

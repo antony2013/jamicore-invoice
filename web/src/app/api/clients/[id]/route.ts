@@ -3,7 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, clients, invoices, invoiceStatusLog, staff } from "@/db/schema";
+import { assignments, clients, clientStaff, invoices, invoiceStatusLog, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isValidTransition } from "@/lib/status-flow";
 
@@ -57,10 +57,13 @@ export async function PATCH(
 
     const { name, username, password, phone, email, assignedStaffId } = result.data;
 
-    // Duplicate check for changed unique fields
+    // Duplicate check for changed unique fields (usernames span owners + team)
     if (username && username !== (current as any).username) {
-      const dup = await db.query.clients.findFirst({ where: eq(clients.username, username) });
-      if (dup) return NextResponse.json({ error: "This user ID is already taken." }, { status: 409 });
+      const [dupOwner, dupStaff] = await Promise.all([
+        db.query.clients.findFirst({ where: eq(clients.username, username) }),
+        db.query.clientStaff.findFirst({ where: eq(clientStaff.username, username) }),
+      ]);
+      if (dupOwner || dupStaff) return NextResponse.json({ error: "This user ID is already taken." }, { status: 409 });
     }
     if (phone && phone !== (current as any).phone) {
       const dup = await db.query.clients.findFirst({ where: eq(clients.phone, phone) });

@@ -28,6 +28,10 @@ import {
   updateMyInvoice,
   deleteMyInvoice,
   changeMyPassword,
+  getTeam,
+  addTeamMember,
+  updateTeamMember,
+  changeMyPin,
   buildInvoicePdf,
   uploadBytesToS3,
   confirmInvoiceUpload,
@@ -49,6 +53,7 @@ type HistoryInvoice = {
   outlet: { id: string; name: string } | null;
   clientNote?: string | null;
   pageNotes?: string[] | null;
+  uploadedByName?: string | null;
   ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
   createdAt: string;
   updatedAt: string;
@@ -161,15 +166,22 @@ function GlassButton({
 
 export default function App() {
   // Navigation: login -> outlet gate (if 2+ outlets) -> scan <-> history -> success
-  // + detail (invoice view/edit) + account (password)
-  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account">("login");
+  // + detail (invoice view/edit) + account (password/PIN) + team (owner only)
+  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account" | "team">("login");
   // Admin-provided credentials (no OTP)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [client, setClient] = useState<{ id: string; name: string; username?: string | null } | null>(null);
+  const [client, setClient] = useState<{
+    id: string;
+    name: string;
+    username?: string | null;
+    role?: string | null;
+    clientId?: string | null;
+    clientName?: string | null;
+  } | null>(null);
   // Multi-page invoice (Adobe Scan style): one or more photos -> single PDF.
   // Each page carries its own note (per-snap notes, since pages differ).
-  const [pages, setPages] = useState<Array<{ uri: string; note: string }>>([]);
+  const [pages, setPages] = useState<Array<{ uri: string; note: string; rotation: 0 | 90 | 180 | 270; flipH: boolean }>>([]);
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -181,6 +193,29 @@ export default function App() {
   // History state
   const [history, setHistory] = useState<HistoryInvoice[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Last uploaded invoice id (for instant "View" on the success screen)
+  const [lastUploadId, setLastUploadId] = useState<string | null>(null);
+
+  /** Open the just-uploaded invoice in detail view (via fresh history). */
+  const handleViewLastUpload = async () => {
+    if (!lastUploadId) return;
+    setHistoryLoading(true);
+    try {
+      const items = await getMyInvoices();
+      setHistory(items);
+      const found = items.find((x) => x.id === lastUploadId);
+      if (found) {
+        openDetail(found);
+      } else {
+        Alert.alert("Not ready yet", "Opening history instead.");
+        setScreen("history");
+      }
+    } catch (err: any) {
+      Alert.alert("View Failed", err.message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
   // Detail / edit state
   const [selected, setSelected] = useState<HistoryInvoice | null>(null);
   const [editing, setEditing] = useState(false);
@@ -195,6 +230,20 @@ export default function App() {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwMsg, setPwMsg] = useState<string | null>(null);
+  // Team state (owner only)
+  const [team, setTeam] = useState<Array<{ id: string; name: string; username: string; isActive: boolean; createdAt: string }>>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [tmName, setTmName] = useState("");
+  const [tmUsername, setTmUsername] = useState("");
+  const [tmPin, setTmPin] = useState("");
+  const [resetPinId, setResetPinId] = useState<string | null>(null);
+  const [resetPin, setResetPin] = useState("");
+  const [teamMsg, setTeamMsg] = useState<string | null>(null);
+
+  const isOwner = client?.role !== "client_staff";
+  const displayName = client?.role === "client_staff" && client?.clientName
+    ? `${client.name} (${client.clientName})`
+    : client?.name;
 
   /** Client-editable while the office hasn't taken it. Mirrors server rule. */
   const isEditable = (status: string) =>
@@ -270,6 +319,7 @@ export default function App() {
     setSelected(null);
     setEditing(false);
     setViewUrl(null);
+    setLastUploadId(null);
     setOldPw("");
     setNewPw("");
     setConfirmPw("");
@@ -394,23 +444,104 @@ export default function App() {
       return;
     }
     if (newPw !== confirmPw) {
-      setPwMsg("New passwords do not match.");
+      setPwMsg(isOwner ? "New passwords do not match." : "New PINs do not match.");
       return;
     }
-    if (newPw.length < 8) {
-      setPwMsg("New password must be at least 8 characters.");
+    if (isOwner ? newPw.length < 8 : !/^\d{4,6}$/.test(newPw)) {
+      setPwMsg(isOwner ? "New password must be at least 8 characters." : "New PIN must be 4-6 digits.");
       return;
     }
     setSavingEdit(true);
     setPwMsg(null);
     try {
-      await changeMyPassword(oldPw, newPw);
+      if (isOwner) {
+        await changeMyPassword(oldPw, newPw);
+        setPwMsg("Password changed successfully.");
+      } else {
+        await changeMyPin(oldPw, newPw);
+        setPwMsg("PIN changed successfully.");
+      }
       setOldPw("");
       setNewPw("");
       setConfirmPw("");
-      setPwMsg("Password changed successfully.");
     } catch (err: any) {
       setPwMsg(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Team management (owner only)
+  const handleLoadTeam = async () => {
+    setTeamLoading(true);
+    setTeamMsg(null);
+    try {
+      const members = await getTeam();
+      setTeam(members);
+      setScreen("team");
+    } catch (err: any) {
+      Alert.alert("Team Failed", err.message);
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!tmName.trim() || !tmUsername.trim() || !tmPin.trim()) {
+      setTeamMsg("Name, user ID and PIN are all required.");
+      return;
+    }
+    if (!/^\d{4,6}$/.test(tmPin.trim())) {
+      setTeamMsg("PIN must be 4-6 digits.");
+      return;
+    }
+    setSavingEdit(true);
+    setTeamMsg(null);
+    try {
+      const res = await addTeamMember(tmName.trim(), tmUsername.trim(), tmPin.trim());
+      setTmName("");
+      setTmUsername("");
+      setTmPin("");
+      setTeamMsg(res.message || "Team member added.");
+      const members = await getTeam();
+      setTeam(members);
+    } catch (err: any) {
+      setTeamMsg(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleResetMemberPin = async (id: string) => {
+    if (!/^\d{4,6}$/.test(resetPin.trim())) {
+      setTeamMsg("New PIN must be 4-6 digits.");
+      return;
+    }
+    setSavingEdit(true);
+    setTeamMsg(null);
+    try {
+      await updateTeamMember(id, { pin: resetPin.trim() });
+      setResetPinId(null);
+      setResetPin("");
+      setTeamMsg("PIN reset. Share the new PIN with the member.");
+      const members = await getTeam();
+      setTeam(members);
+    } catch (err: any) {
+      setTeamMsg(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleToggleMember = async (id: string, active: boolean) => {
+    setSavingEdit(true);
+    setTeamMsg(null);
+    try {
+      await updateTeamMember(id, { isActive: active });
+      const members = await getTeam();
+      setTeam(members);
+    } catch (err: any) {
+      setTeamMsg(err.message);
     } finally {
       setSavingEdit(false);
     }
@@ -442,7 +573,7 @@ export default function App() {
         });
 
         if (scannedImages && scannedImages.length > 0) {
-          setPages((prev) => [...prev, { uri: scannedImages[0], note: "" }].slice(0, 20));
+          setPages((prev) => [...prev, { uri: scannedImages[0], note: "", rotation: 0 as const, flipH: false }].slice(0, 20));
           return;
         }
       }
@@ -465,7 +596,7 @@ export default function App() {
                 quality: 0.9,
               });
               if (!result.canceled && result.assets && result.assets[0]) {
-                setPages((prev) => [...prev, { uri: result.assets[0].uri, note: "" }].slice(0, 20));
+                setPages((prev) => [...prev, { uri: result.assets[0].uri, note: "", rotation: 0 as const, flipH: false }].slice(0, 20));
               }
             },
           },
@@ -477,7 +608,7 @@ export default function App() {
                 quality: 0.9,
               });
               if (!result.canceled && result.assets && result.assets[0]) {
-                setPages((prev) => [...prev, { uri: result.assets[0].uri, note: "" }].slice(0, 20));
+                setPages((prev) => [...prev, { uri: result.assets[0].uri, note: "", rotation: 0 as const, flipH: false }].slice(0, 20));
               }
             },
           },
@@ -491,6 +622,20 @@ export default function App() {
 
   const handleRemovePage = (index: number) => {
     setPages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  /** Rotate 90° clockwise (stored as intent, applied losslessly at PDF build). */
+  const handleRotatePage = (index: number) => {
+    setPages((prev) =>
+      prev.map((p, i) =>
+        i === index ? { ...p, rotation: ((p.rotation + 90) % 360) as 0 | 90 | 180 | 270 } : p
+      )
+    );
+  };
+
+  /** Mirror horizontally (stored as intent, applied at PDF build). */
+  const handleFlipPage = (index: number) => {
+    setPages((prev) => prev.map((p, i) => (i === index ? { ...p, flipH: !p.flipH } : p)));
   };
 
   const handlePageNote = (index: number, text: string) => {
@@ -528,7 +673,7 @@ export default function App() {
 
       setStatusMessage("Confirming upload with server...");
       // 4. Confirm upload (overall note + per-page notes + outlet)
-      await confirmInvoiceUpload(
+      const confirmed = await confirmInvoiceUpload(
         s3Key,
         note,
         pages.map((p) => p.note),
@@ -539,6 +684,7 @@ export default function App() {
       setStatusMessage("");
       setPages([]);
       setNote("");
+      setLastUploadId(confirmed?.invoice?.id ?? null);
       setScreen("success");
     } catch (error: any) {
       Alert.alert("Upload Failed", error.message);
@@ -624,17 +770,24 @@ export default function App() {
               </GlassCard>
             )}
 
-            {/* Segmented Scan | History control (glass container) */}
-            {loggedIn && (screen === "scan" || screen === "history") && (
+            {/* Segmented Scan | History | Team control (glass container).
+                Team tab is owner-only (staff logins don't see it). */}
+            {loggedIn && (screen === "scan" || screen === "history" || screen === "team") && (
               <View style={styles.segmentOuter}>
                 <BlurView intensity={36} tint="dark" style={StyleSheet.absoluteFill} />
                 <View style={styles.segmentInner}>
-                  {(["scan", "history"] as const).map((tab) => {
+                  {(isOwner ? (["scan", "history", "team"] as const) : (["scan", "history"] as const)).map((tab) => {
                     const active = screen === tab;
+                    const label = tab === "scan" ? "◉  Scan" : tab === "history" ? "◔  History" : "👥  Team";
+                    const go = () => {
+                      if (tab === "history") handleLoadHistory();
+                      else if (tab === "team") handleLoadTeam();
+                      else setScreen("scan");
+                    };
                     return (
                       <TouchableOpacity
                         key={tab}
-                        onPress={() => (tab === "history" ? handleLoadHistory() : setScreen("scan"))}
+                        onPress={go}
                         activeOpacity={0.85}
                         style={styles.segmentTab}
                       >
@@ -646,13 +799,13 @@ export default function App() {
                             style={styles.segmentActive}
                           >
                             <Text style={styles.segmentActiveText}>
-                              {tab === "scan" ? "◉  Scan" : "◔  History"}
+                              {label}
                             </Text>
                           </LinearGradient>
                         ) : (
                           <View style={styles.segmentIdle}>
                             <Text style={styles.segmentIdleText}>
-                              {tab === "scan" ? "◉  Scan" : "◔  History"}
+                              {label}
                             </Text>
                           </View>
                         )}
@@ -675,7 +828,7 @@ export default function App() {
                 </View>
                 <Text style={styles.cardTitle}>Welcome back</Text>
                 <Text style={styles.instruction}>
-                  Sign in with the user ID and password provided by your admin.
+                  Sign in with your user ID and password (shop staff: user ID + PIN).
                 </Text>
                 <Text style={styles.label}>User ID</Text>
                 <TextInput
@@ -688,7 +841,7 @@ export default function App() {
                   autoCorrect={false}
                 />
 
-                <Text style={styles.label}>Password</Text>
+                <Text style={styles.label}>Password / PIN</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="••••••••"
@@ -751,7 +904,7 @@ export default function App() {
               <GlassCard>
             <View style={styles.userBadgeRow}>
               <View style={styles.userBadge}>
-                <Text style={styles.userBadgeText}>◍ {client?.name}</Text>
+                <Text style={styles.userBadgeText}>◍ {displayName}</Text>
               </View>
               <View style={styles.userBadgeActions}>
                 <TouchableOpacity onPress={() => { setPwMsg(null); setScreen("account"); }}>
@@ -819,12 +972,31 @@ export default function App() {
                         />
                         <Text style={styles.pageNumber}>{i + 1}</Text>
                         {page.note.trim() ? <Text style={styles.pageNoteBadge}>📝</Text> : null}
-                        <TouchableOpacity
-                          style={styles.pageRemove}
-                          onPress={() => handleRemovePage(i)}
-                        >
-                          <Text style={styles.pageRemoveText}>✕</Text>
-                        </TouchableOpacity>
+                        {(page.rotation !== 0 || page.flipH) && (
+                          <Text style={styles.pageEditBadge}>
+                            {page.rotation ? `${page.rotation}°` : ""}{page.rotation && page.flipH ? " " : ""}{page.flipH ? "⇋" : ""}
+                          </Text>
+                        )}
+                        <View style={styles.pageTools}>
+                          <TouchableOpacity
+                            style={styles.pageTool}
+                            onPress={() => handleRotatePage(i)}
+                          >
+                            <Text style={styles.pageToolText}>⟳</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.pageTool, page.flipH && styles.pageToolActive]}
+                            onPress={() => handleFlipPage(i)}
+                          >
+                            <Text style={styles.pageToolText}>⇋</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.pageTool, styles.pageToolDanger]}
+                            onPress={() => handleRemovePage(i)}
+                          >
+                            <Text style={styles.pageToolText}>✕</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -904,7 +1076,7 @@ export default function App() {
                 </LinearGradient>
                 <Text style={styles.successTitle}>Uploaded ✓</Text>
                 <Text style={styles.successDescription}>
-                  Securely saved and queued for automatic OCR. You don&apos;t have to wait!
+                  Securely saved and sent to the office. You don&apos;t have to wait!
                 </Text>
 
                 <PrimaryButton
@@ -912,9 +1084,18 @@ export default function App() {
                   onPress={() => {
                     setPages([]);
                     setNote("");
+                    setLastUploadId(null);
                     setScreen("scan");
                   }}
                 />
+                {lastUploadId && (
+                  <GlassButton
+                    title="👁 View Upload"
+                    onPress={handleViewLastUpload}
+                    disabled={historyLoading}
+                    loading={historyLoading}
+                  />
+                )}
                 <GlassButton title="📜 View My History" onPress={handleLoadHistory} />
               </GlassCard>
             )}
@@ -944,6 +1125,7 @@ export default function App() {
                           <Text style={styles.historyMeta}>
                             {new Date(inv.createdAt).toLocaleDateString()}
                             {inv.outlet ? ` • ${inv.outlet.name}` : ""}
+                            {inv.uploadedByName ? ` • by ${inv.uploadedByName}` : ""}
                             {inv.ocrData?.amount ? ` • $${inv.ocrData.amount}` : ""}
                             {inv.ocrData?.invoiceNo ? ` • ${inv.ocrData.invoiceNo}` : ""}
                           </Text>
@@ -1120,19 +1302,19 @@ export default function App() {
               </GlassCard>
             )}
 
-            {/* Screen: Account (change password) */}
+            {/* Screen: Account (owner password / staff PIN) */}
             {screen === "account" && (
               <GlassCard>
                 <Text style={styles.cardTitle}>👤 Account</Text>
                 <Text style={styles.instruction}>
-                  Signed in as {client?.name}. Change your login password below.
+                  Signed in as {displayName}. Change your {isOwner ? "login password" : "login PIN"} below.
                 </Text>
                 {pwMsg && (
                   <View style={styles.pwMsgBox}>
                     <Text style={styles.pwMsgText}>{pwMsg}</Text>
                   </View>
                 )}
-                <Text style={styles.label}>Current password</Text>
+                <Text style={styles.label}>Current {isOwner ? "password" : "PIN"}</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="••••••••"
@@ -1141,8 +1323,9 @@ export default function App() {
                   onChangeText={setOldPw}
                   secureTextEntry
                   autoCapitalize="none"
+                  keyboardType={isOwner ? "default" : "number-pad"}
                 />
-                <Text style={styles.label}>New password (min 8)</Text>
+                <Text style={styles.label}>{isOwner ? "New password (min 8)" : "New PIN (4-6 digits)"}</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="••••••••"
@@ -1151,8 +1334,9 @@ export default function App() {
                   onChangeText={setNewPw}
                   secureTextEntry
                   autoCapitalize="none"
+                  keyboardType={isOwner ? "default" : "number-pad"}
                 />
-                <Text style={styles.label}>Confirm new password</Text>
+                <Text style={styles.label}>Confirm {isOwner ? "new password" : "new PIN"}</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="••••••••"
@@ -1161,13 +1345,128 @@ export default function App() {
                   onChangeText={setConfirmPw}
                   secureTextEntry
                   autoCapitalize="none"
+                  keyboardType={isOwner ? "default" : "number-pad"}
                 />
                 <PrimaryButton
-                  title="Change Password"
+                  title={isOwner ? "Change Password" : "Change PIN"}
                   onPress={handleChangePassword}
                   disabled={savingEdit}
                   loading={savingEdit}
                   loadingText="Saving..."
+                />
+                <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
+              </GlassCard>
+            )}
+
+            {/* Screen: Team (owner only — create staff + PINs, reset, activate) */}
+            {screen === "team" && (
+              <GlassCard>
+                <Text style={styles.cardTitle}>👥 My Team</Text>
+                <Text style={styles.instruction}>
+                  Shop staff sign in with their user ID + PIN and upload for {client?.name}.
+                </Text>
+                {teamMsg && (
+                  <View style={styles.pwMsgBox}>
+                    <Text style={styles.pwMsgText}>{teamMsg}</Text>
+                  </View>
+                )}
+
+                {team.length === 0 && !teamLoading ? (
+                  <Text style={styles.instruction}>No team members yet — add the first below.</Text>
+                ) : (
+                  team.map((m) => (
+                    <View key={m.id} style={styles.teamRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.teamName}>
+                          {m.name} {!m.isActive && <Text style={styles.teamOff}>(off)</Text>}
+                        </Text>
+                        <Text style={styles.historyMeta}>@{m.username}</Text>
+                        {resetPinId === m.id ? (
+                          <View style={styles.teamResetRow}>
+                            <TextInput
+                              style={[styles.input, styles.teamPinInput]}
+                              placeholder="New 4-6 digit PIN"
+                              placeholderTextColor="#64748B"
+                              value={resetPin}
+                              onChangeText={setResetPin}
+                              keyboardType="number-pad"
+                              maxLength={6}
+                              secureTextEntry
+                            />
+                            <TouchableOpacity
+                              style={styles.teamMiniBtn}
+                              onPress={() => handleResetMemberPin(m.id)}
+                              disabled={savingEdit}
+                            >
+                              <Text style={styles.teamMiniBtnText}>Save</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.teamMiniBtnGhost}
+                              onPress={() => { setResetPinId(null); setResetPin(""); }}
+                            >
+                              <Text style={styles.teamMiniBtnGhostText}>✕</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <View style={styles.teamResetRow}>
+                            <TouchableOpacity
+                              style={styles.teamMiniBtnGhost}
+                              onPress={() => { setResetPinId(m.id); setResetPin(""); setTeamMsg(null); }}
+                            >
+                              <Text style={styles.teamMiniBtnGhostText}>Reset PIN</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.teamMiniBtnGhost}
+                              onPress={() => handleToggleMember(m.id, !m.isActive)}
+                              disabled={savingEdit}
+                            >
+                              <Text style={styles.teamMiniBtnGhostText}>
+                                {m.isActive ? "Deactivate" : "Activate"}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                      <View style={[styles.teamDot, m.isActive ? styles.teamDotOn : styles.teamDotOff]} />
+                    </View>
+                  ))
+                )}
+
+                <Text style={[styles.label, { marginTop: 12 }]}>Add team member</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Full name"
+                  placeholderTextColor="#64748B"
+                  value={tmName}
+                  onChangeText={setTmName}
+                />
+                <View style={styles.teamFormRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="user.id"
+                    placeholderTextColor="#64748B"
+                    value={tmUsername}
+                    onChangeText={setTmUsername}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="4-6 digit PIN"
+                    placeholderTextColor="#64748B"
+                    value={tmPin}
+                    onChangeText={setTmPin}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    secureTextEntry
+                  />
+                </View>
+                <PrimaryButton
+                  title="Add Member"
+                  onPress={handleAddMember}
+                  disabled={savingEdit}
+                  loading={savingEdit}
+                  loadingText="Adding..."
                 />
                 <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
               </GlassCard>
@@ -1601,6 +1900,49 @@ const styles = StyleSheet.create({
     bottom: 6,
     fontSize: 12,
   },
+  pageEditBadge: {
+    position: "absolute",
+    left: 6,
+    top: 6,
+    backgroundColor: "rgba(37,99,235,0.9)",
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  pageTools: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    flexDirection: "row",
+    gap: 4,
+  },
+  pageTool: {
+    backgroundColor: "rgba(15,23,42,0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pageToolActive: {
+    backgroundColor: "rgba(37,99,235,0.9)",
+    borderColor: "rgba(147,197,253,0.7)",
+  },
+  pageToolDanger: {
+    backgroundColor: "rgba(220,38,38,0.9)",
+    borderColor: "rgba(252,165,165,0.6)",
+  },
+  pageToolText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   pageNotesList: {
     marginBottom: 6,
   },
@@ -1823,6 +2165,74 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#7DD3FC",
     textAlign: "center",
+  },
+  teamRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+  },
+  teamName: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#F8FAFC",
+  },
+  teamOff: {
+    fontSize: 11,
+    color: "#FCA5A5",
+  },
+  teamDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  teamDotOn: {
+    backgroundColor: "#34D399",
+  },
+  teamDotOff: {
+    backgroundColor: "#64748B",
+  },
+  teamResetRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 8,
+    alignItems: "center",
+  },
+  teamPinInput: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  teamMiniBtn: {
+    backgroundColor: "rgba(251,191,36,0.9)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  teamMiniBtnText: {
+    color: "#1C0A00",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  teamMiniBtnGhost: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  teamMiniBtnGhostText: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  teamFormRow: {
+    flexDirection: "row",
+    gap: 8,
   },
   timeline: {
     marginTop: 12,

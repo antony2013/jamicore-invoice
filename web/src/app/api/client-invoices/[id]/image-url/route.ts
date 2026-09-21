@@ -28,7 +28,7 @@ export async function GET(
       where: eq(invoices.id, id),
     });
 
-    if (!invoice || invoice.clientId !== client.sub) {
+    if (!invoice || invoice.clientId !== client.clientId) {
       return NextResponse.json({ error: "Invoice not found." }, { status: 404 });
     }
 

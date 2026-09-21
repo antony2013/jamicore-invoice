@@ -45,8 +45,9 @@ export async function POST(request: Request) {
         ? result.data.pageNotes
         : null;
 
-    // Security check: Ensure client can only confirm uploads scoped to their own client ID
-    if (!s3Key.startsWith(`invoices/${client.sub}/`)) {
+    // Security check: uploads are scoped to the OWNING CLIENT folder
+    // (team staff share it — per-uploader attribution goes on the row).
+    if (!s3Key.startsWith(`invoices/${client.clientId}/`)) {
       return NextResponse.json(
         { error: "Access denied. s3Key does not belong to this authenticated client." },
         { status: 403 }
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
       const outlet = await db.query.outlets.findFirst({
         where: eq(outlets.id, result.data.outletId),
       });
-      if (!outlet || outlet.clientId !== client.sub) {
+      if (!outlet || outlet.clientId !== client.clientId) {
         return NextResponse.json(
           { error: "Invalid outlet for this client." },
           { status: 400 }
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
     let autoAssignee: { id: string; name: string } | null = null;
     {
       const owner = await db.query.clients.findFirst({
-        where: eq(clients.id, client.sub),
+        where: eq(clients.id, client.clientId),
       });
       const defaultId = (owner as { assignedStaffId?: string | null })?.assignedStaffId;
       if (defaultId) {
@@ -132,7 +133,7 @@ export async function POST(request: Request) {
       const [inserted] = await tx
         .insert(invoices)
         .values({
-          clientId: client.sub, // Derived from JWT, never trusted from body
+          clientId: client.clientId, // Owning client from JWT, never from body
           s3Key: s3Key,
           imageUrl: s3Key, // Internal private reference
           status: autoAssignee ? "assigned" : "uploaded",
@@ -141,6 +142,8 @@ export async function POST(request: Request) {
           clientNote: clientNote,
           pageNotes: pageNotes,
           outletId: outletId,
+          // Uploader attribution: team staff id, or null when the owner uploads
+          uploadedByStaffId: client.role === "client_staff" ? client.sub : null,
         })
         .returning();
 
@@ -149,7 +152,10 @@ export async function POST(request: Request) {
         invoiceId: inserted.id,
         status: "uploaded",
         changedBy: null,
-        note: "Invoice uploaded by client",
+        note:
+          client.role === "client_staff"
+            ? `Invoice uploaded by ${client.staffName || client.name} (team staff)`
+            : "Invoice uploaded by client",
       });
 
       if (autoAssignee) {

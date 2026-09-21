@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     }
 
     const rows = await db.query.outlets.findMany({
-      where: eq(outlets.clientId, client.sub),
+      where: eq(outlets.clientId, client.clientId),
       orderBy: [asc(outlets.name)],
     });
 
