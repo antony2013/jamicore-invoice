@@ -960,12 +960,24 @@ export default function App() {
 
                 {pages.length > 0 && (
                   <View style={styles.pagesGrid}>
-                    {pages.map((page, i) => (
+                    {pages.map((page, i) => {
+                      // Live preview of pending edits (same math as PDF build):
+                      // rotate, fit inside the frame when sideways, mirror.
+                      const previewTransform: Array<{ rotate: string } | { scale: number } | { scaleX: number }> = [];
+                      if (page.flipH) previewTransform.push({ scaleX: -1 });
+                      if (page.rotation) {
+                        previewTransform.push({ rotate: `${page.rotation}deg` });
+                        if (page.rotation % 180 !== 0) previewTransform.push({ scale: 0.75 });
+                      }
+                      return (
                       <View
                         key={`${i}-${page.uri}`}
                         style={styles.pageThumb}
                       >
-                        <Image source={{ uri: page.uri }} style={styles.pageThumbImage} />
+                        <Image
+                          source={{ uri: page.uri }}
+                          style={[styles.pageThumbImage, previewTransform.length > 0 && { transform: previewTransform }]}
+                        />
                         <LinearGradient
                           colors={["transparent", "rgba(0,0,0,0.55)"]}
                           style={styles.pageShade}
@@ -998,30 +1010,42 @@ export default function App() {
                           </TouchableOpacity>
                         </View>
                       </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
 
                 {pages.length > 0 && (
                   <View style={styles.pageNotesList}>
                     <Text style={styles.label}>Notes — one per page</Text>
-                    {pages.map((page, i) => (
-                      <View key={`note-${i}-${page.uri}`} style={styles.pageNoteRow}>
-                        <Image source={{ uri: page.uri }} style={styles.pageNoteThumb} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.pageNoteTitle}>Page {i + 1}</Text>
-                          <TextInput
-                            style={[styles.input, styles.pageNoteInput]}
-                            placeholder={`Note for page ${i + 1} (optional)…`}
-                            placeholderTextColor="#64748B"
-                            value={page.note}
-                            onChangeText={(t) => handlePageNote(i, t)}
-                            multiline
-                            maxLength={500}
+                    {pages.map((page, i) => {
+                      const miniTransform: Array<{ rotate: string } | { scale: number } | { scaleX: number }> = [];
+                      if (page.flipH) miniTransform.push({ scaleX: -1 });
+                      if (page.rotation) {
+                        miniTransform.push({ rotate: `${page.rotation}deg` });
+                        if (page.rotation % 180 !== 0) miniTransform.push({ scale: 0.75 });
+                      }
+                      return (
+                        <View key={`note-${i}-${page.uri}`} style={styles.pageNoteRow}>
+                          <Image
+                            source={{ uri: page.uri }}
+                            style={[styles.pageNoteThumb, miniTransform.length > 0 && { transform: miniTransform }]}
                           />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.pageNoteTitle}>Page {i + 1}</Text>
+                            <TextInput
+                              style={[styles.input, styles.pageNoteInput]}
+                              placeholder={`Note for page ${i + 1} (optional)…`}
+                              placeholderTextColor="#64748B"
+                              value={page.note}
+                              onChangeText={(t) => handlePageNote(i, t)}
+                              multiline
+                              maxLength={500}
+                            />
+                          </View>
                         </View>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
 
