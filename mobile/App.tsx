@@ -739,36 +739,7 @@ export default function App() {
                   <Text style={styles.subtitle}>Client Invoice Collection Portal</Text>
                 </View>
               </View>
-
-              {/* Server Connection Badge (glass pill) */}
-              <TouchableOpacity
-                style={styles.serverBadgeOuter}
-                onPress={() => setShowServerConfig(!showServerConfig)}
-                activeOpacity={0.8}
-              >
-                <BlurView intensity={32} tint="dark" style={StyleSheet.absoluteFill} />
-                <View style={styles.serverBadgeInner}>
-                  <View style={styles.dot} />
-                  <Text style={styles.serverBadgeText}>API: {getApiBaseUrl()}</Text>
-                </View>
-              </TouchableOpacity>
             </View>
-
-            {/* Server Config Dropdown */}
-            {showServerConfig && (
-              <GlassCard style={styles.serverCard}>
-                <Text style={styles.label}>Backend Server URL</Text>
-                <TextInput
-                  style={styles.input}
-                  value={serverUrl}
-                  onChangeText={setServerUrlState}
-                  placeholder="https://ac.jamicore.com"
-                  placeholderTextColor="#64748B"
-                  autoCapitalize="none"
-                />
-                <GlassButton title="Save Server URL" onPress={handleUpdateServerUrl} />
-              </GlassCard>
-            )}
 
             {/* Segmented Scan | History | Team control (glass container).
                 Team tab is owner-only (staff logins don't see it). */}
@@ -1378,6 +1349,28 @@ export default function App() {
                   loading={savingEdit}
                   loadingText="Saving..."
                 />
+                <TouchableOpacity
+                  onPress={() => setShowServerConfig(!showServerConfig)}
+                  style={{ marginTop: 18, alignItems: "center" }}
+                >
+                  <Text style={styles.serverToggle}>
+                    ⚙ Server: {getApiBaseUrl()} {showServerConfig ? "▾" : "▸"}
+                  </Text>
+                </TouchableOpacity>
+                {showServerConfig && (
+                  <View style={{ marginTop: 10 }}>
+                    <TextInput
+                      style={styles.input}
+                      value={serverUrl}
+                      onChangeText={setServerUrlState}
+                      placeholder="https://ac.jamicore.com"
+                      placeholderTextColor="#64748B"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <GlassButton title="Save Server URL" onPress={handleUpdateServerUrl} />
+                  </View>
+                )}
                 <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
               </GlassCard>
             )}
@@ -1534,7 +1527,9 @@ const styles = StyleSheet.create({
     width: 92,
     height: 46,
     borderRadius: 10,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#000000",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
   },
   title: {
     fontSize: 26,
@@ -1547,35 +1542,10 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     marginTop: 2,
   },
-  serverBadgeOuter: {
-    borderRadius: 20,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    marginTop: 12,
-  },
-  serverBadgeInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#34D399",
-  },
-  serverBadgeText: {
-    fontSize: 11,
-    color: "#CBD5E1",
-    fontWeight: "500",
-  },
-  serverCard: {
-    width: "100%",
-    maxWidth: 420,
-    marginBottom: 14,
+  serverToggle: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "600",
   },
   /* Glass container (GlassEffectContainer analog): shared frosted surface */
   segmentOuter: {
@@ -1641,7 +1611,9 @@ const styles = StyleSheet.create({
     width: 200,
     height: 100,
     borderRadius: 14,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#000000",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
   },
   cardTitle: {
     fontSize: 20,
@@ -1902,22 +1874,6 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     overflow: "hidden",
   },
-  pageRemove: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    backgroundColor: "rgba(244,63,94,0.92)",
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pageRemoveText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "800",
-  },
   pageNoteBadge: {
     position: "absolute",
     right: 6,
@@ -2076,9 +2032,6 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
     backgroundColor: "rgba(255,255,255,0.05)",
-  },
-  historyItemActive: {
-    borderColor: "rgba(251,191,36,0.5)",
   },
   historyRow: {
     flexDirection: "row",
