@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices, invoiceStatusLog } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 
 /**
- * Client's own invoice history (mobile "My History" screen).
- * Identity strictly from JWT — a client can only ever see their own rows.
+ * Invoice history (mobile "My History" screen).
+ * - Owner (role client): every upload of the client (own + all team staff).
+ * - Team staff: ONLY their own uploads. One member can never see, edit or
+ *   withdraw another member's rows — enforced here, not just in the UI.
  * Each invoice carries its full status timeline (audit trail).
  */
 export async function GET(request: Request) {
@@ -19,8 +21,13 @@ export async function GET(request: Request) {
       );
     }
 
+    const scope =
+      client.role === "client_staff"
+        ? and(eq(invoices.clientId, client.clientId), eq(invoices.uploadedByStaffId, client.sub))
+        : eq(invoices.clientId, client.clientId);
+
     const rows = await db.query.invoices.findMany({
-      where: eq(invoices.clientId, client.clientId),
+      where: scope,
       with: { outlet: true, uploadedBy: true },
       orderBy: [desc(invoices.createdAt)],
       limit: 100,

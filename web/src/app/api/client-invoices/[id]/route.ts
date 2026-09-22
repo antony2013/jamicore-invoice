@@ -11,6 +11,8 @@ import { deleteObjectFromS3 } from "@/lib/s3";
  * Editable only BEFORE staff takes ownership: uploaded, ocr_pending,
  * ocr_done, ocr_failed. Once assigned (or beyond), the office owns the
  * record — client edits/deletes are rejected with 409.
+ * Team staff are further scoped to rows THEY uploaded: one member can never
+ * touch another member's uploads (owner sees/edits everything).
  */
 const PRE_ASSIGNMENT = ["uploaded", "ocr_pending", "ocr_done", "ocr_failed"] as const;
 
@@ -20,11 +22,18 @@ const updateSchema = z.object({
   outletId: z.string().uuid("Invalid outlet ID").nullable().optional(),
 });
 
-async function ownInvoiceOr404(invoiceId: string, clientSub: string) {
+async function ownInvoiceOr404(
+  invoiceId: string,
+  client: { clientId: string; role: string; sub: string }
+) {
   const invoice = await db.query.invoices.findFirst({
     where: eq(invoices.id, invoiceId),
   });
-  if (!invoice || invoice.clientId !== clientSub) {
+  if (!invoice || invoice.clientId !== client.clientId) {
+    return { error: NextResponse.json({ error: "Invoice not found." }, { status: 404 }) as NextResponse };
+  }
+  // Team staff: only rows they personally uploaded. Owner: everything.
+  if (client.role === "client_staff" && invoice.uploadedByStaffId !== client.sub) {
     return { error: NextResponse.json({ error: "Invoice not found." }, { status: 404 }) as NextResponse };
   }
   return { invoice };
@@ -44,7 +53,7 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const found = await ownInvoiceOr404(id, client.clientId);
+    const found = await ownInvoiceOr404(id, client);
     if ("error" in found) return found.error;
     const current = found.invoice;
 
@@ -119,7 +128,7 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const found = await ownInvoiceOr404(id, client.clientId);
+    const found = await ownInvoiceOr404(id, client);
     if ("error" in found) return found.error;
     const current = found.invoice;
 

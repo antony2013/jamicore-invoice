@@ -31,6 +31,10 @@ export async function GET(
     if (!invoice || invoice.clientId !== client.clientId) {
       return NextResponse.json({ error: "Invoice not found." }, { status: 404 });
     }
+    // Team staff: only rows they personally uploaded.
+    if (client.role === "client_staff" && invoice.uploadedByStaffId !== client.sub) {
+      return NextResponse.json({ error: "Invoice not found." }, { status: 404 });
+    }
 
     const url = await generatePresignedViewUrl(invoice.s3Key);
     const isPdf = invoice.s3Key.toLowerCase().endsWith(".pdf");
