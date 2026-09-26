@@ -62,6 +62,9 @@ export const outlets = pgTable("outlets", {
   // Which team staff member added this outlet (null = office/admin or owner).
   // Shown in lists so everyone knows who created which branch.
   createdByStaffId: uuid("created_by_staff_id").references(() => clientStaff.id, { onDelete: "set null" }),
+  // Default staff for THIS outlet (overrides the client-level default on
+  // uploads tagged with this outlet). Null = fall back to client default.
+  assignedStaffId: uuid("assigned_staff_id").references(() => staff.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -158,6 +161,10 @@ export const outletsRelations = relations(outlets, ({ one, many }) => ({
   createdBy: one(clientStaff, {
     fields: [outlets.createdByStaffId],
     references: [clientStaff.id],
+  }),
+  assignedStaff: one(staff, {
+    fields: [outlets.assignedStaffId],
+    references: [staff.id],
   }),
   invoices: many(invoices),
 }));

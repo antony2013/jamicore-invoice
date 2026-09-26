@@ -106,6 +106,7 @@ export async function POST(request: Request) {
 
     // Outlet must belong to the authenticated client (never trust blindly)
     let outletId: string | null = null;
+    let outletDefaultId: string | null = null;
     if (result.data.outletId) {
       const outlet = await db.query.outlets.findFirst({
         where: eq(outlets.id, result.data.outletId),
@@ -117,22 +118,33 @@ export async function POST(request: Request) {
         );
       }
       outletId = outlet.id;
+      outletDefaultId = (outlet as { assignedStaffId?: string | null }).assignedStaffId ?? null;
     }
 
-    // Client default-staff routing: if this client has a default staff
-    // member, new uploads skip straight to `assigned` (no OCR in between).
+    // Auto-assign routing (most specific wins):
+    // 1. outlet default staff (when upload tagged with an outlet that has one)
+    // 2. client default staff — else the invoice stays `uploaded` for manual assign.
+    async function resolveAssignee(staffId: string | null): Promise<{ id: string; name: string } | null> {
+      if (!staffId) return null;
+      const target = await db.query.staff.findFirst({ where: eq(staff.id, staffId) });
+      if (target && (target as { role?: string }).role === "staff") {
+        return { id: target.id, name: target.name };
+      }
+      return null;
+    }
     let autoAssignee: { id: string; name: string } | null = null;
-    {
+    let autoSource = "";
+    if (outletDefaultId) {
+      autoAssignee = await resolveAssignee(outletDefaultId);
+      if (autoAssignee) autoSource = "outlet default";
+    }
+    if (!autoAssignee) {
       const owner = await db.query.clients.findFirst({
         where: eq(clients.id, client.clientId),
       });
       const defaultId = (owner as { assignedStaffId?: string | null })?.assignedStaffId;
-      if (defaultId) {
-        const target = await db.query.staff.findFirst({ where: eq(staff.id, defaultId) });
-        if (target && (target as { role?: string }).role === "staff") {
-          autoAssignee = { id: target.id, name: target.name };
-        }
-      }
+      autoAssignee = await resolveAssignee(defaultId ?? null);
+      if (autoAssignee) autoSource = "client default";
     }
 
     // 5. Insert invoice record within a transaction.
@@ -176,7 +188,7 @@ export async function POST(request: Request) {
           invoiceId: inserted.id,
           status: "assigned",
           changedBy: null,
-          note: `Auto-assigned to ${autoAssignee.name} (client default staff)`,
+          note: `Auto-assigned to ${autoAssignee.name} (${autoSource} staff)`,
         });
       }
 

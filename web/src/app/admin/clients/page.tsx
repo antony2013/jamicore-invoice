@@ -188,8 +188,41 @@ export default function AdminClientsPage() {
     }
   }
 
-  async function handleDeleteOutlet(clientId: string, outletId: string) {
-    if (!confirm("Delete this outlet? Invoices must be unlinked first.")) return;
+  async function handleOutletStaff(clientId: string, outletId: string, staffId: string) {
+    setOutletError(null);
+    try {
+      const res = await fetch(`/api/outlets/${outletId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedStaffId: staffId || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to set outlet staff");
+      setOutletsByClient((prev) => ({
+        ...prev,
+        [clientId]: (prev[clientId] || []).map((o) =>
+          o.id === outletId
+            ? {
+                ...o,
+                assignedStaffId: staffId || null,
+                assignedStaffName: staffId
+                  ? staffList.find((s) => s.id === staffId)?.name || null
+                  : null,
+              }
+            : o
+        ),
+      }));
+      setSuccess(
+        staffId
+          ? `Uploads tagged "${data.outlet.name}" now route to ${staffList.find((s) => s.id === staffId)?.name} (+ existing backlog swept).`
+          : `Outlet "${data.outlet.name}" falls back to client default/manual.`
+      );
+    } catch (err: any) {
+      setOutletError(err.message);
+    }
+  }
+
+  async function handleDeleteOutlet(clientId: string, outletId: string) {    if (!confirm("Delete this outlet? Invoices must be unlinked first.")) return;
     setOutletError(null);
     try {
       const res = await fetch(`/api/outlets/${outletId}`, { method: "DELETE" });
@@ -404,7 +437,7 @@ export default function AdminClientsPage() {
                           title="Every invoice of this client routes to this staff member"
                         >
                           <option value="">Manual…</option>
-                          {staffList.map((s) => (
+                          {staffList.filter((s) => s.role === "staff").map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name}
                             </option>
@@ -465,8 +498,8 @@ export default function AdminClientsPage() {
                           ) : (
                             <div className="space-y-2 mb-3">
                               {(outletsByClient[c.id] || []).map((o) => (
-                                <div key={o.id} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2">
-                                  <div>
+                                <div key={o.id} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2 gap-2">
+                                  <div className="flex-1">
                                     <div className="text-xs font-bold text-slate-800">{o.name}</div>
                                     <div className="text-[11px] text-slate-500">
                                       {[o.address, o.phone].filter(Boolean).join(" • ") || "—"}
@@ -475,6 +508,19 @@ export default function AdminClientsPage() {
                                       Added by {o.createdByName || "office"}
                                     </div>
                                   </div>
+                                  <select
+                                    value={o.assignedStaffId || ""}
+                                    onChange={(e) => handleOutletStaff(c.id, o.id, e.target.value)}
+                                    className="px-2 py-1 border border-slate-300 rounded text-xs bg-purple-50 outline-none max-w-[130px]"
+                                    title="Default staff for this outlet (overrides client default on tagged uploads)"
+                                  >
+                                    <option value="">Staff…</option>
+                                    {staffList.filter((s) => s.role === "staff").map((s) => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.name}
+                                      </option>
+                                    ))}
+                                  </select>
                                   <button
                                     onClick={() => handleDeleteOutlet(c.id, o.id)}
                                     className="px-2 py-1 text-red-600 hover:bg-red-50 border border-red-200 rounded text-xs font-medium"

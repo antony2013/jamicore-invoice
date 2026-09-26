@@ -64,6 +64,13 @@
       "when": 1790408016205,
       "tag": "0008_outlet-creator",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790411495901,
+      "tag": "0009_outlet-default-staff",
+      "breakpoints": true
     }
   ]
 }

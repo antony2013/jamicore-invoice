@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices, outlets } from "@/db/schema";
+import { assignments, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { isValidTransition } from "@/lib/status-flow";
 
 const updateOutletSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -14,6 +15,8 @@ const updateOutletSchema = z.object({
     .regex(/^\+\d{7,15}$/, "Phone must be E.164 format")
     .nullable()
     .optional(),
+  // Default staff for THIS outlet (overrides client default). Null clears it.
+  assignedStaffId: z.string().uuid("Invalid staff ID").nullable().optional(),
 });
 
 export async function PATCH(
@@ -41,7 +44,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Outlet not found." }, { status: 404 });
     }
 
-    const { name, address, phone } = result.data;
+    const { name, address, phone, assignedStaffId } = result.data;
     if (name && name.trim() !== current.name) {
       const dup = await db.query.outlets.findFirst({
         where: and(
@@ -58,17 +61,61 @@ export async function PATCH(
       }
     }
 
+    if (assignedStaffId !== undefined && assignedStaffId !== null) {
+      const target = await db.query.staff.findFirst({
+        where: eq(staff.id, assignedStaffId),
+      });
+      if (!target || target.role !== "staff") {
+        return NextResponse.json(
+          { error: "Default staff must be an existing staff account." },
+          { status: 400 }
+        );
+      }
+    }
+
     const [updated] = await db
       .update(outlets)
       .set({
         ...(name !== undefined ? { name: name.trim() } : {}),
         ...(address !== undefined ? { address: address?.trim() || null } : {}),
         ...(phone !== undefined ? { phone: phone ?? null } : {}),
+        ...(assignedStaffId !== undefined ? { assignedStaffId } : {}),
       })
       .where(eq(outlets.id, id))
       .returning();
 
-    return NextResponse.json({ success: true, outlet: updated });
+    // Backlog sweep: unassigned invoices already tagged with this outlet
+    // route to the new default immediately (admin is the assigner).
+    let swept = 0;
+    if (assignedStaffId) {
+      const backlog = await db.query.invoices.findMany({
+        where: and(eq(invoices.outletId, id), isNull(invoices.assignedTo)),
+      });
+      const adminId = (session.user as any).id;
+      for (const inv of backlog) {
+        if (!isValidTransition(inv.status as any, "assigned")) continue;
+        await db.transaction(async (tx) => {
+          await tx
+            .update(invoices)
+            .set({ status: "assigned", assignedTo: result.data.assignedStaffId, updatedAt: new Date() })
+            .where(eq(invoices.id, inv.id));
+          await tx.insert(assignments).values({
+            invoiceId: inv.id,
+            staffId: assignedStaffId,
+            assignedBy: adminId,
+          });
+          await tx.insert(invoiceStatusLog).values({
+            invoiceId: inv.id,
+            status: "assigned",
+            changedBy: adminId,
+            note: "Bulk-assigned via outlet default staff",
+          });
+        });
+        swept++;
+      }
+    }
+
+    return NextResponse.json({ success: true, outlet: updated, swept });
   } catch (error: any) {
     console.error("Error updating outlet:", error);
     return NextResponse.json({ error: "Failed to update outlet" }, { status: 500 });
