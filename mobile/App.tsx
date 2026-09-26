@@ -24,6 +24,7 @@ import {
   getUploadUrl,
   getMyInvoices,
   getMyOutlets,
+  addOutlet,
   getMyInvoiceViewUrl,
   updateMyInvoice,
   deleteMyInvoice,
@@ -40,7 +41,7 @@ import {
   loadPersistedToken,
   CATEGORY_LABELS,
 } from "./src/services/api";
-import type { InvoiceCategory } from "./src/services/api";
+import type { InvoiceCategory, Outlet } from "./src/services/api";
 
 /* ------------------------------------------------------------------ */
 /* Liquid Glass design language (iOS 26 inspired, built with expo-blur */
@@ -58,6 +59,7 @@ type HistoryInvoice = {
   clientNote?: string | null;
   pageNotes?: string[] | null;
   uploadedByName?: string | null;
+  deletableUntil?: string | null;
   ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
   createdAt: string;
   updatedAt: string;
@@ -222,9 +224,9 @@ function GlassButton({
 }
 
 export default function App() {
-  // Navigation: login -> outlet gate (if 2+ outlets) -> scan <-> history -> success
-  // + detail (invoice view/edit) + account (password/PIN) + team (owner only)
-  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account" | "team">("login");
+  // Navigation: login -> outlet gate (if 2+ outlets) -> scan/history/team/branches
+  // + detail (invoice view/edit) + account (password/PIN)
+  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account" | "team" | "branches">("login");
   // Admin-provided credentials (no OTP)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -248,7 +250,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("");
   // Outlets of this client (for tagging uploads). 0 = none yet, 1 = auto,
   // 2+ = client must pick one per upload.
-  const [outlets, setOutlets] = useState<Array<{ id: string; name: string; address?: string | null; phone?: string | null }>>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [selectedOutletId, setSelectedOutletId] = useState<string | null>(null);
   // History state
   const [history, setHistory] = useState<HistoryInvoice[]>([]);
@@ -301,6 +303,12 @@ export default function App() {
   const [resetPinId, setResetPinId] = useState<string | null>(null);
   const [resetPin, setResetPin] = useState("");
   const [teamMsg, setTeamMsg] = useState<string | null>(null);
+  // Branches state (owner + staff)
+  const [branchName, setBranchName] = useState("");
+  const [branchAddress, setBranchAddress] = useState("");
+  const [branchPhone, setBranchPhone] = useState("");
+  const [branchMsg, setBranchMsg] = useState<string | null>(null);
+  const [branchSaving, setBranchSaving] = useState(false);
 
   const isOwner = client?.role !== "client_staff";
   const displayName = client?.role === "client_staff" && client?.clientName
@@ -619,6 +627,54 @@ export default function App() {
     }
   };
 
+  // Branches (owner + staff): refresh list, add new branch
+  const handleLoadBranches = async () => {
+    setBranchSaving(true);
+    try {
+      const list = await getMyOutlets();
+      setOutlets(list);
+      setScreen("branches");
+    } catch (err: any) {
+      Alert.alert("Branches Failed", err.message);
+    } finally {
+      setBranchSaving(false);
+    }
+  };
+
+  const handleAddBranch = async () => {
+    if (branchName.trim().length < 2) {
+      setBranchMsg("Branch name must be at least 2 characters.");
+      return;
+    }
+    const ph = branchPhone.trim();
+    if (ph && !/^\+\d{7,15}$/.test(ph)) {
+      setBranchMsg("Phone must be E.164 format, e.g. +18765550123.");
+      return;
+    }
+    setBranchSaving(true);
+    setBranchMsg(null);
+    try {
+      const res = await addOutlet(branchName.trim(), branchAddress.trim(), ph);
+      setBranchName("");
+      setBranchAddress("");
+      setBranchPhone("");
+      setBranchMsg(res.message || "Branch added.");
+      const list = await getMyOutlets();
+      setOutlets(list);
+    } catch (err: any) {
+      setBranchMsg(err.message);
+    } finally {
+      setBranchSaving(false);
+    }
+  };
+
+  /** Withdrawal allowed within 1h of upload (server enforces; UI mirrors). */
+  const canWithdraw = (inv: HistoryInvoice | null) => {
+    if (!inv || !isEditable(inv.status)) return false;
+    if (!inv.deletableUntil) return true;
+    return Date.now() < new Date(inv.deletableUntil).getTime();
+  };
+
   // 3. Add a page: document scanner (dev client) or camera/gallery (Expo Go).
   // Appends to the multi-page invoice — upload combines all pages into one PDF.
   const handleAddPage = async () => {
@@ -821,18 +877,19 @@ export default function App() {
               </View>
             </View>
 
-            {/* Segmented Scan | History | Team control (glass container).
-                Team tab is owner-only (staff logins don't see it). */}
-            {loggedIn && (screen === "scan" || screen === "history" || screen === "team") && (
+            {/* Segmented Scan | History | Team | Branches (glass container).
+                Team tab is owner-only; Branches for everyone. */}
+            {loggedIn && (screen === "scan" || screen === "history" || screen === "team" || screen === "branches") && (
               <View style={styles.segmentOuter}>
                 <BlurView intensity={36} tint="dark" style={StyleSheet.absoluteFill} />
                 <View style={styles.segmentInner}>
-                  {(isOwner ? (["scan", "history", "team"] as const) : (["scan", "history"] as const)).map((tab) => {
+                  {(isOwner ? (["scan", "history", "team", "branches"] as const) : (["scan", "history", "branches"] as const)).map((tab) => {
                     const active = screen === tab;
-                    const label = tab === "scan" ? "◉  Scan" : tab === "history" ? "◔  History" : "👥  Team";
+                    const label = tab === "scan" ? "◉  Scan" : tab === "history" ? "◔  History" : tab === "team" ? "👥  Team" : "🏪  Branches";
                     const go = () => {
                       if (tab === "history") handleLoadHistory();
                       else if (tab === "team") handleLoadTeam();
+                      else if (tab === "branches") handleLoadBranches();
                       else setScreen("scan");
                     };
                     return (
@@ -1428,11 +1485,18 @@ export default function App() {
                       <View style={{ flex: 1 }}>
                         <GlassButton title="✏️ Edit" onPress={handleStartEdit} />
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <GlassButton title="🗑 Withdraw" onPress={handleDeleteInvoice} />
-                      </View>
+                      {canWithdraw(selected) && (
+                        <View style={{ flex: 1 }}>
+                          <GlassButton title="🗑 Withdraw" onPress={handleDeleteInvoice} />
+                        </View>
+                      )}
                     </View>
                   )
+                )}
+                {isEditable(selected.status) && !editing && !canWithdraw(selected) && (
+                  <Text style={styles.lockNote}>
+                    ⏳ 1-hour withdrawal window expired — contact the office to remove this invoice.
+                  </Text>
                 )}
                 {!isEditable(selected.status) && !editing && (
                   <Text style={styles.lockNote}>
@@ -1518,27 +1582,7 @@ export default function App() {
                   </View>
                 )}
 
-                {/* Our branches — which shops this team's uploads can tag */}
-                <View style={styles.branchesBox}>
-                  <Text style={styles.label}>🏪 Our Branches ({outlets.length})</Text>
-                  {outlets.length === 0 ? (
-                    <Text style={styles.branchesEmpty}>
-                      No branches yet — ask the office to add outlets for upload tagging.
-                    </Text>
-                  ) : (
-                    outlets.map((o) => (
-                      <View key={o.id} style={styles.branchRowBox}>
-                        <Text style={styles.branchRow}>◍ {o.name}</Text>
-                        {[o.address, o.phone].filter(Boolean).length > 0 && (
-                          <Text style={styles.branchSub}>
-                            {[o.address, o.phone].filter(Boolean).join(" • ")}
-                          </Text>
-                        )}
-                      </View>
-                    ))
-                  )}
-                </View>
-
+                {/* Our branches moved to the Branches tab (both roles) */}
                 {team.length === 0 && !teamLoading ? (
                   <Text style={styles.instruction}>No team members yet — add the first below.</Text>
                 ) : (
@@ -1634,6 +1678,73 @@ export default function App() {
                   onPress={handleAddMember}
                   disabled={savingEdit}
                   loading={savingEdit}
+                  loadingText="Adding..."
+                />
+                <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
+              </GlassCard>
+            )}
+
+            {/* Screen: Branches (owner + staff — view all, add new).
+                "Added by" shows which team member created each branch. */}
+            {screen === "branches" && (
+              <GlassCard>
+                <Text style={styles.cardTitle}>🏪 Branches</Text>
+                <Text style={styles.instruction}>
+                  Shops of {client?.name}. New branches are immediately available in the upload outlet picker.
+                </Text>
+                {branchMsg && (
+                  <View style={styles.pwMsgBox}>
+                    <Text style={styles.pwMsgText}>{branchMsg}</Text>
+                  </View>
+                )}
+                {outlets.length === 0 && !branchSaving ? (
+                  <Text style={styles.instruction}>No branches yet — add the first below.</Text>
+                ) : (
+                  outlets.map((o) => (
+                    <View key={o.id} style={styles.teamRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.teamName}>◍ {o.name}</Text>
+                        {[o.address, o.phone].filter(Boolean).length > 0 && (
+                          <Text style={styles.historyMeta}>
+                            {[o.address, o.phone].filter(Boolean).join(" • ")}
+                          </Text>
+                        )}
+                        <Text style={styles.historyMeta}>
+                          Added by {o.createdByName || "office"}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+                <Text style={[styles.label, { marginTop: 12 }]}>Add branch</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Branch/shop name *"
+                  placeholderTextColor="#64748B"
+                  value={branchName}
+                  onChangeText={setBranchName}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Address (optional)"
+                  placeholderTextColor="#64748B"
+                  value={branchAddress}
+                  onChangeText={setBranchAddress}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone, e.g. +18765550123 (optional)"
+                  placeholderTextColor="#64748B"
+                  value={branchPhone}
+                  onChangeText={setBranchPhone}
+                  keyboardType="phone-pad"
+                  autoCapitalize="none"
+                />
+                <PrimaryButton
+                  title="Add Branch"
+                  onPress={handleAddBranch}
+                  disabled={branchSaving}
+                  loading={branchSaving}
                   loadingText="Adding..."
                 />
                 <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
@@ -2393,31 +2504,6 @@ const styles = StyleSheet.create({
   teamFormRow: {
     flexDirection: "row",
     gap: 8,
-  },
-  branchesBox: {
-    borderWidth: 1,
-    borderColor: "rgba(125,211,252,0.3)",
-    backgroundColor: "rgba(125,211,252,0.07)",
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
-  },
-  branchesEmpty: {
-    fontSize: 12,
-    color: "#94A3B8",
-  },
-  branchRowBox: {
-    marginTop: 6,
-  },
-  branchRow: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#F8FAFC",
-  },
-  branchSub: {
-    fontSize: 12,
-    color: "#94A3B8",
-    marginTop: 1,
   },
   timeline: {
     marginTop: 12,

@@ -57,6 +57,13 @@
       "when": 1790399812180,
       "tag": "0007_invoice-category",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790408016205,
+      "tag": "0008_outlet-creator",
+      "breakpoints": true
     }
   ]
 }

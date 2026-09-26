@@ -471,6 +471,9 @@ export default function AdminClientsPage() {
                                     <div className="text-[11px] text-slate-500">
                                       {[o.address, o.phone].filter(Boolean).join(" • ") || "—"}
                                     </div>
+                                    <div className="text-[10px] text-slate-400">
+                                      Added by {o.createdByName || "office"}
+                                    </div>
                                   </div>
                                   <button
                                     onClick={() => handleDeleteOutlet(c.id, o.id)}

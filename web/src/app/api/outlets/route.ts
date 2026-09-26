@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 
     const rows = await db.query.outlets.findMany({
       where: clientId ? eq(outlets.clientId, clientId) : undefined,
-      with: { client: true },
+      with: { client: true, createdBy: true },
       orderBy: [asc(outlets.name)],
     });
 
@@ -41,6 +41,7 @@ export async function GET(request: Request) {
         phone: o.phone,
         clientId: o.clientId,
         clientName: (o as any).client?.name ?? "Unknown",
+        createdByName: (o as any).createdBy?.name ?? null,
       })),
     });
   } catch (error: any) {

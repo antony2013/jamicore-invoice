@@ -245,7 +245,15 @@ export async function buildInvoicePdf(
 /**
  * 5. My outlets (for the upload outlet picker). Empty = no outlets yet.
  */
-export async function getMyOutlets(): Promise<Array<{ id: string; name: string; address?: string | null; phone?: string | null }>> {
+export type Outlet = {
+  id: string;
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  createdByName?: string | null;
+};
+
+export async function getMyOutlets(): Promise<Outlet[]> {
   if (!clientAuthToken) {
     throw new Error("Client is not authenticated. Please log in first.");
   }
@@ -258,6 +266,29 @@ export async function getMyOutlets(): Promise<Array<{ id: string; name: string; 
     throw new Error(data.error || "Failed to fetch outlets.");
   }
   return data.outlets;
+}
+
+/**
+ * Add a branch/outlet for my own client. Allowed for owner AND team staff.
+ * Records who created it (visible as "Added by X", else Office).
+ */
+export async function addOutlet(name: string, address?: string, phone?: string) {
+  if (!clientAuthToken) {
+    throw new Error("Client is not authenticated. Please log in first.");
+  }
+  const body: Record<string, unknown> = { name: name.trim() };
+  if (address?.trim()) body.address = address.trim();
+  if (phone?.trim()) body.phone = phone.trim();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-outlets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${clientAuthToken}` },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to add branch.");
+  }
+  return data;
 }
 /**
  * 6. My invoice history with status timelines (client's own rows only).
@@ -288,6 +319,7 @@ export async function getMyInvoices() {
     clientNote?: string | null;
     pageNotes?: string[] | null;
     uploadedByName?: string | null;
+    deletableUntil?: string | null;
     ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
     createdAt: string;
     updatedAt: string;

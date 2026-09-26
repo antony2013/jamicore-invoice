@@ -59,6 +59,9 @@ export const outlets = pgTable("outlets", {
   name: text("name").notNull(),
   address: text("address"),
   phone: text("phone"),
+  // Which team staff member added this outlet (null = office/admin or owner).
+  // Shown in lists so everyone knows who created which branch.
+  createdByStaffId: uuid("created_by_staff_id").references(() => clientStaff.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -151,6 +154,10 @@ export const outletsRelations = relations(outlets, ({ one, many }) => ({
   client: one(clients, {
     fields: [outlets.clientId],
     references: [clients.id],
+  }),
+  createdBy: one(clientStaff, {
+    fields: [outlets.createdByStaffId],
+    references: [clientStaff.id],
   }),
   invoices: many(invoices),
 }));

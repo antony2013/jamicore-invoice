@@ -56,6 +56,8 @@ export async function GET(request: Request) {
           clientNote: (inv as any).clientNote ?? null,
           pageNotes: ((inv as any).pageNotes as string[] | null) ?? null,
           uploadedByName: (inv as any).uploadedBy?.name ?? null,
+          // Client withdrawal allowed within 1h of upload (server enforces)
+          deletableUntil: new Date(new Date(inv.createdAt).getTime() + 60 * 60 * 1000).toISOString(),
           category: (inv as any).category ?? "sales_invoice",
           categoryDetail: (inv as any).categoryDetail ?? null,
           createdAt: inv.createdAt,

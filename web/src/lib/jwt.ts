@@ -101,6 +101,9 @@ export async function verifyClientToken(token: string): Promise<ClientJWTPayload
 
 /**
  * Helper to extract and verify token directly from Next.js Request Authorization header.
+ * For team staff, ALSO verifies the account is still active — so owner
+ * deactivation takes effect immediately instead of lingering until the
+ * 7-day JWT expires.
  */
 export async function authenticateClientRequest(request: Request): Promise<ClientJWTPayload | null> {
   const authHeader = request.headers.get("authorization");
@@ -108,5 +111,20 @@ export async function authenticateClientRequest(request: Request): Promise<Clien
     return null;
   }
   const token = authHeader.substring(7).trim();
-  return verifyClientToken(token);
+  const payload = await verifyClientToken(token);
+  if (!payload) return null;
+  if (payload.role === "client_staff") {
+    try {
+      const { db } = await import("@/db");
+      const { clientStaff } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      const row = await db.query.clientStaff.findFirst({
+        where: eq(clientStaff.id, payload.sub),
+      });
+      if (!row || !row.isActive) return null;
+    } catch {
+      return null;
+    }
+  }
+  return payload;
 }

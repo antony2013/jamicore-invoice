@@ -159,6 +159,18 @@ export async function DELETE(
       );
     }
 
+    // 1-hour withdrawal window from upload time. After that the record is
+    // locked for the office — even if still unassigned (prevents silent
+    // late deletions).
+    const DELETE_WINDOW_MS = 60 * 60 * 1000;
+    const ageMs = Date.now() - new Date(current.createdAt).getTime();
+    if (ageMs > DELETE_WINDOW_MS) {
+      return NextResponse.json(
+        { error: "Withdrawal window expired (1 hour after upload). Contact the office to remove this invoice." },
+        { status: 403 }
+      );
+    }
+
     // DB row + logs first (assignments/status logs cascade); S3 object
     // best-effort after — a leftover object is invisible, a broken row is not.
     await db.transaction(async (tx) => {
