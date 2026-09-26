@@ -21,6 +21,7 @@ export async function GET(request: Request) {
     const assignedToParam = searchParams.get("assigned_to");
     const outletParam = searchParams.get("outlet");
     const clientParam = searchParams.get("client");
+    const categoryParam = searchParams.get("category");
 
     let whereClause = undefined;
     const conditions = [];
@@ -45,6 +46,10 @@ export async function GET(request: Request) {
 
     if (clientParam) {
       conditions.push(eq(invoices.clientId, clientParam));
+    }
+
+    if (categoryParam) {
+      conditions.push(eq(invoices.category, categoryParam as any));
     }
 
     if (conditions.length > 0) {

@@ -36,8 +36,21 @@ export default function AdminInvoiceDetailPage({
   const [assignError, setAssignError] = useState<string | null>(null);
   const [outletList, setOutletList] = useState<any[]>([]);
   const [outletId, setOutletId] = useState<string>("");
+  const [category, setCategory] = useState<string>("sales_invoice");
+  const [categoryDetail, setCategoryDetail] = useState<string>("");
   const [savingOutlet, setSavingOutlet] = useState(false);
   const [outletMsg, setOutletMsg] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const CATEGORY_OPTIONS = [
+    { value: "sales_invoice", label: "Sales Invoice" },
+    { value: "purchase_bill", label: "Purchase Bill" },
+    { value: "expense_bill", label: "Expense Bill" },
+    { value: "asset_bill", label: "Asset Bill" },
+    { value: "other", label: "Other…" },
+  ];
 
   async function fetchImage() {
     setReloadingImage(true);
@@ -77,23 +90,49 @@ export default function AdminInvoiceDetailPage({
     setSavingOutlet(true);
     setOutletMsg(null);
     try {
+      if (category === "other" && !categoryDetail.trim()) {
+        throw new Error("Custom category text is required when category is Other.");
+      }
       const res = await fetch(`/api/invoices/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outletId: outletId || null }),
+        body: JSON.stringify({
+          outletId: outletId || null,
+          category,
+          categoryDetail: category === "other" ? categoryDetail.trim() : null,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to update outlet");
-      setInvoice(data.invoice);
-      // Refresh outlet relation display
+      if (!res.ok) throw new Error(data.error || "Failed to update");
+      // Refresh full invoice (relations included)
       const fresh = await fetch(`/api/invoices/${id}`);
       const freshData = await fresh.json();
       if (fresh.ok) setInvoice(freshData.invoice);
-      setOutletMsg("Outlet updated.");
+      setOutletMsg("Outlet & category updated.");
     } catch (err: any) {
       setOutletMsg(`Error: ${err.message}`);
     } finally {
       setSavingOutlet(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete invoice");
+      window.location.href = "/admin/dashboard";
+    } catch (err: any) {
+      setDeleteError(err.message);
+      setDeleteArmed(false);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -109,6 +148,8 @@ export default function AdminInvoiceDetailPage({
         setInvoice(data.invoice);
         setStatusLogs(data.statusLogs || []);
         setOutletId(data.invoice.outletId || data.invoice.outlet?.id || "");
+        setCategory(data.invoice.category || "sales_invoice");
+        setCategoryDetail(data.invoice.categoryDetail || "");
 
         // 2. Fetch fresh short-lived (5 min TTL) signed GET URL
         const imgRes = await fetch(`/api/invoices/${id}/image-url`);
@@ -271,6 +312,13 @@ export default function AdminInvoiceDetailPage({
                   Priority: <strong className="uppercase text-slate-800">{invoice.priority}</strong>
                 </span>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                  {invoice.category === "other" && invoice.categoryDetail
+                    ? invoice.categoryDetail
+                    : CATEGORY_OPTIONS.find((c) => c.value === invoice.category)?.label || invoice.category}
+                </span>
+              </div>
 
               {/* Client and Staff info */}
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100 text-xs">
@@ -390,10 +438,10 @@ export default function AdminInvoiceDetailPage({
               </div>
             </div>
 
-            {/* Outlet Card */}
+            {/* Outlet + Category Card */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Outlet
+                Outlet & Category
               </h3>
               {outletList.length === 0 ? (
                 <p className="text-xs text-slate-400">
@@ -404,11 +452,12 @@ export default function AdminInvoiceDetailPage({
                   .
                 </p>
               ) : (
-                <div className="flex gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Outlet</label>
                   <select
                     value={outletId}
                     onChange={(e) => setOutletId(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
                   >
                     <option value="">No outlet (Unspecified)</option>
                     {outletList.map((o) => (
@@ -417,15 +466,43 @@ export default function AdminInvoiceDetailPage({
                       </option>
                     ))}
                   </select>
-                  <button
-                    onClick={handleOutletSave}
-                    disabled={savingOutlet}
-                    className="py-2 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium disabled:opacity-50"
-                  >
-                    {savingOutlet ? "Saving…" : "Save"}
-                  </button>
                 </div>
               )}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
+                >
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {category === "other" && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Custom category *
+                  </label>
+                  <input
+                    value={categoryDetail}
+                    onChange={(e) => setCategoryDetail(e.target.value)}
+                    placeholder="e.g. Delivery Challan"
+                    maxLength={200}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none"
+                  />
+                </div>
+              )}
+              <button
+                onClick={handleOutletSave}
+                disabled={savingOutlet}
+                className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+              >
+                {savingOutlet ? "Saving…" : "Save Outlet & Category"}
+              </button>
               {outletMsg && <p className="text-xs text-slate-600">{outletMsg}</p>}
             </div>
 
@@ -505,6 +582,37 @@ export default function AdminInvoiceDetailPage({
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Danger Zone: delete (blocked for terminal collected/disputed) */}
+            <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-red-700 mb-2">
+                Danger Zone
+              </h3>
+              {deleteError && (
+                <p className="mb-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{deleteError}</p>
+              )}
+              {invoice.status === "collected" || invoice.status === "disputed" ? (
+                <p className="text-xs text-slate-400">
+                  Terminal invoices cannot be deleted (audit trail is preserved).
+                </p>
+              ) : (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className={`w-full py-2 px-4 rounded-lg text-xs font-medium disabled:opacity-50 ${
+                    deleteArmed
+                      ? "bg-red-600 hover:bg-red-700 text-white"
+                      : "border border-red-300 text-red-700 hover:bg-red-50"
+                  }`}
+                >
+                  {deleting
+                    ? "Deleting…"
+                    : deleteArmed
+                      ? "Click again to confirm delete (row + file)"
+                      : "Delete Invoice"}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -38,6 +38,32 @@ export default function StaffInvoiceVerifyPage({
   const [vendor, setVendor] = useState("");
   const [date, setDate] = useState("");
   const [note, setNote] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteArmed, setDeleteArmed] = useState(false);
+
+  const STAFF_DELETABLE = ["assigned", "in_review", "needs_info"];
+  const canDelete = !!invoice && STAFF_DELETABLE.includes(invoice.status);
+
+  async function handleDelete() {
+    if (!invoice) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete invoice");
+      window.location.href = "/staff/dashboard";
+    } catch (err: any) {
+      setError(err.message);
+      setDeleteArmed(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function loadInvoiceData() {
     setLoading(true);
@@ -208,6 +234,11 @@ export default function StaffInvoiceVerifyPage({
               }`}
             >
               Status: {invoice.status}
+            </span>
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+              {invoice.category === "other" && invoice.categoryDetail
+                ? invoice.categoryDetail
+                : { sales_invoice: "Sales Invoice", purchase_bill: "Purchase Bill", expense_bill: "Expense Bill", asset_bill: "Asset Bill", other: "Other" }[invoice.category as string] || invoice.category}
             </span>
           </div>
         </div>
@@ -549,6 +580,29 @@ export default function StaffInvoiceVerifyPage({
                 </div>
               </div>
             )}
+            {/* Danger Zone: staff delete only in pre-verification states */}
+            {canDelete && (
+              <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-red-700 mb-2">
+                  Danger Zone
+                </h3>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className={`w-full py-2 px-4 rounded-lg text-xs font-medium disabled:opacity-50 ${
+                    deleteArmed
+                      ? "bg-red-600 hover:bg-red-700 text-white"
+                      : "border border-red-300 text-red-700 hover:bg-red-50"
+                  }`}
+                >
+                  {deleting
+                    ? "Deleting…"
+                    : deleteArmed
+                      ? "Click again to confirm delete"
+                      : "Delete Invoice"}
+                </button>
+              </div>
+            )}
 
             {/* Audit Trail Timeline (Slice 5) */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -556,7 +610,6 @@ export default function StaffInvoiceVerifyPage({
                 <History className="w-4 h-4 text-blue-600" />
                 Status History & Audit Trail
               </h3>
-
               <div className="relative pl-6 space-y-5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
                 {statusLogs.map((log) => (
                   <div key={log.id} className="relative">

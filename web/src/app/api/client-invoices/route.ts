@@ -56,6 +56,8 @@ export async function GET(request: Request) {
           clientNote: (inv as any).clientNote ?? null,
           pageNotes: ((inv as any).pageNotes as string[] | null) ?? null,
           uploadedByName: (inv as any).uploadedBy?.name ?? null,
+          category: (inv as any).category ?? "sales_invoice",
+          categoryDetail: (inv as any).categoryDetail ?? null,
           createdAt: inv.createdAt,
           updatedAt: inv.updatedAt,
           statusLogs: logs.map((l) => ({

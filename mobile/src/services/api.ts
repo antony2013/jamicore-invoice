@@ -152,6 +152,21 @@ export async function uploadBytesToS3(uploadUrl: string, base64: string, content
 
 export type InvoicePage = { uri: string; note: string; rotation: 0 | 90 | 180 | 270; flipH: boolean };
 
+export type InvoiceCategory =
+  | "sales_invoice"
+  | "purchase_bill"
+  | "expense_bill"
+  | "asset_bill"
+  | "other";
+
+export const CATEGORY_LABELS: Record<InvoiceCategory, string> = {
+  sales_invoice: "Sales Invoice",
+  purchase_bill: "Purchase Bill",
+  expense_bill: "Expense Bill",
+  asset_bill: "Asset Bill",
+  other: "Other",
+};
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -230,7 +245,7 @@ export async function buildInvoicePdf(
 /**
  * 5. My outlets (for the upload outlet picker). Empty = no outlets yet.
  */
-export async function getMyOutlets(): Promise<Array<{ id: string; name: string }>> {
+export async function getMyOutlets(): Promise<Array<{ id: string; name: string; address?: string | null; phone?: string | null }>> {
   if (!clientAuthToken) {
     throw new Error("Client is not authenticated. Please log in first.");
   }
@@ -268,6 +283,8 @@ export async function getMyInvoices() {
     status: string;
     priority: string;
     outlet: { id: string; name: string } | null;
+    category?: string | null;
+    categoryDetail?: string | null;
     clientNote?: string | null;
     pageNotes?: string[] | null;
     uploadedByName?: string | null;
@@ -355,7 +372,14 @@ export async function changeMyPin(oldPin: string, newPin: string) {
  * Optional overall note + per-page notes (index-aligned with PDF pages)
  * + optional outlet the invoice belongs to.
  */
-export async function confirmInvoiceUpload(s3Key: string, note?: string, pageNotes?: string[], outletId?: string) {
+export async function confirmInvoiceUpload(
+  s3Key: string,
+  note?: string,
+  pageNotes?: string[],
+  outletId?: string,
+  category?: InvoiceCategory,
+  categoryDetail?: string
+) {
   if (!clientAuthToken) {
     throw new Error("Client is not authenticated. Please log in first.");
   }
@@ -366,6 +390,10 @@ export async function confirmInvoiceUpload(s3Key: string, note?: string, pageNot
   if (trimmedNote) body.note = trimmedNote;
   if (trimmedPages && trimmedPages.some((n) => n.length > 0)) body.pageNotes = trimmedPages;
   if (outletId) body.outletId = outletId;
+  if (category) body.category = category;
+  if (category === "other" && categoryDetail?.trim()) {
+    body.categoryDetail = categoryDetail.trim().slice(0, 200);
+  }
   const response = await fetch(`${currentApiBaseUrl}/api/invoices/confirm-upload`, {
     method: "POST",
     headers: {
@@ -409,6 +437,8 @@ export type ClientInvoiceUpdate = {
   note?: string | null;
   pageNotes?: string[];
   outletId?: string | null;
+  category?: InvoiceCategory;
+  categoryDetail?: string | null;
 };
 
 /**

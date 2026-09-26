@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { deleteObjectFromS3 } from "@/lib/s3";
+import { categorySchema, validateCategory } from "@/lib/categories";
 
 /**
  * Client self-service on their OWN invoice.
@@ -20,6 +21,8 @@ const updateSchema = z.object({
   note: z.string().trim().max(500).nullable().optional(),
   pageNotes: z.array(z.string().trim().max(500)).max(20).optional(),
   outletId: z.string().uuid("Invalid outlet ID").nullable().optional(),
+  category: categorySchema.optional(),
+  categoryDetail: z.string().trim().max(200).nullable().optional(),
 });
 
 async function ownInvoiceOr404(
@@ -81,12 +84,29 @@ export async function PATCH(
       }
     }
 
+    // Validate category + detail against the CURRENT row when partially sent
+    const nextCategory = result.data.category ?? current.category;
+    const nextDetail =
+      result.data.categoryDetail !== undefined
+        ? result.data.categoryDetail
+        : (current as any).categoryDetail;
+    const catError = validateCategory(nextCategory, nextDetail);
+    if (catError) {
+      return NextResponse.json({ error: catError }, { status: 400 });
+    }
+
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (note !== undefined) patch.clientNote = note && note.length > 0 ? note : null;
     if (pageNotes !== undefined) {
       patch.pageNotes = pageNotes.some((n) => n.length > 0) ? pageNotes : null;
     }
     if (outletId !== undefined) patch.outletId = outletId;
+    if (result.data.category !== undefined) {
+      patch.category = nextCategory;
+      patch.categoryDetail = nextCategory === "other" ? (nextDetail as string).trim() : null;
+    } else if (result.data.categoryDetail !== undefined && current.category === "other") {
+      patch.categoryDetail = result.data.categoryDetail?.trim() || null;
+    }
 
     if (Object.keys(patch).length === 1) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });

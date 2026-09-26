@@ -38,7 +38,9 @@ import {
   setApiBaseUrl,
   getApiBaseUrl,
   loadPersistedToken,
+  CATEGORY_LABELS,
 } from "./src/services/api";
+import type { InvoiceCategory } from "./src/services/api";
 
 /* ------------------------------------------------------------------ */
 /* Liquid Glass design language (iOS 26 inspired, built with expo-blur */
@@ -51,6 +53,8 @@ type HistoryInvoice = {
   status: string;
   priority: string;
   outlet: { id: string; name: string } | null;
+  category?: string | null;
+  categoryDetail?: string | null;
   clientNote?: string | null;
   pageNotes?: string[] | null;
   uploadedByName?: string | null;
@@ -183,12 +187,15 @@ export default function App() {
   // Each page carries its own note (per-snap notes, since pages differ).
   const [pages, setPages] = useState<Array<{ uri: string; note: string; rotation: 0 | 90 | 180 | 270; flipH: boolean }>>([]);
   const [note, setNote] = useState("");
+  // Main upload category (default Sales Invoice; Other reveals a text box)
+  const [category, setCategory] = useState<InvoiceCategory>("sales_invoice");
+  const [categoryDetail, setCategoryDetail] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   // Outlets of this client (for tagging uploads). 0 = none yet, 1 = auto,
   // 2+ = client must pick one per upload.
-  const [outlets, setOutlets] = useState<Array<{ id: string; name: string }>>([]);
+  const [outlets, setOutlets] = useState<Array<{ id: string; name: string; address?: string | null; phone?: string | null }>>([]);
   const [selectedOutletId, setSelectedOutletId] = useState<string | null>(null);
   // History state
   const [history, setHistory] = useState<HistoryInvoice[]>([]);
@@ -222,6 +229,8 @@ export default function App() {
   const [editNote, setEditNote] = useState("");
   const [editPageNotes, setEditPageNotes] = useState<string[]>([]);
   const [editOutletId, setEditOutletId] = useState<string | null>(null);
+  const [editCategory, setEditCategory] = useState<InvoiceCategory>("sales_invoice");
+  const [editCategoryDetail, setEditCategoryDetail] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [viewUrl, setViewUrl] = useState<string | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
@@ -313,6 +322,8 @@ export default function App() {
     setUsername("");
     setPages([]);
     setNote("");
+    setCategory("sales_invoice");
+    setCategoryDetail("");
     setOutlets([]);
     setSelectedOutletId(null);
     setHistory([]);
@@ -379,24 +390,32 @@ export default function App() {
     }
   };
 
-  // 2d. Edit my invoice (notes/outlet) — server enforces pre-assignment rule
+  // 2d. Edit my invoice (notes/outlet/category) — server enforces pre-assignment rule
   const handleStartEdit = () => {
     if (!selected) return;
     setEditNote(selected.clientNote || "");
     const n = selected.pageNotes || [];
     setEditPageNotes(n);
     setEditOutletId(selected.outlet?.id || null);
+    setEditCategory((selected.category as InvoiceCategory) || "sales_invoice");
+    setEditCategoryDetail(selected.categoryDetail || "");
     setEditing(true);
   };
 
   const handleSaveEdit = async () => {
     if (!selected) return;
+    if (editCategory === "other" && !editCategoryDetail.trim()) {
+      Alert.alert("Category Required", "Please describe the custom category for Other.");
+      return;
+    }
     setSavingEdit(true);
     try {
       await updateMyInvoice(selected.id, {
         note: editNote,
         pageNotes: editPageNotes,
         outletId: editOutletId,
+        category: editCategory,
+        categoryDetail: editCategory === "other" ? editCategoryDetail.trim() : null,
       });
       setEditing(false);
       Alert.alert("Saved", "Invoice updated.");
@@ -652,6 +671,10 @@ export default function App() {
       Alert.alert("Outlet Required", "Please select which outlet this invoice is from.");
       return;
     }
+    if (category === "other" && !categoryDetail.trim()) {
+      Alert.alert("Category Required", "Please describe the custom category for Other.");
+      return;
+    }
     setUploading(true);
     setLoading(true);
 
@@ -672,18 +695,22 @@ export default function App() {
       await uploadBytesToS3(uploadUrl, pdf.base64, "application/pdf");
 
       setStatusMessage("Confirming upload with server...");
-      // 4. Confirm upload (overall note + per-page notes + outlet)
+      // 4. Confirm upload (overall note + per-page notes + outlet + category)
       const confirmed = await confirmInvoiceUpload(
         s3Key,
         note,
         pages.map((p) => p.note),
-        selectedOutletId ?? undefined
+        selectedOutletId ?? undefined,
+        category,
+        category === "other" ? categoryDetail.trim() : undefined
       );
 
       // 5. Fire-and-forget confirmation
       setStatusMessage("");
       setPages([]);
       setNote("");
+      setCategory("sales_invoice");
+      setCategoryDetail("");
       setLastUploadId(confirmed?.invoice?.id ?? null);
       setScreen("success");
     } catch (error: any) {
@@ -1038,6 +1065,37 @@ export default function App() {
 
                 {pages.length > 0 && (
                   <>
+                    <Text style={styles.label}>Category *</Text>
+                    <View style={styles.catChips}>
+                      {(Object.keys(CATEGORY_LABELS) as Array<keyof typeof CATEGORY_LABELS>).map((c) => {
+                        const active = category === c;
+                        return (
+                          <TouchableOpacity
+                            key={c}
+                            onPress={() => setCategory(c)}
+                            activeOpacity={0.85}
+                            style={[styles.catChip, active && styles.catChipActive]}
+                          >
+                            <Text style={[styles.catChipText, active && styles.catChipTextActive]}>
+                              {CATEGORY_LABELS[c]}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    {category === "other" && (
+                      <>
+                        <Text style={styles.label}>Describe the category *</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="e.g. Delivery Challan"
+                          placeholderTextColor="#64748B"
+                          value={categoryDetail}
+                          onChangeText={(t) => setCategoryDetail(t.slice(0, 200))}
+                          maxLength={200}
+                        />
+                      </>
+                    )}
                     <Text style={styles.label}>Note for office (optional)</Text>
                     <TextInput
                       style={[styles.input, styles.noteInput]}
@@ -1079,6 +1137,8 @@ export default function App() {
                   onPress={() => {
                     setPages([]);
                     setNote("");
+                    setCategory("sales_invoice");
+                    setCategoryDetail("");
                     setLastUploadId(null);
                     setScreen("scan");
                   }}
@@ -1120,6 +1180,7 @@ export default function App() {
                           <Text style={styles.historyMeta}>
                             {new Date(inv.createdAt).toLocaleDateString()}
                             {inv.outlet ? ` • ${inv.outlet.name}` : ""}
+                            {inv.category ? ` • ${inv.category === "other" && inv.categoryDetail ? inv.categoryDetail : (CATEGORY_LABELS as Record<string, string>)[inv.category] || inv.category}` : ""}
                             {inv.uploadedByName ? ` • by ${inv.uploadedByName}` : ""}
                             {inv.ocrData?.amount ? ` • $${inv.ocrData.amount}` : ""}
                             {inv.ocrData?.invoiceNo ? ` • ${inv.ocrData.invoiceNo}` : ""}
@@ -1159,10 +1220,10 @@ export default function App() {
 
                 <Text style={styles.cardTitle}>{selected.ocrData?.vendor || "Invoice"}</Text>
                 <Text style={styles.instruction}>
-                  {new Date(selected.createdAt).toLocaleString()}
-                  {selected.outlet ? ` • ${selected.outlet.name}` : " • No outlet"}
+                  {new Date(selected.createdAt).toLocaleDateString()}
+                  {selected.outlet ? ` • ${selected.outlet.name}` : ""}
+                  {selected.category ? ` • ${selected.category === "other" && selected.categoryDetail ? selected.categoryDetail : (CATEGORY_LABELS as Record<string, string>)[selected.category] || selected.category}` : ""}
                   {selected.ocrData?.amount ? ` • $${selected.ocrData.amount}` : ""}
-                  {selected.ocrData?.invoiceNo ? ` • ${selected.ocrData.invoiceNo}` : ""}
                 </Text>
 
                 {!viewUrl ? (
@@ -1267,6 +1328,30 @@ export default function App() {
                           ))}
                         </View>
                       </>
+                    )}
+                    <Text style={styles.label}>Category</Text>
+                    <View style={styles.editOutletRow}>
+                      {(Object.keys(CATEGORY_LABELS) as InvoiceCategory[]).map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          onPress={() => setEditCategory(c)}
+                          style={[styles.editOutletChip, editCategory === c && styles.editOutletChipActive]}
+                        >
+                          <Text style={[styles.editOutletChipText, editCategory === c && styles.editOutletChipTextActive]}>
+                            {CATEGORY_LABELS[c]}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {editCategory === "other" && (
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Describe the category *"
+                        placeholderTextColor="#64748B"
+                        value={editCategoryDetail}
+                        onChangeText={(t) => setEditCategoryDetail(t.slice(0, 200))}
+                        maxLength={200}
+                      />
                     )}
                     <PrimaryButton
                       title="Save Changes"
@@ -1387,6 +1472,27 @@ export default function App() {
                     <Text style={styles.pwMsgText}>{teamMsg}</Text>
                   </View>
                 )}
+
+                {/* Our branches — which shops this team's uploads can tag */}
+                <View style={styles.branchesBox}>
+                  <Text style={styles.label}>🏪 Our Branches ({outlets.length})</Text>
+                  {outlets.length === 0 ? (
+                    <Text style={styles.branchesEmpty}>
+                      No branches yet — ask the office to add outlets for upload tagging.
+                    </Text>
+                  ) : (
+                    outlets.map((o) => (
+                      <View key={o.id} style={styles.branchRowBox}>
+                        <Text style={styles.branchRow}>◍ {o.name}</Text>
+                        {[o.address, o.phone].filter(Boolean).length > 0 && (
+                          <Text style={styles.branchSub}>
+                            {[o.address, o.phone].filter(Boolean).join(" • ")}
+                          </Text>
+                        )}
+                      </View>
+                    ))
+                  )}
+                </View>
 
                 {team.length === 0 && !teamLoading ? (
                   <Text style={styles.instruction}>No team members yet — add the first below.</Text>
@@ -2048,6 +2154,32 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     marginTop: 3,
   },
+  catChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  catChip: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
+  catChipActive: {
+    backgroundColor: "rgba(52,211,153,0.9)",
+    borderColor: "rgba(52,211,153,0.9)",
+  },
+  catChipText: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  catChipTextActive: {
+    color: "#052E1B",
+  },
   statusPill: {
     borderWidth: 1,
     paddingHorizontal: 10,
@@ -2210,6 +2342,31 @@ const styles = StyleSheet.create({
   teamFormRow: {
     flexDirection: "row",
     gap: 8,
+  },
+  branchesBox: {
+    borderWidth: 1,
+    borderColor: "rgba(125,211,252,0.3)",
+    backgroundColor: "rgba(125,211,252,0.07)",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  branchesEmpty: {
+    fontSize: 12,
+    color: "#94A3B8",
+  },
+  branchRowBox: {
+    marginTop: 6,
+  },
+  branchRow: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#F8FAFC",
+  },
+  branchSub: {
+    fontSize: 12,
+    color: "#94A3B8",
+    marginTop: 1,
   },
   timeline: {
     marginTop: 12,

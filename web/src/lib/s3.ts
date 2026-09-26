@@ -28,10 +28,13 @@ const forcePathStyle = process.env.S3_FORCE_PATH_STYLE === "false"
   ? false
   : Boolean(endpoint || process.env.S3_FORCE_PATH_STYLE === "true");
 
-// Configure S3 client (compatible with MinIO, AWS S3, Cloudflare R2, or LocalStack)
+// Configure S3 client (compatible with MinIO, AWS S3, Cloudflare R2, LocalStack).
 // In production, prefer IAM roles / env credentials; never commit real keys.
+// requestChecksumCalculation WHEN_REQUIRED: newer SDKs attach a CRC32 header
+// to every PutObject, which strict S3 emulators reject on presigned PUTs.
 export const s3Client = new S3Client({
   region: REGION,
+  requestChecksumCalculation: "WHEN_REQUIRED",
   ...(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
     ? {
         credentials: {

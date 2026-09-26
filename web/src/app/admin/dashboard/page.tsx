@@ -24,6 +24,7 @@ export default function AdminDashboard() {
   const [staffList, setStaffList] = useState<any[]>([]);
   const [staffFilter, setStaffFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStaffId, setBulkStaffId] = useState<string>("");
@@ -41,6 +42,7 @@ export default function AdminDashboard() {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (outletFilter !== "all") params.set("outlet", outletFilter);
+      if (categoryFilter !== "all") params.set("category", categoryFilter);
       if (staffFilter !== "all" && staffFilter !== "unassigned") params.set("assigned_to", staffFilter);
       const qs = params.toString();
       const url = qs ? `/api/invoices?${qs}` : "/api/invoices";
@@ -69,7 +71,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     loadData();
-  }, [statusFilter, outletFilter, staffFilter]);
+  }, [statusFilter, outletFilter, staffFilter, categoryFilter]);
 
   // Client-side visible rows: search + unassigned + priority
   const visibleInvoices = invoices.filter((inv) => {
@@ -84,6 +86,8 @@ export default function AdminDashboard() {
         inv.client?.phone,
         inv.client?.email,
         inv.outlet?.name,
+        inv.category,
+        inv.categoryDetail,
         inv.ocrData?.vendor,
         inv.ocrData?.invoiceNo,
         inv.ocrData?.amount != null ? String(inv.ocrData.amount) : "",
@@ -138,7 +142,7 @@ export default function AdminDashboard() {
   }
 
   function handleExportCsv() {
-    const header = ["id", "client", "phone", "outlet", "status", "priority", "amount", "vendor", "invoiceNo", "assignedTo", "createdAt"];
+    const header = ["id", "client", "phone", "outlet", "category", "category_detail", "status", "priority", "amount", "vendor", "invoiceNo", "assignedTo", "createdAt"];
     const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const lines = [header.join(",")];
     for (const inv of visibleInvoices) {
@@ -148,6 +152,8 @@ export default function AdminDashboard() {
           inv.client?.name,
           inv.client?.phone || inv.client?.email,
           inv.outlet?.name,
+          inv.category,
+          inv.categoryDetail,
           inv.status,
           inv.priority,
           inv.ocrData?.amount,
@@ -343,6 +349,21 @@ export default function AdminDashboard() {
               <option value="urgent">Urgent</option>
             </select>
           </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-xs font-medium text-slate-700">Category:</span>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
+            >
+              <option value="all">All</option>
+              <option value="sales_invoice">Sales Invoice</option>
+              <option value="purchase_bill">Purchase Bill</option>
+              <option value="expense_bill">Expense Bill</option>
+              <option value="asset_bill">Asset Bill</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
 
           <button
             onClick={() => loadData()}
@@ -439,6 +460,7 @@ export default function AdminDashboard() {
                   <th className="px-6 py-3.5">Invoice ID / S3 Key</th>
                   <th className="px-6 py-3.5">Client</th>
                   <th className="px-6 py-3.5">Outlet</th>
+                  <th className="px-6 py-3.5">Category</th>
                   <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5">Details</th>
                   <th className="px-6 py-3.5">Assigned To</th>
@@ -449,7 +471,7 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-slate-100">
                 {visibleInvoices.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
                       {loading ? "Loading invoices..." : "No invoices found matching criteria."}
                     </td>
                   </tr>
@@ -488,6 +510,16 @@ export default function AdminDashboard() {
                           ) : (
                             <span className="text-slate-400 italic text-[11px]">No outlet</span>
                           )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-semibold"
+                            title={inv.category === "other" && inv.categoryDetail ? inv.categoryDetail : undefined}
+                          >
+                            {inv.category === "other"
+                              ? inv.categoryDetail || "Other"
+                              : ({ sales_invoice: "Sales", purchase_bill: "Purchase", expense_bill: "Expense", asset_bill: "Asset" } as Record<string, string>)[inv.category] || inv.category}
+                          </span>
                         </td>
                         <td className="px-6 py-4">
                           <span

@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { clients, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { checkObjectExistsInS3, MAX_UPLOAD_BYTES } from "@/lib/s3";
+import { categorySchema, validateCategory } from "@/lib/categories";
 
 const confirmUploadSchema = z.object({
   s3Key: z.string().min(1, "s3Key is required"),
@@ -14,6 +15,9 @@ const confirmUploadSchema = z.object({
   pageNotes: z.array(z.string().trim().max(500)).max(20).optional(),
   // Optional outlet (must belong to the authenticated client)
   outletId: z.string().uuid("Invalid outlet ID").optional(),
+  // Main upload category (default sales_invoice) + custom text for Other
+  category: categorySchema.optional(),
+  categoryDetail: z.string().trim().max(200).optional(),
 });
 
 export async function POST(request: Request) {
@@ -39,6 +43,13 @@ export async function POST(request: Request) {
     }
 
     const { s3Key } = result.data;
+    const catError = validateCategory(result.data.category, result.data.categoryDetail);
+    if (catError) {
+      return NextResponse.json({ error: catError }, { status: 400 });
+    }
+    const category = result.data.category ?? "sales_invoice";
+    const categoryDetail =
+      category === "other" ? (result.data.categoryDetail as string).trim() : null;
     const clientNote = result.data.note?.trim() ? result.data.note.trim() : null;
     const pageNotes =
       result.data.pageNotes && result.data.pageNotes.some((n) => n.length > 0)
@@ -142,6 +153,8 @@ export async function POST(request: Request) {
           clientNote: clientNote,
           pageNotes: pageNotes,
           outletId: outletId,
+          category: category,
+          categoryDetail: categoryDetail,
           // Uploader attribution: team staff id, or null when the owner uploads
           uploadedByStaffId: client.role === "client_staff" ? client.sub : null,
         })

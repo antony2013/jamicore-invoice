@@ -99,6 +99,10 @@ export const invoices = pgTable("invoices", {
   pageNotes: jsonb("page_notes").$type<string[] | null>(),
   // Which outlet of the client this invoice came from (null = Unspecified)
   outletId: uuid("outlet_id").references(() => outlets.id),
+  // Main upload category (sales/purchase/expense/asset/other).
+  // When 'other', categoryDetail holds the custom text (required).
+  category: text("category").notNull().default("sales_invoice"),
+  categoryDetail: text("category_detail"),
   // Which client-staff member uploaded (null = client owner themself)
   uploadedByStaffId: uuid("uploaded_by_staff_id").references(() => clientStaff.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

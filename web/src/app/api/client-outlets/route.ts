@@ -25,7 +25,12 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      outlets: rows.map((o) => ({ id: o.id, name: o.name })),
+      outlets: rows.map((o) => ({
+        id: o.id,
+        name: o.name,
+        address: o.address,
+        phone: o.phone,
+      })),
     });
   } catch (error: unknown) {
     console.error("Error in GET /api/client-outlets:", error);
