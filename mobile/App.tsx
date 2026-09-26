@@ -137,7 +137,60 @@ function PrimaryButton({
   );
 }
 
-/** Quiet glass button (.glass buttonStyle analog). */
+/** Server endpoint switcher — usable logged-out (login) and logged-in
+ *  (account), so local <-> cloud switching never needs reinstall. */
+function ServerSwitcher({
+  serverUrl,
+  setServerUrlState,
+  showServerConfig,
+  setShowServerConfig,
+  onSave,
+}: {
+  serverUrl: string;
+  setServerUrlState: (v: string) => void;
+  showServerConfig: boolean;
+  setShowServerConfig: (v: boolean) => void;
+  onSave: () => void;
+}) {
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setShowServerConfig(!showServerConfig)}
+        style={{ marginTop: 14, alignItems: "center" }}
+      >
+        <Text style={styles.serverToggle}>
+          ⚙ Server: {getApiBaseUrl()} {showServerConfig ? "▾" : "▸"}
+        </Text>
+      </TouchableOpacity>
+      {showServerConfig && (
+        <View style={{ marginTop: 10 }}>
+          <TouchableOpacity
+            onPress={() => setServerUrlState("https://ac.jamicore.com")}
+            style={{ marginBottom: 8 }}
+          >
+            <Text style={styles.serverPreset}>☁️ Use Cloud (ac.jamicore.com)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setServerUrlState("http://192.168.1.13:3000")}
+            style={{ marginBottom: 8 }}
+          >
+            <Text style={styles.serverPreset}>🏠 Use Local (192.168.1.13:3000)</Text>
+          </TouchableOpacity>
+          <TextInput
+            style={styles.input}
+            value={serverUrl}
+            onChangeText={setServerUrlState}
+            placeholder="https://ac.jamicore.com"
+            placeholderTextColor="#64748B"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <GlassButton title="Save Server URL" onPress={onSave} />
+        </View>
+      )}
+    </>
+  );
+}
 function GlassButton({
   title,
   onPress,
@@ -857,6 +910,13 @@ export default function App() {
                   loading={loading}
                   loadingText="Signing in..."
                 />
+                <ServerSwitcher
+                  serverUrl={serverUrl}
+                  setServerUrlState={setServerUrlState}
+                  showServerConfig={showServerConfig}
+                  setShowServerConfig={setShowServerConfig}
+                  onSave={handleUpdateServerUrl}
+                />
               </GlassCard>
             )}
 
@@ -1434,28 +1494,13 @@ export default function App() {
                   loading={savingEdit}
                   loadingText="Saving..."
                 />
-                <TouchableOpacity
-                  onPress={() => setShowServerConfig(!showServerConfig)}
-                  style={{ marginTop: 18, alignItems: "center" }}
-                >
-                  <Text style={styles.serverToggle}>
-                    ⚙ Server: {getApiBaseUrl()} {showServerConfig ? "▾" : "▸"}
-                  </Text>
-                </TouchableOpacity>
-                {showServerConfig && (
-                  <View style={{ marginTop: 10 }}>
-                    <TextInput
-                      style={styles.input}
-                      value={serverUrl}
-                      onChangeText={setServerUrlState}
-                      placeholder="https://ac.jamicore.com"
-                      placeholderTextColor="#64748B"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <GlassButton title="Save Server URL" onPress={handleUpdateServerUrl} />
-                  </View>
-                )}
+                <ServerSwitcher
+                  serverUrl={serverUrl}
+                  setServerUrlState={setServerUrlState}
+                  showServerConfig={showServerConfig}
+                  setShowServerConfig={setShowServerConfig}
+                  onSave={handleUpdateServerUrl}
+                />
                 <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
               </GlassCard>
             )}
@@ -1652,6 +1697,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#64748B",
     fontWeight: "600",
+  },
+  serverPreset: {
+    fontSize: 13,
+    color: "#7DD3FC",
+    fontWeight: "700",
+    textAlign: "center",
   },
   /* Glass container (GlassEffectContainer analog): shared frosted surface */
   segmentOuter: {
