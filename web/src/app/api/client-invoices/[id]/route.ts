@@ -6,6 +6,7 @@ import { invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { deleteObjectFromS3 } from "@/lib/s3";
 import { categorySchema, validateCategory } from "@/lib/categories";
+import { hasManualAssignment, isClientEditable } from "@/lib/client-edit-rules";
 
 /**
  * Client self-service on their OWN invoice.
@@ -14,8 +15,8 @@ import { categorySchema, validateCategory } from "@/lib/categories";
  * record — client edits/deletes are rejected with 409.
  * Team staff are further scoped to rows THEY uploaded: one member can never
  * touch another member's uploads (owner sees/edits everything).
+ * Edit/withdraw eligibility lives in lib/client-edit-rules.ts (shared).
  */
-const PRE_ASSIGNMENT = ["uploaded", "ocr_pending", "ocr_done", "ocr_failed"] as const;
 
 const updateSchema = z.object({
   note: z.string().trim().max(500).nullable().optional(),
@@ -60,7 +61,9 @@ export async function PATCH(
     if ("error" in found) return found.error;
     const current = found.invoice;
 
-    if (!PRE_ASSIGNMENT.includes(current.status as (typeof PRE_ASSIGNMENT)[number])) {
+    // Editable pre-assignment, plus auto-assigned-but-untouched rows
+    // (shared rule — see lib/client-edit-rules.ts).
+    if (!isClientEditable(current.status, await hasManualAssignment(id))) {
       return NextResponse.json(
         { error: `Invoice is already with the office (status '${current.status}'). Contact them to make changes.` },
         { status: 409 }
@@ -152,7 +155,10 @@ export async function DELETE(
     if ("error" in found) return found.error;
     const current = found.invoice;
 
-    if (!PRE_ASSIGNMENT.includes(current.status as (typeof PRE_ASSIGNMENT)[number])) {
+    // Shared rule: pre-assignment always; `assigned` only when auto-assigned
+    // and untouched (no admin hand). Then the 1-hour upload window.
+    const manual = await hasManualAssignment(id);
+    if (!isClientEditable(current.status, manual)) {
       return NextResponse.json(
         { error: `Invoice is already with the office (status '${current.status}') and cannot be withdrawn.` },
         { status: 409 }

@@ -54,12 +54,14 @@ type HistoryInvoice = {
   status: string;
   priority: string;
   outlet: { id: string; name: string } | null;
-  category?: string | null;
-  categoryDetail?: string | null;
   clientNote?: string | null;
   pageNotes?: string[] | null;
   uploadedByName?: string | null;
   deletableUntil?: string | null;
+  category?: string | null;
+  categoryDetail?: string | null;
+  editable?: boolean;
+  withdrawable?: boolean;
   ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
   createdAt: string;
   updatedAt: string;
@@ -315,9 +317,11 @@ export default function App() {
     ? `${client.name} (${client.clientName})`
     : client?.name;
 
-  /** Client-editable while the office hasn't taken it. Mirrors server rule. */
-  const isEditable = (status: string) =>
-    ["uploaded", "ocr_pending", "ocr_done", "ocr_failed"].includes(status);
+  /** Server is the arbiter; UI mirrors its editable/withdrawable flags
+   *  (falls back to local rule for stale cached rows). Auto-assigned but
+   *  untouched invoices stay editable so the 1h uploader window works. */
+  const isEditable = (inv: HistoryInvoice | null) =>
+    inv?.editable ?? (inv ? ["uploaded", "ocr_pending", "ocr_done", "ocr_failed"].includes(inv.status) : false);
 
   const counts = {
     total: history.length,
@@ -670,7 +674,9 @@ export default function App() {
 
   /** Withdrawal allowed within 1h of upload (server enforces; UI mirrors). */
   const canWithdraw = (inv: HistoryInvoice | null) => {
-    if (!inv || !isEditable(inv.status)) return false;
+    if (!inv) return false;
+    if (inv.withdrawable !== undefined) return inv.withdrawable;
+    if (!isEditable(inv)) return false;
     if (!inv.deletableUntil) return true;
     return Date.now() < new Date(inv.deletableUntil).getTime();
   };
@@ -1480,7 +1486,7 @@ export default function App() {
                     <GlassButton title="Cancel" onPress={() => setEditing(false)} />
                   </View>
                 ) : (
-                  isEditable(selected.status) && (
+                  isEditable(selected) && (
                     <View style={styles.detailActions}>
                       <View style={{ flex: 1 }}>
                         <GlassButton title="✏️ Edit" onPress={handleStartEdit} />
@@ -1493,12 +1499,12 @@ export default function App() {
                     </View>
                   )
                 )}
-                {isEditable(selected.status) && !editing && !canWithdraw(selected) && (
+                {isEditable(selected) && !editing && !canWithdraw(selected) && (
                   <Text style={styles.lockNote}>
                     ⏳ 1-hour withdrawal window expired — contact the office to remove this invoice.
                   </Text>
                 )}
-                {!isEditable(selected.status) && !editing && (
+                {!isEditable(selected) && !editing && (
                   <Text style={styles.lockNote}>
                     🔒 With the office (status: {selected.status}) — contact them for changes.
                   </Text>

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices, invoiceStatusLog } from "@/db/schema";
+import { assignments, invoices, invoiceStatusLog } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
+import { isClientEditable, isClientWithdrawable } from "@/lib/client-edit-rules";
 
 /**
  * Invoice history (mobile "My History" screen).
@@ -33,12 +34,26 @@ export async function GET(request: Request) {
       limit: 100,
     });
 
+    // Which rows were manually assigned (admin hand involved)? One query.
+    const manualRows =
+      rows.length > 0
+        ? await db.query.assignments.findMany({
+            where: inArray(
+              assignments.invoiceId,
+              rows.map((r) => r.id)
+            ),
+            columns: { invoiceId: true },
+          })
+        : [];
+    const manualSet = new Set(manualRows.map((r) => r.invoiceId));
+
     const withLogs = await Promise.all(
       rows.map(async (inv) => {
         const logs = await db.query.invoiceStatusLog.findMany({
           where: eq(invoiceStatusLog.invoiceId, inv.id),
           orderBy: [desc(invoiceStatusLog.timestamp)],
         });
+        const manual = manualSet.has(inv.id);
         return {
           id: inv.id,
           status: inv.status,
@@ -58,6 +73,9 @@ export async function GET(request: Request) {
           uploadedByName: (inv as any).uploadedBy?.name ?? null,
           // Client withdrawal allowed within 1h of upload (server enforces)
           deletableUntil: new Date(new Date(inv.createdAt).getTime() + 60 * 60 * 1000).toISOString(),
+          // UI mirrors: edit allowed pre-assignment + untouched auto-assigned
+          editable: isClientEditable(inv.status, manual),
+          withdrawable: isClientWithdrawable(inv.status, manual, inv.createdAt),
           category: (inv as any).category ?? "sales_invoice",
           categoryDetail: (inv as any).categoryDetail ?? null,
           createdAt: inv.createdAt,
