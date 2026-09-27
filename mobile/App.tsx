@@ -24,7 +24,6 @@ import {
   getUploadUrl,
   getMyInvoices,
   getMyOutlets,
-  addOutlet,
   getMyInvoiceViewUrl,
   updateMyInvoice,
   deleteMyInvoice,
@@ -41,7 +40,7 @@ import {
   loadPersistedToken,
   CATEGORY_LABELS,
 } from "./src/services/api";
-import type { InvoiceCategory, Outlet } from "./src/services/api";
+import type { InvoiceCategory, Outlet, TeamMember } from "./src/services/api";
 
 /* ------------------------------------------------------------------ */
 /* Liquid Glass design language (iOS 26 inspired, built with expo-blur */
@@ -297,20 +296,18 @@ export default function App() {
   const [confirmPw, setConfirmPw] = useState("");
   const [pwMsg, setPwMsg] = useState<string | null>(null);
   // Team state (owner only)
-  const [team, setTeam] = useState<Array<{ id: string; name: string; username: string; isActive: boolean; createdAt: string }>>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
   const [tmName, setTmName] = useState("");
   const [tmUsername, setTmUsername] = useState("");
   const [tmPin, setTmPin] = useState("");
+  // Which branch the new/existing member works at (null = all branches)
+  const [tmOutletId, setTmOutletId] = useState<string | null>(null);
   const [resetPinId, setResetPinId] = useState<string | null>(null);
   const [resetPin, setResetPin] = useState("");
   const [teamMsg, setTeamMsg] = useState<string | null>(null);
-  // Branches state (owner + staff)
-  const [branchName, setBranchName] = useState("");
-  const [branchAddress, setBranchAddress] = useState("");
-  const [branchPhone, setBranchPhone] = useState("");
-  const [branchMsg, setBranchMsg] = useState<string | null>(null);
-  const [branchSaving, setBranchSaving] = useState(false);
+  // Branches state (read-only list, owner + staff)
+  const [branchesLoading, setBranchesLoading] = useState(false);
 
   const isOwner = client?.role !== "client_staff";
   const displayName = client?.role === "client_staff" && client?.clientName
@@ -582,11 +579,32 @@ export default function App() {
     setSavingEdit(true);
     setTeamMsg(null);
     try {
-      const res = await addTeamMember(tmName.trim(), tmUsername.trim(), tmPin.trim());
+      const res = await addTeamMember(tmName.trim(), tmUsername.trim(), tmPin.trim(), tmOutletId);
       setTmName("");
       setTmUsername("");
       setTmPin("");
+      setTmOutletId(null);
       setTeamMsg(res.message || "Team member added.");
+      const members = await getTeam();
+      setTeam(members);
+    } catch (err: any) {
+      setTeamMsg(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  /** Move a member to another branch (null = all branches). */
+  const handleSetMemberOutlet = async (id: string, outletId: string | null) => {
+    setSavingEdit(true);
+    setTeamMsg(null);
+    try {
+      await updateTeamMember(id, { outletId });
+      setTeamMsg(
+        outletId
+          ? `Moved to ${outlets.find((o) => o.id === outletId)?.name || "branch"}.`
+          : "Now works at all branches."
+      );
       const members = await getTeam();
       setTeam(members);
     } catch (err: any) {
@@ -631,9 +649,9 @@ export default function App() {
     }
   };
 
-  // Branches (owner + staff): refresh list, add new branch
+  // Branches: read-only list (office manages them)
   const handleLoadBranches = async () => {
-    setBranchSaving(true);
+    setBranchesLoading(true);
     try {
       const list = await getMyOutlets();
       setOutlets(list);
@@ -641,34 +659,7 @@ export default function App() {
     } catch (err: any) {
       Alert.alert("Branches Failed", err.message);
     } finally {
-      setBranchSaving(false);
-    }
-  };
-
-  const handleAddBranch = async () => {
-    if (branchName.trim().length < 2) {
-      setBranchMsg("Branch name must be at least 2 characters.");
-      return;
-    }
-    const ph = branchPhone.trim();
-    if (ph && !/^\+\d{7,15}$/.test(ph)) {
-      setBranchMsg("Phone must be E.164 format, e.g. +18765550123.");
-      return;
-    }
-    setBranchSaving(true);
-    setBranchMsg(null);
-    try {
-      const res = await addOutlet(branchName.trim(), branchAddress.trim(), ph);
-      setBranchName("");
-      setBranchAddress("");
-      setBranchPhone("");
-      setBranchMsg(res.message || "Branch added.");
-      const list = await getMyOutlets();
-      setOutlets(list);
-    } catch (err: any) {
-      setBranchMsg(err.message);
-    } finally {
-      setBranchSaving(false);
+      setBranchesLoading(false);
     }
   };
 
@@ -1599,6 +1590,35 @@ export default function App() {
                           {m.name} {!m.isActive && <Text style={styles.teamOff}>(off)</Text>}
                         </Text>
                         <Text style={styles.historyMeta}>@{m.username}</Text>
+                        {/* Which branch this member works at — the label the
+                            office needs to know who belongs to which shop. */}
+                        <Text style={styles.historyMeta}>
+                          🏪 {m.outletName || "All branches"}
+                        </Text>
+                        {outlets.length > 0 && (
+                          <View style={styles.editOutletRow}>
+                            {outlets.map((o) => {
+                              const active = m.outletId === o.id;
+                              return (
+                                <TouchableOpacity
+                                  key={o.id}
+                                  onPress={() => handleSetMemberOutlet(m.id, active ? null : o.id)}
+                                  style={[styles.editOutletChip, active && styles.editOutletChipActive]}
+                                  disabled={savingEdit}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.editOutletChipText,
+                                      active && styles.editOutletChipTextActive,
+                                    ]}
+                                  >
+                                    {o.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        )}
                         {resetPinId === m.id ? (
                           <View style={styles.teamResetRow}>
                             <TextInput
@@ -1651,6 +1671,45 @@ export default function App() {
                 )}
 
                 <Text style={[styles.label, { marginTop: 12 }]}>Add team member</Text>
+                {outlets.length > 0 && (
+                  <>
+                    <Text style={styles.label}>Works at</Text>
+                    <View style={styles.editOutletRow}>
+                      <TouchableOpacity
+                        onPress={() => setTmOutletId(null)}
+                        style={[styles.editOutletChip, tmOutletId === null && styles.editOutletChipActive]}
+                      >
+                        <Text
+                          style={[
+                            styles.editOutletChipText,
+                            tmOutletId === null && styles.editOutletChipTextActive,
+                          ]}
+                        >
+                          All branches
+                        </Text>
+                      </TouchableOpacity>
+                      {outlets.map((o) => {
+                        const active = tmOutletId === o.id;
+                        return (
+                          <TouchableOpacity
+                            key={o.id}
+                            onPress={() => setTmOutletId(active ? null : o.id)}
+                            style={[styles.editOutletChip, active && styles.editOutletChipActive]}
+                          >
+                            <Text
+                              style={[
+                                styles.editOutletChipText,
+                                active && styles.editOutletChipTextActive,
+                              ]}
+                            >
+                              {o.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
                 <TextInput
                   style={styles.input}
                   placeholder="Full name"
@@ -1690,21 +1749,16 @@ export default function App() {
               </GlassCard>
             )}
 
-            {/* Screen: Branches (owner + staff — view all, add new).
-                "Added by" shows which team member created each branch. */}
+            {/* Screen: Branches — READ ONLY. Branches are created/edited by the
+                office (admin web); mobile only shows the list. */}
             {screen === "branches" && (
               <GlassCard>
                 <Text style={styles.cardTitle}>🏪 Branches</Text>
                 <Text style={styles.instruction}>
-                  Shops of {client?.name}. New branches are immediately available in the upload outlet picker.
+                  Shops of {client?.name}. To add or change a branch, contact the office.
                 </Text>
-                {branchMsg && (
-                  <View style={styles.pwMsgBox}>
-                    <Text style={styles.pwMsgText}>{branchMsg}</Text>
-                  </View>
-                )}
-                {outlets.length === 0 && !branchSaving ? (
-                  <Text style={styles.instruction}>No branches yet — add the first below.</Text>
+                {outlets.length === 0 && !branchesLoading ? (
+                  <Text style={styles.instruction}>No branches yet — the office will add them.</Text>
                 ) : (
                   outlets.map((o) => (
                     <View key={o.id} style={styles.teamRow}>
@@ -1722,37 +1776,6 @@ export default function App() {
                     </View>
                   ))
                 )}
-                <Text style={[styles.label, { marginTop: 12 }]}>Add branch</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Branch/shop name *"
-                  placeholderTextColor="#64748B"
-                  value={branchName}
-                  onChangeText={setBranchName}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Address (optional)"
-                  placeholderTextColor="#64748B"
-                  value={branchAddress}
-                  onChangeText={setBranchAddress}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Phone, e.g. +18765550123 (optional)"
-                  placeholderTextColor="#64748B"
-                  value={branchPhone}
-                  onChangeText={setBranchPhone}
-                  keyboardType="phone-pad"
-                  autoCapitalize="none"
-                />
-                <PrimaryButton
-                  title="Add Branch"
-                  onPress={handleAddBranch}
-                  disabled={branchSaving}
-                  loading={branchSaving}
-                  loadingText="Adding..."
-                />
                 <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
               </GlassCard>
             )}

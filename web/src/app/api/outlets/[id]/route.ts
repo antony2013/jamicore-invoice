@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
+import { assignments, clientStaff, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isValidTransition } from "@/lib/status-flow";
 
@@ -141,6 +141,12 @@ export async function DELETE(
       );
     }
 
+    // client_staff.outlet_id has no FK (avoids a circular reference), so
+    // detach the members of this outlet first (they become "all branches").
+    await db
+      .update(clientStaff)
+      .set({ outletId: null })
+      .where(eq(clientStaff.outletId, id));
     await db.delete(outlets).where(eq(outlets.id, id));
     return NextResponse.json({ success: true, message: "Outlet deleted." });
   } catch (error: any) {

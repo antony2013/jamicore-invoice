@@ -269,28 +269,6 @@ export async function getMyOutlets(): Promise<Outlet[]> {
 }
 
 /**
- * Add a branch/outlet for my own client. Allowed for owner AND team staff.
- * Records who created it (visible as "Added by X", else Office).
- */
-export async function addOutlet(name: string, address?: string, phone?: string) {
-  if (!clientAuthToken) {
-    throw new Error("Client is not authenticated. Please log in first.");
-  }
-  const body: Record<string, unknown> = { name: name.trim() };
-  if (address?.trim()) body.address = address.trim();
-  if (phone?.trim()) body.phone = phone.trim();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-outlets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${clientAuthToken}` },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to add branch.");
-  }
-  return data;
-}
-/**
  * 6. My invoice history with status timelines (client's own rows only).
  */
 export async function getMyInvoices() {
@@ -332,6 +310,9 @@ export type TeamMember = {
   name: string;
   username: string;
   isActive: boolean;
+  /** Outlet/branch this member works at (null = all/unspecified) */
+  outletId?: string | null;
+  outletName?: string | null;
   createdAt: string;
 };
 
@@ -351,12 +332,19 @@ export async function getTeam(): Promise<TeamMember[]> {
   return data.team;
 }
 
-export async function addTeamMember(name: string, username: string, pin: string) {
+export async function addTeamMember(
+  name: string,
+  username: string,
+  pin: string,
+  outletId?: string | null
+) {
   const token = requireAuth();
+  const body: Record<string, unknown> = { name, username, pin };
+  if (outletId) body.outletId = outletId;
   const response = await fetch(`${currentApiBaseUrl}/api/client-team`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ name, username, pin }),
+    body: JSON.stringify(body),
   });
   const data = await response.json();
   if (!response.ok) {
@@ -367,7 +355,7 @@ export async function addTeamMember(name: string, username: string, pin: string)
 
 export async function updateTeamMember(
   id: string,
-  update: { name?: string; pin?: string; isActive?: boolean }
+  update: { name?: string; pin?: string; isActive?: boolean; outletId?: string | null }
 ) {
   const token = requireAuth();
   const response = await fetch(`${currentApiBaseUrl}/api/client-team/${id}`, {

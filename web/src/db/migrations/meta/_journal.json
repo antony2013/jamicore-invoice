@@ -71,6 +71,13 @@
       "when": 1790411495901,
       "tag": "0009_outlet-default-staff",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790485755362,
+      "tag": "0010_member-outlet",
+      "breakpoints": true
     }
   ]
 }

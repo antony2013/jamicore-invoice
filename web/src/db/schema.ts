@@ -47,6 +47,11 @@ export const clientStaff = pgTable("client_staff", {
   username: text("username").notNull().unique(),
   pinHash: text("pin_hash").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  // Which outlet/branch this member works at (null = all/unspecified).
+  // Plain uuid WITHOUT an FK (a two-way FK with outlets.createdByStaffId
+  // would be a circular reference breaking type inference). Ownership is
+  // validated in the API; outlet deletion nulls this out explicitly.
+  outletId: uuid("outlet_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -150,6 +155,9 @@ export const clientStaffRelations = relations(clientStaff, ({ one, many }) => ({
     fields: [clientStaff.clientId],
     references: [clients.id],
   }),
+  // NOTE: no `outlet` relation here — outlets <-> clientStaff would be a
+  // circular relation pair that breaks TS inference. Outlet names for team
+  // rows are fetched with a separate query (see GET /api/client-team).
   uploads: many(invoices),
 }));
 

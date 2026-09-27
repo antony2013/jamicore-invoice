@@ -3,7 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clientStaff } from "@/db/schema";
+import { clientStaff, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 
 const updateSchema = z.object({
@@ -16,6 +16,8 @@ const updateSchema = z.object({
     .optional(),
   // Deactivation blocks login but preserves upload attribution
   isActive: z.boolean().optional(),
+  // Move the member to another outlet of the same client (null clears it)
+  outletId: z.string().uuid("Invalid outlet ID").nullable().optional(),
 });
 
 export async function PATCH(
@@ -46,11 +48,20 @@ export async function PATCH(
       );
     }
 
-    const { name, pin, isActive } = result.data;
+    const { name, pin, isActive, outletId } = result.data;
     const patch: Record<string, unknown> = {};
     if (name !== undefined) patch.name = name.trim();
     if (pin !== undefined) patch.pinHash = await bcrypt.hash(pin, 10);
     if (isActive !== undefined) patch.isActive = isActive;
+    if (outletId !== undefined) {
+      if (outletId !== null) {
+        const outlet = await db.query.outlets.findFirst({ where: eq(outlets.id, outletId) });
+        if (!outlet || outlet.clientId !== client.clientId) {
+          return NextResponse.json({ error: "Invalid outlet for this client." }, { status: 400 });
+        }
+      }
+      patch.outletId = outletId;
+    }
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
@@ -64,6 +75,7 @@ export async function PATCH(
         name: clientStaff.name,
         username: clientStaff.username,
         isActive: clientStaff.isActive,
+        outletId: clientStaff.outletId,
       });
 
     return NextResponse.json({

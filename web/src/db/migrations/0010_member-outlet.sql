@@ -1,0 +1,1 @@
+ALTER TABLE "client_staff" ADD COLUMN "outlet_id" uuid;

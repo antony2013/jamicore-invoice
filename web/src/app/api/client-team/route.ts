@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, clientStaff } from "@/db/schema";
+import { clients, clientStaff, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 
 const usernameSchema = z
@@ -25,6 +25,9 @@ const createSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
   username: usernameSchema,
   pin: pinSchema,
+  // Which outlet this member works at (null = all/unspecified). Shown as a
+  // label next to the member everywhere.
+  outletId: z.string().uuid("Invalid outlet ID").nullable().optional(),
 });
 
 /** Require an authenticated OWNER (not team staff). Returns client or error. */
@@ -48,6 +51,17 @@ export async function GET(request: Request) {
     orderBy: [asc(clientStaff.name)],
   });
 
+  // Outlet names in one extra query (no relation, avoids a relation cycle)
+  const outletIds = [...new Set(rows.map((m) => (m as any).outletId).filter(Boolean))] as string[];
+  const outletRows =
+    outletIds.length > 0
+      ? await db.query.outlets.findMany({
+          where: inArray(outlets.id, outletIds),
+          columns: { id: true, name: true },
+        })
+      : [];
+  const outletNames = new Map(outletRows.map((o) => [o.id, o.name]));
+
   return NextResponse.json({
     success: true,
     team: rows.map((m) => ({
@@ -55,6 +69,8 @@ export async function GET(request: Request) {
       name: m.name,
       username: m.username,
       isActive: m.isActive,
+      outletId: (m as any).outletId ?? null,
+      outletName: outletNames.get((m as any).outletId) ?? null,
       createdAt: m.createdAt,
     })),
   });
@@ -74,7 +90,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, username, pin } = result.data;
+    const { name, username, pin, outletId } = result.data;
 
     // Username must be globally unique across owners AND team staff
     // (single login field must resolve to exactly one account).
@@ -86,6 +102,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "This user ID is already taken." }, { status: 409 });
     }
 
+    // Outlet must belong to the same client (when given)
+    if (outletId) {
+      const outlet = await db.query.outlets.findFirst({ where: eq(outlets.id, outletId) });
+      if (!outlet || outlet.clientId !== auth.client.clientId) {
+        return NextResponse.json({ error: "Invalid outlet for this client." }, { status: 400 });
+      }
+    }
+
     const [created] = await db
       .insert(clientStaff)
       .values({
@@ -93,6 +117,7 @@ export async function POST(request: Request) {
         name: name.trim(),
         username,
         pinHash: await bcrypt.hash(pin, 10),
+        outletId: outletId ?? null,
       })
       .returning({ id: clientStaff.id, name: clientStaff.name, username: clientStaff.username });
 
