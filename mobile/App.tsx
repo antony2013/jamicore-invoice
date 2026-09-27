@@ -1817,10 +1817,6 @@ const styles = StyleSheet.create({
   brandLogo: {
     width: 92,
     height: 46,
-    borderRadius: 10,
-    backgroundColor: "#000000",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
   },
   title: {
     fontSize: 26,
@@ -1907,10 +1903,6 @@ const styles = StyleSheet.create({
   loginLogo: {
     width: 200,
     height: 100,
-    borderRadius: 14,
-    backgroundColor: "#000000",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
   },
   cardTitle: {
     fontSize: 20,
