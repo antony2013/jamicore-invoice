@@ -861,12 +861,12 @@ export default function App() {
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
             {/* Header */}
             <View style={styles.header}>
-              <View style={styles.brandRow}>
-                <Image
-                  source={require("./assets/logo.png")}
-                  style={styles.brandLogo}
-                  resizeMode="contain"
-                />
+                <View style={styles.brandRow}>
+                  <Image
+                    source={require("./assets/logo-white.png")}
+                    style={styles.brandLogo}
+                    resizeMode="contain"
+                  />
                 <View>
                   <Text style={styles.title}>Invoice Scanner</Text>
                   <Text style={styles.subtitle}>Client Invoice Collection Portal</Text>
@@ -924,13 +924,13 @@ export default function App() {
             {/* Screen 1: User ID + Password Login */}
             {screen === "login" && (
               <GlassCard>
-                <View style={styles.loginGlow}>
-                  <Image
-                    source={require("./assets/logo.png")}
-                    style={styles.loginLogo}
-                    resizeMode="contain"
-                  />
-                </View>
+                  <View style={styles.loginGlow}>
+                    <Image
+                      source={require("./assets/logo-white.png")}
+                      style={styles.loginLogo}
+                      resizeMode="contain"
+                    />
+                  </View>
                 <Text style={styles.cardTitle}>Welcome back</Text>
                 <Text style={styles.instruction}>
                   Sign in with your user ID and password (shop staff: user ID + PIN).
