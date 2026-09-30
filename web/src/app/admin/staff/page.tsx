@@ -182,8 +182,8 @@ export default function AdminStaffPage() {
             </div>
           </form>
         )}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <table className="w-full text-left text-xs text-slate-600">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+          <table className="w-full min-w-[1100px] text-left text-xs text-slate-600">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
               <tr>
                 <th className="px-6 py-3.5">Name</th>
