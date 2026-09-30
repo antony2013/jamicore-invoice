@@ -62,6 +62,7 @@ export async function GET() {
     const formatted = clientList.map((c) => ({
       id: c.id,
       name: c.name,
+      username: (c as { username?: string | null }).username ?? null,
       phone: (c as { phone?: string | null }).phone ?? null,
       email: (c as { email?: string | null }).email ?? null,
       assignedStaffId: (c as { assignedStaffId?: string | null }).assignedStaffId ?? null,

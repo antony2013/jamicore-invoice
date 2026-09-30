@@ -3,8 +3,9 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, clients, clientStaff, invoices, invoiceStatusLog, staff } from "@/db/schema";
+import { assignments, clients, clientStaff, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { deleteObjectFromS3 } from "@/lib/s3";
 import { isValidTransition } from "@/lib/status-flow";
 
 const phoneSchema = z
@@ -149,5 +150,91 @@ export async function PATCH(
   } catch (error: any) {
     console.error("Error updating client:", error);
     return NextResponse.json({ error: "Failed to update client" }, { status: 500 });
+  }
+}
+
+/**
+ * Remove a client — TWO-STEP, server-enforced:
+ * Step 1: DELETE with no (or wrong) confirmUsername → 400 + counts of what
+ * would be destroyed. Nothing is deleted.
+ * Step 2: DELETE with { confirmUsername } matching the client's user ID
+ * exactly → full cascade: S3 objects (best-effort) + invoices (logs and
+ * assignment history cascade) + outlets + team members + client.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user || (session.user as any).role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
+    }
+
+    const { id } = await params;
+    const client = await db.query.clients.findFirst({ where: eq(clients.id, id) });
+    if (!client) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    const [clientInvoices, clientOutlets, team] = await Promise.all([
+      db.query.invoices.findMany({
+        where: eq(invoices.clientId, id),
+        columns: { id: true, s3Key: true },
+      }),
+      db.query.outlets.findMany({
+        where: eq(outlets.clientId, id),
+        columns: { id: true },
+      }),
+      db.query.clientStaff.findMany({
+        where: eq(clientStaff.clientId, id),
+        columns: { id: true },
+      }),
+    ]);
+    const counts = {
+      invoices: clientInvoices.length,
+      outlets: clientOutlets.length,
+      members: team.length,
+    };
+
+    const body = await request.json().catch(() => ({}));
+    if (body?.confirmUsername !== (client as any).username) {
+      return NextResponse.json(
+        {
+          error: "Confirmation required. Re-send with confirmUsername set to the client's user ID to permanently delete everything below.",
+          counts,
+        },
+        { status: 400 }
+      );
+    }
+
+    // S3 objects first (best-effort — a failure must not strand DB rows,
+    // the key is reported back instead).
+    let s3Failures = 0;
+    for (const inv of clientInvoices) {
+      const ok = await deleteObjectFromS3((inv as any).s3Key);
+      if (!ok) s3Failures++;
+    }
+
+    await db.transaction(async (tx) => {
+      // Assignment history + status logs cascade off the invoice rows.
+      await tx.delete(invoices).where(eq(invoices.clientId, id));
+      await tx.delete(outlets).where(eq(outlets.clientId, id));
+      // Team members cascade off the client row.
+      await tx.delete(clients).where(eq(clients.id, id));
+    });
+
+    return NextResponse.json({
+      success: true,
+      message:
+        `Client "${(client as any).name}" removed ` +
+        `(${counts.invoices} invoice(s), ${counts.outlets} outlet(s), ${counts.members} team member(s)).` +
+        (s3Failures > 0 ? ` ${s3Failures} S3 object(s) could not be deleted — clean them manually.` : ""),
+      deleted: counts,
+      s3Failures,
+    });
+  } catch (error: any) {
+    console.error("Error deleting client:", error);
+    return NextResponse.json({ error: "Failed to delete client" }, { status: 500 });
   }
 }

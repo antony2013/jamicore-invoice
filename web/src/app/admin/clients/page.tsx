@@ -19,6 +19,13 @@ export default function AdminClientsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  // Two-step client removal: step 1 (Remove click) fetches destroy counts,
+  // step 2 requires typing the client's user ID exactly.
+  const [removing, setRemoving] = useState<any | null>(null);
+  const [removeCounts, setRemoveCounts] = useState<{ invoices: number; outlets: number; members: number } | null>(null);
+  const [removeConfirm, setRemoveConfirm] = useState("");
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removingBusy, setRemovingBusy] = useState(false);
   // Outlets per client
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [outletsByClient, setOutletsByClient] = useState<Record<string, any[]>>({});
@@ -270,6 +277,58 @@ export default function AdminClientsPage() {
     }
   }
 
+  // Step 1 of removal: ask the server what would be destroyed (nothing is
+  // deleted yet) and open the confirm panel for this client.
+  async function handleRemoveStep1(client: any) {
+    setRemoveError(null);
+    setRemoveConfirm("");
+    setRemovingBusy(true);
+    try {
+      const res = await fetch(`/api/clients/${client.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) throw new Error("Unexpected success without confirmation");
+      if (!data.counts) throw new Error(data.error || "Failed to start removal");
+      setRemoving(client);
+      setRemoveCounts(data.counts);
+    } catch (err: any) {
+      setRemoveError(err.message);
+    } finally {
+      setRemovingBusy(false);
+    }
+  }
+
+  // Step 2: typed user ID matches → permanent cascade delete.
+  async function handleRemoveStep2() {
+    if (!removing) return;
+    setRemoveError(null);
+    setRemovingBusy(true);
+    try {
+      const res = await fetch(`/api/clients/${removing.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmUsername: removeConfirm.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete client");
+      setRemoving(null);
+      setRemoveCounts(null);
+      setRemoveConfirm("");
+      setSuccess(data.message);
+      load();
+    } catch (err: any) {
+      setRemoveError(err.message);
+    } finally {
+      setRemovingBusy(false);
+    }
+  }
+
+  function cancelRemove() {
+    setRemoving(null);
+    setRemoveCounts(null);
+    setRemoveConfirm("");
+    setRemoveError(null);
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200">
@@ -447,6 +506,7 @@ export default function AdminClientsPage() {
                       <td className="px-6 py-4">{c.totalInvoices}</td>
                       <td className="px-6 py-4">{new Date(c.createdAt).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
                       {resettingId === c.id ? (
                         <div className="flex items-center justify-end gap-1">
                           <input
@@ -479,8 +539,61 @@ export default function AdminClientsPage() {
                           Reset password
                         </button>
                       )}
+                        <button
+                          onClick={() => handleRemoveStep1(c)}
+                          disabled={removingBusy}
+                          className="px-2.5 py-1 border border-red-200 hover:bg-red-50 text-red-600 rounded text-xs font-medium disabled:opacity-50"
+                          title="Permanently remove this client and everything under it (two-step verify)"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </td>
                   </tr>
+                  {removing?.id === c.id && (
+                    <tr key={`${c.id}-remove`} className="bg-red-50/60">
+                      <td colSpan={9} className="px-6 py-4">
+                        <div className="max-w-2xl">
+                          <h4 className="text-xs font-bold text-red-800 mb-1">
+                            Remove “{c.name}” (@{c.username}) permanently?
+                          </h4>
+                          <p className="text-xs text-red-700 mb-2">
+                            This destroys {removeCounts?.invoices ?? "…"} invoice(s) (files included),{" "}
+                            {removeCounts?.outlets ?? "…"} outlet(s) and {removeCounts?.members ?? "…"} team member(s).
+                            This cannot be undone.
+                          </p>
+                          {removeError && (
+                            <div className="mb-2 p-2 rounded-lg bg-white border border-red-300 text-red-700 text-xs">
+                              {removeError}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <input
+                              value={removeConfirm}
+                              onChange={(e) => setRemoveConfirm(e.target.value)}
+                              placeholder={`Type ${c.username} to confirm`}
+                              autoCapitalize="none"
+                              autoCorrect="off"
+                              className="flex-1 px-2 py-1.5 border border-red-300 rounded text-xs outline-none font-mono"
+                            />
+                            <button
+                              onClick={handleRemoveStep2}
+                              disabled={removingBusy || removeConfirm.trim() !== c.username}
+                              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold disabled:opacity-40"
+                            >
+                              {removingBusy ? "Removing…" : "Confirm delete"}
+                            </button>
+                            <button
+                              onClick={cancelRemove}
+                              className="px-3 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {expandedClient === c.id && (
                     <tr key={`${c.id}-outlets`} className="bg-purple-50/50">
                       <td colSpan={9} className="px-6 py-4">
