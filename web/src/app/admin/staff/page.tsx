@@ -16,6 +16,9 @@ export default function AdminStaffPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Per-row password reset (admin sets a new login password for the member)
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
 
   async function load() {
     setLoading(true);
@@ -194,12 +197,13 @@ export default function AdminStaffPage() {
                 <th className="px-6 py-3.5 text-center">Total</th>
                 <th className="px-6 py-3.5 text-center" title="Distinct clients currently assigned">Clients</th>
                 <th className="px-6 py-3.5">Joined</th>
+                <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {staffList.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={12} className="px-6 py-12 text-center text-slate-400">
                     {loading ? "Loading staff..." : "No staff accounts yet."}
                   </td>
                 </tr>
@@ -216,7 +220,33 @@ export default function AdminStaffPage() {
                           const m = Math.floor((Date.now() - lastSeen) / 60000);
                           return m < 60 ? `${m}m ago` : `${Math.floor(m / 60)}h ago`;
                         })();
-                  return (
+  async function handleResetPassword(staffId: string) {
+    if (resetPassword.length < 8) {
+      setFormError("New password must be at least 8 characters.");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/staff/${staffId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: resetPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to reset password");
+      setResettingId(null);
+      setResetPassword("");
+      setSuccess("Password reset. Share the new password with the staff member.");
+    } catch (err: any) {
+      setFormError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
                   <tr key={s.id} className="hover:bg-slate-50/80">
                     <td className="px-6 py-4 font-medium text-slate-800">{s.name}</td>
                     <td className="px-6 py-4">{s.email}</td>
@@ -238,6 +268,40 @@ export default function AdminStaffPage() {
                     <td className="px-6 py-4 text-center font-bold text-slate-800">{st.total}</td>
                     <td className="px-6 py-4 text-center font-bold text-slate-600">{st.clients}</td>
                     <td className="px-6 py-4">{new Date(s.createdAt).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-right">
+                      {resettingId === s.id ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <input
+                            type="password"
+                            value={resetPassword}
+                            onChange={(e) => setResetPassword(e.target.value)}
+                            placeholder="New password"
+                            className="w-32 px-2 py-1 border border-slate-300 rounded text-xs outline-none"
+                          />
+                          <button
+                            onClick={() => handleResetPassword(s.id)}
+                            disabled={saving}
+                            className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => { setResettingId(null); setResetPassword(""); }}
+                            className="px-2 py-1 border border-slate-200 rounded text-xs"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setResettingId(s.id); setResetPassword(""); setFormError(null); }}
+                          className="px-2.5 py-1 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded text-xs font-medium"
+                          title="Set a new login password for this staff member"
+                        >
+                          Reset password
+                        </button>
+                      )}
+                    </td>
                   </tr>
                   );
                 })
