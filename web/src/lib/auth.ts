@@ -52,6 +52,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as any).role;
+        return token;
+      }
+      // Returning sessions re-validate the account on every request: a
+      // deleted/recreated staff row (stale id) kills the JWT instead of
+      // letting it 500 later on FK writes (assignments, status logs…).
+      if (token?.id) {
+        const stillThere = await db.query.staff.findFirst({
+          where: eq(staff.id, token.id as string),
+          columns: { id: true },
+        });
+        if (!stillThere) return null as any;
       }
       return token;
     },
