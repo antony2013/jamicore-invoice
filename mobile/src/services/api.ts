@@ -21,6 +21,7 @@ try {
 }
 
 const TOKEN_KEY = "jamicore_client_jwt";
+const CLIENT_KEY = "jamicore_client_profile";
 
 export function setApiBaseUrl(url: string) {
   currentApiBaseUrl = url.replace(/\/+$/, "");
@@ -28,6 +29,25 @@ export function setApiBaseUrl(url: string) {
 
 export function getApiBaseUrl(): string {
   return currentApiBaseUrl;
+}
+
+/**
+ * Backend fetch with central session-expiry handling: a 401 clears the
+ * stored token and throws a SESSION_EXPIRED error so the app can send the
+ * user back to login instead of sitting on a dead session.
+ * (Presigned S3 calls keep raw fetch — their 401s are not session issues.)
+ */
+export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(url, init);
+  if (response.status === 401) {
+    await setAuthToken(null);
+    throw new Error("SESSION_EXPIRED:Please sign in again.");
+  }
+  return response;
+}
+
+export function isSessionExpired(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith("SESSION_EXPIRED:");
 }
 
 export async function loadPersistedToken(): Promise<string | null> {
@@ -41,44 +61,59 @@ export async function loadPersistedToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Restore the full session (token + client profile) on app launch.
+ */
+export async function loadPersistedSession(): Promise<{ token: string; client: any } | null> {
+  if (!secureStore) return null;
+  try {
+    const [token, clientJson] = await Promise.all([
+      secureStore.getItemAsync(TOKEN_KEY),
+      secureStore.getItemAsync(CLIENT_KEY),
+    ]);
+    if (!token || !clientJson) return null;
+    clientAuthToken = token;
+    return { token, client: JSON.parse(clientJson) };
+  } catch {
+    return null;
+  }
+}
+
 export async function setAuthToken(token: string | null) {
   clientAuthToken = token;
   if (secureStore) {
     try {
       if (token) await secureStore.setItemAsync(TOKEN_KEY, token);
-      else await secureStore.deleteItemAsync(TOKEN_KEY);
+      else {
+        await secureStore.deleteItemAsync(TOKEN_KEY);
+        await secureStore.deleteItemAsync(CLIENT_KEY);
+      }
     } catch {
       // In-memory token remains usable for this session
     }
   }
 }
 
-export function getAuthToken(): string | null {
-  return clientAuthToken;
-}
-
-/** Local file size in bytes (for S3 policy-level enforcement). Kept for
- *  potential direct-file flows; the PDF flow uses in-memory bytes instead. */
-export async function getLocalFileSize(imageUri: string): Promise<number | undefined> {
+export async function setPersistedClient(client: any | null) {
+  if (!secureStore) return;
   try {
-    const FileSystem = require("expo-file-system/legacy");
-    const info = await FileSystem.getInfoAsync(imageUri);
-    if (!info.exists) return undefined;
-    return info.size || undefined;
+    if (client) await secureStore.setItemAsync(CLIENT_KEY, JSON.stringify(client));
+    else await secureStore.deleteItemAsync(CLIENT_KEY);
   } catch {
-    return undefined;
+    // Profile restore is best-effort; token still works
   }
 }
 
 export async function logout() {
   await setAuthToken(null);
+  await setPersistedClient(null);
 }
 
 /**
  * 1. Login with admin-provided user ID + password. Persists JWT to SecureStore.
  */
 export async function loginWithPassword(username: string, password: string) {
-  const response = await fetch(`${currentApiBaseUrl}/api/client-auth/login`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: username.trim(), password }),
@@ -90,6 +125,7 @@ export async function loginWithPassword(username: string, password: string) {
   }
 
   await setAuthToken(data.token);
+  await setPersistedClient(data.client ?? null);
   return data;
 }
 
@@ -102,7 +138,7 @@ export async function getUploadUrl(contentType: string = "image/jpeg", contentLe
     throw new Error("Client is not authenticated. Please log in first.");
   }
 
-  const response = await fetch(`${currentApiBaseUrl}/api/invoices/upload-url`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/invoices/upload-url`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -126,19 +162,38 @@ export async function getUploadUrl(contentType: string = "image/jpeg", contentLe
  * expo-print (base64) — this sidesteps all device file-permission issues
  * ("isn't readable" cache errors, unreadable file:// URIs).
  */
+/**
+ * Base64 → bytes without atob() (not guaranteed on Hermes/native).
+ */
+function base64ToBytes(base64: string): Uint8Array {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const lookup: Record<string, number> = {};
+  for (let i = 0; i < chars.length; i++) lookup[chars[i]] = i;
+  const clean = base64.replace(/[^A-Za-z0-9+/=]/g, "");
+  const pad = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  const len = Math.floor((clean.length * 3) / 4) - pad;
+  const bytes = new Uint8Array(len);
+  let p = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const a = lookup[clean[i]] ?? 0;
+    const b = lookup[clean[i + 1]] ?? 0;
+    const c = lookup[clean[i + 2]] ?? 0;
+    const d = lookup[clean[i + 3]] ?? 0;
+    const triple = (a << 18) | (b << 12) | (c << 6) | d;
+    if (p < len) bytes[p++] = (triple >> 16) & 0xff;
+    if (p < len) bytes[p++] = (triple >> 8) & 0xff;
+    if (p < len) bytes[p++] = triple & 0xff;
+  }
+  return bytes;
+}
+
 export async function uploadBytesToS3(uploadUrl: string, base64: string, contentType: string) {
   if (!base64 || base64.length < 100) {
     throw new Error("Generated file is empty. Please try again.");
   }
-  // base64 -> bytes in chunks (avoids huge intermediate strings on device)
-  const binary = atob(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  const CHUNK = 8192;
-  for (let offset = 0; offset < len; offset += CHUNK) {
-    const end = Math.min(offset + CHUNK, len);
-    for (let i = offset; i < end; i++) bytes[i] = binary.charCodeAt(i);
-  }
+  // base64 -> bytes (Hermes-safe decoder, no atob)
+  const bytes = base64ToBytes(base64);
+  const len = bytes.length;
   const putRes = await fetch(uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": contentType },
@@ -257,7 +312,7 @@ export async function getMyOutlets(): Promise<Outlet[]> {
   if (!clientAuthToken) {
     throw new Error("Client is not authenticated. Please log in first.");
   }
-  const response = await fetch(`${currentApiBaseUrl}/api/client-outlets`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-outlets`, {
     method: "GET",
     headers: { Authorization: `Bearer ${clientAuthToken}` },
   });
@@ -276,7 +331,7 @@ export async function getMyInvoices() {
     throw new Error("Client is not authenticated. Please log in first.");
   }
 
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${clientAuthToken}`,
@@ -324,7 +379,7 @@ export type InvoiceMessage = {
  */
 export async function getMyInvoiceReportUrl(id: string): Promise<{ fileName: string; createdAt: string; downloadUrl: string } | null> {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/report`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${id}/report`, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -361,7 +416,7 @@ export async function downloadAndShareReport(downloadUrl: string, fileName: stri
  */
 export async function getInvoiceMessages(id: string): Promise<InvoiceMessage[]> {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -374,7 +429,7 @@ export async function getInvoiceMessages(id: string): Promise<InvoiceMessage[]> 
 
 export async function sendInvoiceMessage(id: string, body: string): Promise<InvoiceMessage> {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ body, kind: "text" }),
@@ -391,7 +446,7 @@ export async function sendInvoiceMessage(id: string, body: string): Promise<Invo
  */
 export async function requestInvoiceReport(id: string): Promise<InvoiceMessage> {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ kind: "request_report" }),
@@ -419,7 +474,7 @@ export type TeamMember = {
  */
 export async function getTeam(): Promise<TeamMember[]> {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-team`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-team`, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -439,7 +494,7 @@ export async function addTeamMember(
   const token = requireAuth();
   const body: Record<string, unknown> = { name, username, pin };
   if (outletId) body.outletId = outletId;
-  const response = await fetch(`${currentApiBaseUrl}/api/client-team`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-team`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
@@ -456,7 +511,7 @@ export async function updateTeamMember(
   update: { name?: string; pin?: string; isActive?: boolean; outletId?: string | null }
 ) {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-team/${id}`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-team/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(update),
@@ -473,7 +528,7 @@ export async function updateTeamMember(
  */
 export async function changeMyPin(oldPin: string, newPin: string) {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-team/change-pin`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-team/change-pin`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ oldPin, newPin }),
@@ -512,7 +567,7 @@ export async function confirmInvoiceUpload(
   if (category === "other" && categoryDetail?.trim()) {
     body.categoryDetail = categoryDetail.trim().slice(0, 200);
   }
-  const response = await fetch(`${currentApiBaseUrl}/api/invoices/confirm-upload`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/invoices/confirm-upload`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -540,7 +595,7 @@ function requireAuth(): string {
  */
 export async function getMyInvoiceViewUrl(invoiceId: string) {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}/image-url`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}/image-url`, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -565,7 +620,7 @@ export type ClientInvoiceUpdate = {
  */
 export async function updateMyInvoice(invoiceId: string, update: ClientInvoiceUpdate) {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(update),
@@ -583,7 +638,7 @@ export async function updateMyInvoice(invoiceId: string, update: ClientInvoiceUp
  */
 export async function deleteMyInvoice(invoiceId: string) {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${invoiceId}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -599,7 +654,7 @@ export async function deleteMyInvoice(invoiceId: string) {
  */
 export async function changeMyPassword(oldPassword: string, newPassword: string) {
   const token = requireAuth();
-  const response = await fetch(`${currentApiBaseUrl}/api/client-auth/change-password`, {
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-auth/change-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ oldPassword, newPassword }),

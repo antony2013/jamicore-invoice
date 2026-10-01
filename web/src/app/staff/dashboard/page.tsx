@@ -250,7 +250,7 @@ export default function StaffDashboard() {
                   <div className="bg-slate-50 rounded-lg p-3 text-xs space-y-1 mb-4">
                     <div className="flex justify-between">
                       <span className="text-slate-400">Total Amount:</span>
-                      <span className="font-bold text-slate-900">${inv.ocrData?.amount || "0.00"}</span>
+                      <span className="font-bold text-slate-900">J${inv.ocrData?.amount || "0.00"}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-400">Invoice No:</span>

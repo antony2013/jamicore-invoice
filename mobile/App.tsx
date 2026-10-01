@@ -37,7 +37,8 @@ import {
   confirmInvoiceUpload,
   setApiBaseUrl,
   getApiBaseUrl,
-  loadPersistedToken,
+  loadPersistedSession,
+  isSessionExpired,
   getMyInvoiceReportUrl,
   downloadAndShareReport,
   getInvoiceMessages,
@@ -100,11 +101,24 @@ function GlassCard({ children, style }: { children: React.ReactNode; style?: any
 }
 
 /** Tinted status pill (glassEffect .tint + shape analog). */
+export const STATUS_LABELS: Record<string, string> = {
+  uploaded: "Uploaded",
+  ocr_pending: "Processing",
+  ocr_done: "Processing",
+  ocr_failed: "Needs re-upload",
+  assigned: "With office",
+  in_review: "In review",
+  needs_info: "Info needed",
+  verified: "Verified",
+  collected: "Done",
+  disputed: "Disputed",
+};
+
 function StatusPill({ status }: { status: string }) {
   const t = STATUS_TINT[status] || STATUS_TINT.uploaded;
   return (
     <View style={[styles.statusPill, { backgroundColor: t.bg, borderColor: `${t.fg}66` }]}>
-      <Text style={[styles.statusPillText, { color: t.fg }]}>{status.replace(/_/g, " ")}</Text>
+      <Text style={[styles.statusPillText, { color: t.fg }]}>{STATUS_LABELS[status] || status.replace(/_/g, " ")}</Text>
     </View>
   );
 }
@@ -171,7 +185,7 @@ function ServerSwitcher({
         style={{ marginTop: 14, alignItems: "center" }}
       >
         <Text style={styles.serverToggle}>
-          ⚙ Server: {getApiBaseUrl()} {showServerConfig ? "▾" : "▸"}
+          Server: {getApiBaseUrl()} {showServerConfig ? "▾" : "▸"}
         </Text>
       </TouchableOpacity>
       {showServerConfig && (
@@ -180,14 +194,16 @@ function ServerSwitcher({
             onPress={() => setServerUrlState("https://ac.jamicore.com")}
             style={{ marginBottom: 8 }}
           >
-            <Text style={styles.serverPreset}>☁️ Use Cloud (ac.jamicore.com)</Text>
+            <Text style={styles.serverPreset}>Use Cloud (ac.jamicore.com)</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setServerUrlState("http://192.168.1.13:3000")}
-            style={{ marginBottom: 8 }}
-          >
-            <Text style={styles.serverPreset}>🏠 Use Local (192.168.1.13:3000)</Text>
-          </TouchableOpacity>
+          {__DEV__ && (
+            <TouchableOpacity
+              onPress={() => setServerUrlState("http://192.168.1.13:3000")}
+              style={{ marginBottom: 8 }}
+            >
+              <Text style={styles.serverPreset}>Use Local (dev only)</Text>
+            </TouchableOpacity>
+          )}
           <TextInput
             style={styles.input}
             value={serverUrl}
@@ -240,6 +256,7 @@ export default function App() {
   // Admin-provided credentials (no OTP)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [hidePassword, setHidePassword] = useState(true);
   const [client, setClient] = useState<{
     id: string;
     name: string;
@@ -277,19 +294,21 @@ export default function App() {
       setHistory(items);
       const found = items.find((x) => x.id === lastUploadId);
       if (found) {
-        openDetail(found);
+        openDetail(found, "scan");
       } else {
         Alert.alert("Not ready yet", "Opening history instead.");
         setScreen("history");
       }
     } catch (err: any) {
-      Alert.alert("View Failed", err.message);
+      await handleApiError(err, "View Failed");
     } finally {
       setHistoryLoading(false);
     }
   };
   // Detail / edit state
   const [selected, setSelected] = useState<HistoryInvoice | null>(null);
+  // Where to go back from detail (history list vs scan/success flow)
+  const [detailReturn, setDetailReturn] = useState<"history" | "scan">("history");
   // Per-invoice office thread + report download state
   const [thread, setThread] = useState<InvoiceMessage[]>([]);
   const [msgText, setMsgText] = useState("");
@@ -323,7 +342,9 @@ export default function App() {
   // Branches state (read-only list, owner + staff)
   const [branchesLoading, setBranchesLoading] = useState(false);
 
-  const isOwner = client?.role !== "client_staff";
+  // Owner role is exactly "client"; anything else (team staff, unknown)
+  // gets the restricted staff experience — never default to owner.
+  const isOwner = client?.role === "client";
   const displayName = client?.role === "client_staff" && client?.clientName
     ? `${client.name} (${client.clientName})`
     : client?.name;
@@ -340,19 +361,66 @@ export default function App() {
     done: history.filter((h) => ["collected", "disputed"].includes(h.status)).length,
   };
 
-  // Restore persisted JWT (SecureStore) on launch
+  // Restore persisted session on launch: token + profile, then validate
+  // the token by loading outlets (expired token → back to login).
   useEffect(() => {
-    loadPersistedToken().catch(() => undefined);
+    (async () => {
+      try {
+        const sess = await loadPersistedSession();
+        if (!sess) return;
+        setClient(sess.client);
+        try {
+          const own = await getMyOutlets();
+          setOutlets(own);
+          if (own.length > 1) {
+            setSelectedOutletId(null);
+            setScreen("outlet");
+          } else {
+            setSelectedOutletId(own.length === 1 ? own[0].id : null);
+            setScreen("scan");
+          }
+          getMyInvoices().then(setHistory).catch(() => undefined);
+        } catch (err: any) {
+          if (isSessionExpired(err)) {
+            await logout();
+            setClient(null);
+            setScreen("login");
+          }
+        }
+      } catch {
+        // Start at login on any restore failure
+      }
+    })();
   }, []);
+
+  // Any API call can report a dead session — drop to login once, centrally.
+  const dropToLogin = async () => {
+    await logout();
+    setClient(null);
+    setScreen("login");
+  };
+  const handleApiError = async (err: any, title: string) => {
+    if (isSessionExpired(err)) {
+      await dropToLogin();
+      Alert.alert("Session Expired", "Please sign in again.");
+    } else {
+      Alert.alert(title, err.message);
+    }
+  };
 
   // Backend URL settings
   const [serverUrl, setServerUrlState] = useState(getApiBaseUrl());
   const [showServerConfig, setShowServerConfig] = useState(false);
 
-  const handleUpdateServerUrl = () => {
+  const handleUpdateServerUrl = async () => {
+    // A token from the old server is meaningless on the new one — sign out
+    // so the user never hits confusing cross-server 401s.
+    await logout();
+    setClient(null);
+    setScreen("login");
     setApiBaseUrl(serverUrl);
     setShowServerConfig(false);
-    Alert.alert("Server Updated", `API connected to: ${getApiBaseUrl()}`);
+    Alert.alert("Server Updated", `Signed out. API connected to: ${getApiBaseUrl()}`);
   };
 
   // 1. Login with admin-provided user ID + password
@@ -422,15 +490,16 @@ export default function App() {
       setHistory(items);
       setScreen("history");
     } catch (err: any) {
-      Alert.alert("History Failed", err.message);
+      await handleApiError(err, "History Failed");
     } finally {
       setHistoryLoading(false);
     }
   };
 
   // 2b. Open invoice detail (viewer + edit + withdraw)
-  const openDetail = (inv: HistoryInvoice) => {
+  const openDetail = (inv: HistoryInvoice, from: "history" | "scan" = "history") => {
     setSelected(inv);
+    setDetailReturn(from);
     setEditing(false);
     setViewUrl(null);
     setThread([]);
@@ -521,7 +590,7 @@ export default function App() {
         setViewUrl(info.url);
       }
     } catch (err: any) {
-      Alert.alert("View Failed", err.message);
+      await handleApiError(err, "View Failed");
     } finally {
       setViewLoading(false);
     }
@@ -558,7 +627,7 @@ export default function App() {
       Alert.alert("Saved", "Invoice updated.");
       await refreshSelected(selected.id);
     } catch (err: any) {
-      Alert.alert("Save Failed", err.message);
+      await handleApiError(err, "Save Failed");
     } finally {
       setSavingEdit(false);
     }
@@ -583,7 +652,7 @@ export default function App() {
               setSelected(null);
               await handleLoadHistory();
             } catch (err: any) {
-              Alert.alert("Withdraw Failed", err.message);
+              await handleApiError(err, "Withdraw Failed");
             } finally {
               setSavingEdit(false);
             }
@@ -621,7 +690,7 @@ export default function App() {
       setNewPw("");
       setConfirmPw("");
     } catch (err: any) {
-      setPwMsg(err.message);
+      if (isSessionExpired(err)) { await dropToLogin(); return; } setPwMsg(err.message);
     } finally {
       setSavingEdit(false);
     }
@@ -632,11 +701,13 @@ export default function App() {
     setTeamLoading(true);
     setTeamMsg(null);
     try {
-      const members = await getTeam();
+      // Outlets too — the branch pickers hide forever if login had none yet
+      const [members, own] = await Promise.all([getTeam(), getMyOutlets().catch(() => [])]);
       setTeam(members);
+      if (own.length > 0) setOutlets(own);
       setScreen("team");
     } catch (err: any) {
-      Alert.alert("Team Failed", err.message);
+      await handleApiError(err, "Team Failed");
     } finally {
       setTeamLoading(false);
     }
@@ -663,14 +734,32 @@ export default function App() {
       const members = await getTeam();
       setTeam(members);
     } catch (err: any) {
-      setTeamMsg(err.message);
+      if (isSessionExpired(err)) { await dropToLogin(); return; } setTeamMsg(err.message);
     } finally {
       setSavingEdit(false);
     }
   };
 
-  /** Move a member to another branch (null = all branches). */
+  /** Move a member to another branch (null = all branches). Clearing asks
+   *  first — a single mis-tap must not silently reassign someone. */
   const handleSetMemberOutlet = async (id: string, outletId: string | null) => {
+    if (outletId === null) {
+      const target = team.find((m) => m.id === id);
+      const label = target ? `“${target.name}”` : "this member";
+      Alert.alert(
+        "Clear Branch?",
+        `${label} will work at ALL branches. Continue?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Clear", style: "destructive", onPress: () => { void doSetMemberOutlet(id, null); } },
+        ]
+      );
+      return;
+    }
+    return doSetMemberOutlet(id, outletId);
+  };
+
+  const doSetMemberOutlet = async (id: string, outletId: string | null) => {
     setSavingEdit(true);
     setTeamMsg(null);
     try {
@@ -683,7 +772,7 @@ export default function App() {
       const members = await getTeam();
       setTeam(members);
     } catch (err: any) {
-      setTeamMsg(err.message);
+      if (isSessionExpired(err)) { await dropToLogin(); return; } setTeamMsg(err.message);
     } finally {
       setSavingEdit(false);
     }
@@ -704,7 +793,7 @@ export default function App() {
       const members = await getTeam();
       setTeam(members);
     } catch (err: any) {
-      setTeamMsg(err.message);
+      if (isSessionExpired(err)) { await dropToLogin(); return; } setTeamMsg(err.message);
     } finally {
       setSavingEdit(false);
     }
@@ -718,7 +807,7 @@ export default function App() {
       const members = await getTeam();
       setTeam(members);
     } catch (err: any) {
-      setTeamMsg(err.message);
+      if (isSessionExpired(err)) { await dropToLogin(); return; } setTeamMsg(err.message);
     } finally {
       setSavingEdit(false);
     }
@@ -732,7 +821,7 @@ export default function App() {
       setOutlets(list);
       setScreen("branches");
     } catch (err: any) {
-      Alert.alert("Branches Failed", err.message);
+      await handleApiError(err, "Branches Failed");
     } finally {
       setBranchesLoading(false);
     }
@@ -849,7 +938,8 @@ export default function App() {
   const handleUploadAndConfirm = async () => {
     if (pages.length === 0 || uploading) return;
     if (outlets.length > 1 && !selectedOutletId) {
-      Alert.alert("Outlet Required", "Please select which outlet this invoice is from.");
+      // Straight to the gate — no dead-end alert
+      setScreen("outlet");
       return;
     }
     if (category === "other" && !categoryDetail.trim()) {
@@ -894,8 +984,10 @@ export default function App() {
       setCategoryDetail("");
       setLastUploadId(confirmed?.invoice?.id ?? null);
       setScreen("success");
+      // Refresh history in background so Scan count chips never go stale
+      getMyInvoices().then(setHistory).catch(() => undefined);
     } catch (error: any) {
-      Alert.alert("Upload Failed", error.message);
+      await handleApiError(error, "Upload Failed");
     } finally {
       setLoading(false);
       setUploading(false);
@@ -1019,18 +1111,30 @@ export default function App() {
                   onChangeText={setUsername}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  returnKeyType="next"
+                  onSubmitEditing={handleLogin}
                 />
 
                 <Text style={styles.label}>Password / PIN</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="••••••••"
-                  placeholderTextColor="#64748B"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="••••••••"
+                    placeholderTextColor="#64748B"
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={hidePassword}
+                    autoCapitalize="none"
+                    returnKeyType="go"
+                    onSubmitEditing={handleLogin}
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordToggle}
+                    onPress={() => setHidePassword((v) => !v)}
+                  >
+                    <Text style={styles.passwordToggleText}>{hidePassword ? "Show" : "Hide"}</Text>
+                  </TouchableOpacity>
+                </View>
 
                 <PrimaryButton
                   title="Sign In"
@@ -1348,11 +1452,15 @@ export default function App() {
             {screen === "history" && (
               <GlassCard>
                 <Text style={styles.cardTitle}>My History</Text>
+                {historyLoading && history.length === 0 ? (
+                  <Text style={styles.instruction}>Loading your uploads…</Text>
+                ) : (
                 <Text style={styles.instruction}>
                   {history.length === 0
                     ? "No uploads yet. Scan your first invoice to see it here."
                     : `${history.length} upload${history.length === 1 ? "" : "s"} — tap one to view, edit or withdraw it.`}
                 </Text>
+                )}
 
                 {history.map((inv) => (
                   <TouchableOpacity
@@ -1373,7 +1481,7 @@ export default function App() {
                             {inv.outlet ? ` • ${inv.outlet.name}` : ""}
                             {inv.category ? ` • ${inv.category === "other" && inv.categoryDetail ? inv.categoryDetail : (CATEGORY_LABELS as Record<string, string>)[inv.category] || inv.category}` : ""}
                             {inv.uploadedByName ? ` • by ${inv.uploadedByName}` : ""}
-                            {inv.ocrData?.amount ? ` • $${inv.ocrData.amount}` : ""}
+                            {inv.ocrData?.amount ? ` • J$${inv.ocrData.amount}` : ""}
                             {inv.ocrData?.invoiceNo ? ` • ${inv.ocrData.invoiceNo}` : ""}
                           </Text>
                         </View>
@@ -1404,8 +1512,8 @@ export default function App() {
               <GlassCard>
                 <View style={styles.userBadgeRow}>
                   <StatusPill status={selected.status} />
-                  <TouchableOpacity onPress={() => { setSelected(null); setEditing(false); setViewUrl(null); setScreen("history"); }}>
-                    <Text style={styles.linkText}>← History</Text>
+                  <TouchableOpacity onPress={() => { setSelected(null); setEditing(false); setViewUrl(null); setScreen(detailReturn); }}>
+                    <Text style={styles.linkText}>← {detailReturn === "history" ? "History" : "Scan"}</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -1414,7 +1522,7 @@ export default function App() {
                   {new Date(selected.createdAt).toLocaleDateString()}
                   {selected.outlet ? ` • ${selected.outlet.name}` : ""}
                   {selected.category ? ` • ${selected.category === "other" && selected.categoryDetail ? selected.categoryDetail : (CATEGORY_LABELS as Record<string, string>)[selected.category] || selected.category}` : ""}
-                  {selected.ocrData?.amount ? ` • $${selected.ocrData.amount}` : ""}
+                  {selected.ocrData?.amount ? ` • J$${selected.ocrData.amount}` : ""}
                 </Text>
 
                 {!viewUrl ? (
@@ -1427,7 +1535,13 @@ export default function App() {
                 ) : (
                   <View style={styles.docPreview}>
                     <Image source={{ uri: viewUrl }} style={styles.docImage} />
-                    <Text style={styles.historyMeta}>Link expires in 5 minutes — reopen if expired.</Text>
+                    <Text style={styles.historyMeta}>Link expires in 5 minutes.</Text>
+                    <GlassButton
+                      title={viewLoading ? "Reloading…" : "↻ Reload Document"}
+                      onPress={handleViewDocument}
+                      disabled={viewLoading}
+                      loading={viewLoading}
+                    />
                   </View>
                 )}
 
@@ -1452,14 +1566,14 @@ export default function App() {
                       </View>
                     )}
                     <View style={styles.timeline}>
-                      {selected.statusLogs.map((log, i) => (
+                      {(selected.statusLogs || []).map((log, i) => (
                         <View key={`${selected.id}-${i}`} style={styles.timelineRow}>
                           <LinearGradient
                             colors={["#FBBF24", "#F97316"]}
                             style={styles.timelineDot}
                           />
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.timelineStatus}>{log.status}</Text>
+                            <Text style={styles.timelineStatus}>{STATUS_LABELS[log.status] || log.status}</Text>
                             <Text style={styles.timelineNote}>
                               {new Date(log.timestamp).toLocaleString()}
                               {log.note ? ` — ${log.note}` : ""}
@@ -1556,28 +1670,40 @@ export default function App() {
                       maxLength={500}
                     />
                     <Text style={styles.label}>Page notes</Text>
-                    {Array.from({ length: Math.max(selected.pageNotes?.length || 0, 1) }).map((_, i) => (
-                      <View key={i}>
-                        <Text style={styles.pageNoteTitle}>Page {i + 1}</Text>
-                        <TextInput
-                          style={[styles.input, styles.pageNoteInput]}
-                          placeholder={`Note for page ${i + 1} (optional)…`}
-                          placeholderTextColor="#64748B"
-                          value={editPageNotes[i] || ""}
-                          onChangeText={(t) => {
-                            const next = [...editPageNotes];
-                            next[i] = t.slice(0, 500);
-                            setEditPageNotes(next);
-                          }}
-                          multiline
-                          maxLength={500}
-                        />
-                      </View>
-                    ))}
+                    {(selected.pageNotes?.length || 0) === 0 ? (
+                      <Text style={styles.historyMeta}>No pages recorded for notes.</Text>
+                    ) : (
+                      Array.from({ length: selected.pageNotes?.length || 0 }).map((_, i) => (
+                        <View key={i}>
+                          <Text style={styles.pageNoteTitle}>Page {i + 1}</Text>
+                          <TextInput
+                            style={[styles.input, styles.pageNoteInput]}
+                            placeholder={`Note for page ${i + 1} (optional)…`}
+                            placeholderTextColor="#64748B"
+                            value={editPageNotes[i] || ""}
+                            onChangeText={(t) => {
+                              const next = [...editPageNotes];
+                              next[i] = t.slice(0, 500);
+                              setEditPageNotes(next);
+                            }}
+                            multiline
+                            maxLength={500}
+                          />
+                        </View>
+                      ))
+                    )}
                     {outlets.length > 0 && (
                       <>
                         <Text style={styles.label}>Outlet</Text>
                         <View style={styles.editOutletRow}>
+                          <TouchableOpacity
+                            onPress={() => setEditOutletId(null)}
+                            style={[styles.editOutletChip, editOutletId === null && styles.editOutletChipActive]}
+                          >
+                            <Text style={[styles.editOutletChipText, editOutletId === null && styles.editOutletChipTextActive]}>
+                              Unspecified
+                            </Text>
+                          </TouchableOpacity>
                           {outlets.map((o) => (
                             <TouchableOpacity
                               key={o.id}
@@ -1956,7 +2082,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
     alignItems: "center",
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 560,
   },
   brandRow: {
     flexDirection: "row",
@@ -1997,7 +2123,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.14)",
     marginBottom: 14,
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 560,
   },
   segmentInner: {
     flexDirection: "row",
@@ -2009,8 +2135,9 @@ const styles = StyleSheet.create({
   },
   segmentActive: {
     borderRadius: 17,
-    paddingVertical: 10,
+    paddingVertical: 14,
     alignItems: "center",
+    minHeight: 48,
   },
   segmentActiveText: {
     color: "#1C0A00",
@@ -2019,8 +2146,9 @@ const styles = StyleSheet.create({
   },
   segmentIdle: {
     borderRadius: 17,
-    paddingVertical: 10,
+    paddingVertical: 14,
     alignItems: "center",
+    minHeight: 48,
   },
   segmentIdleText: {
     color: "#94A3B8",
@@ -2035,7 +2163,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.16)",
     backgroundColor: "rgba(255,255,255,0.06)",
     width: "100%",
-    maxWidth: 420,
+    maxWidth: 560,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.35,
@@ -2342,9 +2470,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15,23,42,0.8)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.25)",
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2615,6 +2743,25 @@ const styles = StyleSheet.create({
   threadSendText: {
     color: "#FFFFFF",
     fontSize: 14,
+    fontWeight: "700",
+  },
+  passwordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  passwordToggle: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    minHeight: 48,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.35)",
+    borderRadius: 12,
+  },
+  passwordToggleText: {
+    color: "#93C5FD",
+    fontSize: 13,
     fontWeight: "700",
   },
   editBox: {
