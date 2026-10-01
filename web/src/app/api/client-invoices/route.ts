@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, invoices, invoiceStatusLog } from "@/db/schema";
+import { assignments, invoices, invoiceMessages, invoiceReports, invoiceStatusLog } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { isClientEditable, isClientWithdrawable } from "@/lib/client-edit-rules";
 
@@ -47,6 +47,37 @@ export async function GET(request: Request) {
         : [];
     const manualSet = new Set(manualRows.map((r) => r.invoiceId));
 
+    // Latest report per invoice + unread client-side messages — two queries.
+    const ids = rows.map((r) => r.id);
+    const reportRows =
+      ids.length > 0
+        ? await db.query.invoiceReports.findMany({
+            where: inArray(invoiceReports.invoiceId, ids),
+            columns: { invoiceId: true, fileName: true, createdAt: true },
+            orderBy: [desc(invoiceReports.createdAt)],
+          })
+        : [];
+    const reportByInvoice = new Map<string, { fileName: string; createdAt: Date }>();
+    for (const rep of reportRows) {
+      if (!reportByInvoice.has(rep.invoiceId)) {
+        reportByInvoice.set(rep.invoiceId, { fileName: rep.fileName, createdAt: rep.createdAt });
+      }
+    }
+    const unreadRows =
+      ids.length > 0
+        ? await db.query.invoiceMessages.findMany({
+            where: and(
+              inArray(invoiceMessages.invoiceId, ids),
+              eq(invoiceMessages.isReadByClient, false)
+            ),
+            columns: { invoiceId: true },
+          })
+        : [];
+    const unreadByInvoice = new Map<string, number>();
+    for (const m of unreadRows) {
+      unreadByInvoice.set(m.invoiceId, (unreadByInvoice.get(m.invoiceId) ?? 0) + 1);
+    }
+
     const withLogs = await Promise.all(
       rows.map(async (inv) => {
         const logs = await db.query.invoiceStatusLog.findMany({
@@ -78,6 +109,10 @@ export async function GET(request: Request) {
           withdrawable: isClientWithdrawable(inv.status, manual, inv.createdAt),
           category: (inv as any).category ?? "sales_invoice",
           categoryDetail: (inv as any).categoryDetail ?? null,
+          // Office Excel report (null until staff shares one)
+          report: reportByInvoice.get(inv.id) ?? null,
+          // Unread staff messages on this invoice's thread
+          unreadMessages: unreadByInvoice.get(inv.id) ?? 0,
           createdAt: inv.createdAt,
           updatedAt: inv.updatedAt,
           statusLogs: logs.map((l) => ({

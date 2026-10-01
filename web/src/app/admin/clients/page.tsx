@@ -555,7 +555,7 @@ export default function AdminClientsPage() {
                       <td colSpan={9} className="px-6 py-4">
                         <div className="max-w-2xl">
                           <h4 className="text-xs font-bold text-red-800 mb-1">
-                            Remove “{c.name}” (@{c.username}) permanently?
+                            Remove “{c.name}” (@{c.username || c.name}) permanently?
                           </h4>
                           <p className="text-xs text-red-700 mb-2">
                             This destroys {removeCounts?.invoices ?? "…"} invoice(s) (files included),{" "}
@@ -571,14 +571,14 @@ export default function AdminClientsPage() {
                             <input
                               value={removeConfirm}
                               onChange={(e) => setRemoveConfirm(e.target.value)}
-                              placeholder={`Type ${c.username} to confirm`}
+                              placeholder={`Type ${c.username || c.name} to confirm`}
                               autoCapitalize="none"
                               autoCorrect="off"
                               className="flex-1 px-2 py-1.5 border border-red-300 rounded text-xs outline-none font-mono"
                             />
                             <button
                               onClick={handleRemoveStep2}
-                              disabled={removingBusy || removeConfirm.trim() !== c.username}
+                              disabled={removingBusy || !removeConfirm.trim() || removeConfirm.trim() !== (c.username || c.name)}
                               className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold disabled:opacity-40"
                             >
                               {removingBusy ? "Removing…" : "Confirm delete"}

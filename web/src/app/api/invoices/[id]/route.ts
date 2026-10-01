@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { invoices, invoiceStatusLog, assignments, outlets, staff } from "@/db/schema";
+import { invoices, invoiceStatusLog, assignments, invoiceReports, outlets, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isValidTransition, isTerminalStatus, InvoiceStatus } from "@/lib/status-flow";
 import { categorySchema, validateCategory } from "@/lib/categories";
@@ -76,7 +76,7 @@ const updateInvoiceSchema = z.object({
     rawText: z.string().optional().nullable(),
   }).optional(),
   priority: z.enum(["low", "normal", "urgent"]).optional(),
-  note: z.string().optional(),
+  note: z.string().max(500).optional(),
   // Admin/staff may (re)assign the outlet; must belong to the invoice's client. Null clears it.
   outletId: z.string().uuid("Invalid outlet ID").nullable().optional(),
   // Category correction + custom text for Other
@@ -132,6 +132,16 @@ export async function PATCH(
     }
 
     const { status: nextStatus, ocrData, priority, note, outletId } = result.data;
+
+    // Amount must be a real number — NaN/strings-that-aren't-numbers 400
+    // instead of corrupting the row (z.number() accepts NaN).
+    if (ocrData && ocrData.amount !== undefined && ocrData.amount !== null) {
+      const n = typeof ocrData.amount === "number" ? ocrData.amount : Number(ocrData.amount);
+      if (!Number.isFinite(n)) {
+        return NextResponse.json({ error: "Amount must be a valid number." }, { status: 400 });
+      }
+      ocrData.amount = n;
+    }
 
     // Validate category + detail pair (Other requires custom text)
     const nextCategory = result.data.category ?? currentInvoice.category;
@@ -289,6 +299,11 @@ export async function DELETE(
     }
 
     const s3Key = current.s3Key;
+    // Attached Excel reports (S3 keys die with the row — collect first)
+    const doomedReports = await db.query.invoiceReports.findMany({
+      where: eq(invoiceReports.invoiceId, id),
+      columns: { s3Key: true },
+    });
     await db.transaction(async (tx) => {
       await tx.delete(invoiceStatusLog).where(eq(invoiceStatusLog.invoiceId, id));
       await tx.delete(assignments).where(eq(assignments.invoiceId, id));
@@ -297,6 +312,9 @@ export async function DELETE(
 
     // Best-effort S3 cleanup (row is already gone; leftovers are invisible)
     const s3ok = await deleteObjectFromS3(s3Key);
+    for (const rep of doomedReports) {
+      await deleteObjectFromS3(rep.s3Key);
+    }
     console.log(
       `Invoice ${id} deleted by ${role} ${actorId} (status was ${current.status}, s3 cleanup: ${s3ok})`
     );

@@ -40,6 +40,14 @@ export default function StaffInvoiceVerifyPage({
   const [note, setNote] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  // Client↔staff thread
+  const [messages, setMessages] = useState<any[]>([]);
+  const [msgBody, setMsgBody] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  // Excel report (office work product → client downloads it)
+  const [report, setReport] = useState<any | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportFile, setReportFile] = useState<File | null>(null);
 
   const STAFF_DELETABLE = ["assigned", "in_review", "needs_info"];
   const canDelete = !!invoice && STAFF_DELETABLE.includes(invoice.status);
@@ -86,6 +94,20 @@ export default function StaffInvoiceVerifyPage({
 
       // 2. Fetch fresh short-lived signed GET URL (5 min TTL)
       await fetchImage();
+
+      // 3. Thread + current Excel report (independent — never block the page)
+      try {
+        const [msgRes, repRes] = await Promise.all([
+          fetch(`/api/invoices/${id}/messages`),
+          fetch(`/api/invoices/${id}/report`),
+        ]);
+        const msgData = await msgRes.json();
+        const repData = await repRes.json();
+        if (msgRes.ok && msgData.success) setMessages(msgData.messages || []);
+        if (repRes.ok && repData.success) setReport(repData.report);
+      } catch {
+        // Thread/report stay empty; invoice work is unaffected
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -115,6 +137,10 @@ export default function StaffInvoiceVerifyPage({
   async function handleSaveData(e: React.FormEvent) {
     e.preventDefault();
     if (!invoice) return;
+    if (amount.trim() && !Number.isFinite(Number(amount.trim()))) {
+      setError("Amount must be a valid number.");
+      return;
+    }
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -178,6 +204,129 @@ export default function StaffInvoiceVerifyPage({
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // "Needs info" carries the typed question to the client: the message box
+  // text (when present) becomes BOTH the thread message AND the status note,
+  // so the client sees exactly what is being asked — no more dead end.
+  async function handleNeedsInfo() {
+    const question = msgBody.trim() || "Staff requested additional info";
+    setMsgSending(true);
+    setError(null);
+    try {
+      const msgRes = await fetch(`/api/invoices/${id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: question }),
+      });
+      const msgData = await msgRes.json();
+      if (!msgRes.ok) throw new Error(msgData.error || "Failed to send message");
+      await handleTransition("needs_info", question);
+      setMsgBody("");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setMsgSending(false);
+    }
+  }
+
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!msgBody.trim()) return;
+    setMsgSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/invoices/${id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: msgBody.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send message");
+      setMsgBody("");
+      setMessages((prev) => [data.message, ...prev]);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setMsgSending(false);
+    }
+  }
+
+  // Excel report: Generate (server builds from invoice data) or Upload
+  // (staff .xlsx file → presigned PUT → confirm replaces current report).
+  async function handleGenerateReport() {
+    setReportBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/invoices/${id}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to generate report");
+      setReport(data.report);
+      setSuccess("Excel report generated — the client can download it now.");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setReportBusy(false);
+    }
+  }
+
+  // Fresh download URL on every click (links live 5 minutes)
+  async function handleDownloadReport() {
+    setReportBusy(true);
+    try {
+      const res = await fetch(`/api/invoices/${id}/report`);
+      const data = await res.json();
+      if (!res.ok || !data.report?.downloadUrl) throw new Error(data.error || "No report available");
+      setReport(data.report);
+      window.open(data.report.downloadUrl, "_blank", "noopener");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setReportBusy(false);
+    }
+  }
+
+  async function handleUploadReport() {
+    if (!reportFile) return;
+    if (!reportFile.name.toLowerCase().endsWith(".xlsx")) {
+      setError("Report must be an .xlsx file.");
+      return;
+    }
+    setReportBusy(true);
+    setError(null);
+    try {
+      const urlRes = await fetch(`/api/invoices/${id}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "upload-url", contentLength: reportFile.size }),
+      });
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlData.error || "Failed to prepare upload");
+      const putRes = await fetch(urlData.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+        body: reportFile,
+      });
+      if (!putRes.ok) throw new Error("Report upload to storage failed.");
+      const confRes = await fetch(`/api/invoices/${id}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "confirm", s3Key: urlData.s3Key, fileName: reportFile.name }),
+      });
+      const confData = await confRes.json();
+      if (!confRes.ok) throw new Error(confData.error || "Failed to attach report");
+      setReport(confData.report);
+      setReportFile(null);
+      setSuccess("Excel report uploaded — the client can download it now.");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setReportBusy(false);
     }
   }
 
@@ -531,9 +680,10 @@ export default function StaffInvoiceVerifyPage({
                   {invoice.status === "in_review" && (
                     <div className="grid grid-cols-2 gap-3">
                       <button
-                        onClick={() => handleTransition("needs_info", "Staff requested additional info")}
-                        disabled={saving}
+                        onClick={handleNeedsInfo}
+                        disabled={saving || msgSending}
                         className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition"
+                        title="Type the question in the message box below first — it goes to the client with this status"
                       >
                         Needs Info &rarr; needs_info
                       </button>
@@ -603,6 +753,112 @@ export default function StaffInvoiceVerifyPage({
                 </button>
               </div>
             )}
+
+            {/* Excel Report: office work product the client downloads */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
+                📊 Excel Report for Client
+              </h3>
+              {report ? (
+                <div className="flex items-center justify-between gap-2 mb-3 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <div className="text-xs">
+                    <div className="font-bold text-emerald-900">{report.fileName}</div>
+                    <div className="text-emerald-700">
+                      {report.source === "generated" ? "Auto-generated" : "Staff upload"} ·{" "}
+                      {new Date(report.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  {report.downloadUrl && (
+                    <button
+                      onClick={handleDownloadReport}
+                      disabled={reportBusy}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium whitespace-nowrap disabled:opacity-50"
+                    >
+                      Download
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 mb-3">No report shared yet.</p>
+              )}
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={handleGenerateReport}
+                  disabled={reportBusy}
+                  className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                >
+                  {reportBusy ? "Working…" : "⚡ Generate from invoice data"}
+                </button>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept=".xlsx"
+                    onChange={(e) => setReportFile(e.target.files?.[0] || null)}
+                    className="flex-1 text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-slate-300 file:bg-slate-50 file:text-xs file:font-medium hover:file:bg-slate-100"
+                  />
+                  <button
+                    onClick={handleUploadReport}
+                    disabled={reportBusy || !reportFile}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
+                  >
+                    Upload .xlsx
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Client↔staff conversation thread */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-1 flex items-center gap-1.5">
+                💬 Client Conversation
+              </h3>
+              <p className="text-[11px] text-slate-400 mb-3">
+                {invoice.status === "in_review"
+                  ? "Type the question here first, then press Needs Info above — it goes to the client."
+                  : "Replies from the client appear here. For Needs Info, switch the invoice back to that status first."}
+              </p>
+              <div className="space-y-2 mb-3 max-h-64 overflow-y-auto">
+                {messages.length === 0 ? (
+                  <p className="text-xs text-slate-400">No messages yet.</p>
+                ) : (
+                  messages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`p-2.5 rounded-lg text-xs max-w-[90%] ${
+                        m.senderType === "staff"
+                          ? "ml-auto bg-blue-600 text-white"
+                          : "bg-slate-100 text-slate-800"
+                      }`}
+                    >
+                      <div className={`font-bold mb-0.5 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-500"}`}>
+                        {m.senderName}
+                        {m.kind === "request_report" && " · 📄 requested the report"}
+                      </div>
+                      <div>{m.body}</div>
+                      <div className={`mt-1 text-[10px] ${m.senderType === "staff" ? "text-blue-200" : "text-slate-400"}`}>
+                        {new Date(m.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                <input
+                  value={msgBody}
+                  onChange={(e) => setMsgBody(e.target.value)}
+                  placeholder="Write to the client… (max 500)"
+                  maxLength={500}
+                  className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="submit"
+                  disabled={msgSending || !msgBody.trim()}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
 
             {/* Audit Trail Timeline (Slice 5) */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">

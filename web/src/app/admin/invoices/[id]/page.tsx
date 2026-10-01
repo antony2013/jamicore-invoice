@@ -43,6 +43,10 @@ export default function AdminInvoiceDetailPage({
   const [deleting, setDeleting] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Read-only visibility into the client↔staff thread + Excel report
+  const [messages, setMessages] = useState<any[]>([]);
+  const [report, setReport] = useState<any | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
 
   const CATEGORY_OPTIONS = [
     { value: "sales_invoice", label: "Sales Invoice" },
@@ -179,6 +183,20 @@ export default function AdminInvoiceDetailPage({
               setOutletList(outletData.outlets || []);
             }
           }
+        } catch {
+          // Non-fatal
+        }
+
+        // 5. Thread + Excel report (read-only here; staff owns the reply)
+        try {
+          const [msgRes, repRes] = await Promise.all([
+            fetch(`/api/invoices/${id}/messages`),
+            fetch(`/api/invoices/${id}/report`),
+          ]);
+          const msgData = await msgRes.json();
+          const repData = await repRes.json();
+          if (msgRes.ok && msgData.success) setMessages(msgData.messages || []);
+          if (repRes.ok && repData.success) setReport(repData.report);
         } catch {
           // Non-fatal
         }
@@ -581,6 +599,65 @@ export default function AdminInvoiceDetailPage({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Excel report shared with the client (staff owns it) */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+                📊 Excel Report
+              </h3>
+              {report ? (
+                <div className="flex items-center justify-between gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <div className="text-xs">
+                    <div className="font-bold text-emerald-900">{report.fileName}</div>
+                    <div className="text-emerald-700">{new Date(report.createdAt).toLocaleString()}</div>
+                  </div>
+                  {report.downloadUrl && (
+                    <a
+                      href={report.downloadUrl}
+                      target="_blank"
+                      rel="noopener"
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium whitespace-nowrap"
+                    >
+                      Download
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">No report shared yet — the assigned staff adds it.</p>
+              )}
+            </div>
+
+            {/* Client↔staff thread (read-only — staff replies from their view) */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
+                💬 Client Conversation
+              </h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {messages.length === 0 ? (
+                  <p className="text-xs text-slate-400">No messages yet.</p>
+                ) : (
+                  messages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`p-2.5 rounded-lg text-xs max-w-[90%] ${
+                        m.senderType === "staff"
+                          ? "ml-auto bg-blue-600 text-white"
+                          : "bg-slate-100 text-slate-800"
+                      }`}
+                    >
+                      <div className={`font-bold mb-0.5 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-500"}`}>
+                        {m.senderName}
+                        {m.kind === "request_report" && " · 📄 requested the report"}
+                      </div>
+                      <div>{m.body}</div>
+                      <div className={`mt-1 text-[10px] ${m.senderType === "staff" ? "text-blue-200" : "text-slate-400"}`}>
+                        {new Date(m.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

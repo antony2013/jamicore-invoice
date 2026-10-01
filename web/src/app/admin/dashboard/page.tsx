@@ -35,6 +35,7 @@ export default function AdminDashboard() {
   const [assigning, setAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function loadData() {
     setLoading(true);
@@ -59,11 +60,14 @@ export default function AdminDashboard() {
       if (invData.success) {
         setInvoices(invData.invoices);
         setSelectedIds([]);
+      } else {
+        throw new Error(invData.error || "Failed to load invoices");
       }
       if (staffData.success) setStaffList(staffData.staff);
       if (outletData.success) setOutletList(outletData.outlets);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load admin data:", err);
+      setLoadError(err.message || "Failed to load dashboard data.");
     } finally {
       setLoading(false);
     }
@@ -259,7 +263,7 @@ export default function AdminDashboard() {
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Unassigned Queue</div>
             <div className="text-2xl font-bold text-slate-900 mt-2">
-              {invoices.filter((i) => !i.assignedTo && ["uploaded", "ocr_done", "ocr_failed"].includes(i.status)).length}
+              {invoices.filter((i) => !i.assignedTo && ["uploaded", "ocr_pending", "ocr_done", "ocr_failed"].includes(i.status)).length}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -440,6 +444,15 @@ export default function AdminDashboard() {
           <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
             <span>{successMessage}</span>
+          </div>
+        )}
+        {loadError && (
+          <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center gap-2">
+            <span className="font-bold">Load failed:</span>
+            <span>{loadError}</span>
+            <button onClick={loadData} className="ml-auto px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium">
+              Retry
+            </button>
           </div>
         )}
 

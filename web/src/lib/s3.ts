@@ -146,3 +146,45 @@ export async function generatePresignedViewUrl(s3Key: string): Promise<string> {
   // 5-minute TTL (300 seconds)
   return getSignedUrl(s3Client, command, { expiresIn: 300 });
 }
+
+export const REPORT_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const;
+export const MAX_REPORT_BYTES = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Report uploads (.xlsx only, office work product — NOT client invoices).
+ * Key shape enforced: reports/<invoiceId>/<file>.xlsx
+ */
+export async function generatePresignedReportUploadUrl(
+  s3Key: string,
+  contentLength?: number
+): Promise<string> {
+  if (!/^reports\/[0-9a-f-]{36}\/[^/]+\.xlsx$/i.test(s3Key)) {
+    throw new Error("Invalid report key. Expected reports/<invoiceId>/<file>.xlsx");
+  }
+  if (contentLength !== undefined) {
+    if (!Number.isInteger(contentLength) || contentLength <= 0 || contentLength > MAX_REPORT_BYTES) {
+      throw new Error(`Invalid contentLength: must be 1..${MAX_REPORT_BYTES} bytes.`);
+    }
+  }
+  const command = new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: s3Key,
+    ContentType: REPORT_CONTENT_TYPE,
+    ...(contentLength !== undefined ? { ContentLength: contentLength } : {}),
+  });
+  return getSignedUrl(s3Client, command, { expiresIn: 900 });
+}
+
+/**
+ * Server-side object write (used by the Excel report generator).
+ */
+export async function putObjectToS3(
+  s3Key: string,
+  body: Buffer,
+  contentType: string
+): Promise<void> {
+  await s3Client.send(
+    new PutObjectCommand({ Bucket: BUCKET_NAME, Key: s3Key, Body: body, ContentType: contentType })
+  );
+}

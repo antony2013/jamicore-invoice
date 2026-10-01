@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, outlets } from "@/db/schema";
 import { auth } from "@/lib/auth";
@@ -75,8 +75,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Client not found." }, { status: 404 });
     }
 
+    // Case-insensitive duplicate check ("Main" vs "main" collide)
     const dup = await db.query.outlets.findFirst({
-      where: and(eq(outlets.clientId, clientId), eq(outlets.name, name.trim())),
+      where: and(
+        eq(outlets.clientId, clientId),
+        sql`lower(${outlets.name}) = lower(${name.trim()})`
+      ),
     });
     if (dup) {
       return NextResponse.json(

@@ -38,9 +38,14 @@ import {
   setApiBaseUrl,
   getApiBaseUrl,
   loadPersistedToken,
+  getMyInvoiceReportUrl,
+  downloadAndShareReport,
+  getInvoiceMessages,
+  sendInvoiceMessage,
+  requestInvoiceReport,
   CATEGORY_LABELS,
 } from "./src/services/api";
-import type { InvoiceCategory, Outlet, TeamMember } from "./src/services/api";
+import type { InvoiceCategory, InvoiceMessage, Outlet, TeamMember } from "./src/services/api";
 
 /* ------------------------------------------------------------------ */
 /* Liquid Glass design language (iOS 26 inspired, built with expo-blur */
@@ -65,6 +70,10 @@ type HistoryInvoice = {
   createdAt: string;
   updatedAt: string;
   statusLogs: Array<{ status: string; note?: string | null; timestamp: string }>;
+  /** Office Excel report (null until staff shares one) */
+  report?: { fileName: string; createdAt: string } | null;
+  /** Unread staff messages on this invoice's thread */
+  unreadMessages?: number;
 };
 
 const STATUS_TINT: Record<string, { bg: string; fg: string }> = {
@@ -281,6 +290,11 @@ export default function App() {
   };
   // Detail / edit state
   const [selected, setSelected] = useState<HistoryInvoice | null>(null);
+  // Per-invoice office thread + report download state
+  const [thread, setThread] = useState<InvoiceMessage[]>([]);
+  const [msgText, setMsgText] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editNote, setEditNote] = useState("");
   const [editPageNotes, setEditPageNotes] = useState<string[]>([]);
@@ -419,7 +433,18 @@ export default function App() {
     setSelected(inv);
     setEditing(false);
     setViewUrl(null);
+    setThread([]);
+    setMsgText("");
     setScreen("detail");
+    // Thread loads in background; opening marks staff messages read
+    getInvoiceMessages(inv.id)
+      .then((msgs) => {
+        setThread(msgs);
+        setHistory((prev) => prev.map((h) => (h.id === inv.id ? { ...h, unreadMessages: 0 } : h)));
+      })
+      .catch(() => {
+        // Thread stays empty; invoice work is unaffected
+      });
   };
 
   const refreshSelected = async (id: string) => {
@@ -431,6 +456,56 @@ export default function App() {
       if (!fresh) setScreen("history");
     } catch {
       // keep stale view on refresh failure
+    }
+  };
+
+  // 2f. Thread: send a reply to the office
+  const handleSendMessage = async () => {
+    if (!selected || !msgText.trim()) return;
+    setMsgSending(true);
+    try {
+      const msg = await sendInvoiceMessage(selected.id, msgText.trim());
+      setMsgText("");
+      setThread((prev) => [msg, ...prev]);
+    } catch (err: any) {
+      Alert.alert("Send Failed", err.message);
+    } finally {
+      setMsgSending(false);
+    }
+  };
+
+  // 2g. One-tap "please share the Excel report for this invoice"
+  const handleRequestReport = async () => {
+    if (!selected) return;
+    setMsgSending(true);
+    try {
+      const msg = await requestInvoiceReport(selected.id);
+      setThread((prev) => [msg, ...prev]);
+      Alert.alert("Requested", "The office will share the Excel report here.");
+    } catch (err: any) {
+      Alert.alert("Request Failed", err.message);
+    } finally {
+      setMsgSending(false);
+    }
+  };
+
+  // 2h. Download the office Excel report → share sheet (Save / Open in Excel)
+  const handleDownloadReport = async () => {
+    if (!selected) return;
+    setReportBusy(true);
+    try {
+      const rep = await getMyInvoiceReportUrl(selected.id);
+      if (!rep) {
+        Alert.alert("No Report", "The office has not shared a report for this invoice yet.");
+        return;
+      }
+      await downloadAndShareReport(rep.downloadUrl, rep.fileName);
+      // Refresh so the card shows the latest file info
+      await refreshSelected(selected.id);
+    } catch (err: any) {
+      Alert.alert("Download Failed", err.message);
+    } finally {
+      setReportBusy(false);
     }
   };
 
@@ -1289,7 +1364,9 @@ export default function App() {
                       <View style={styles.historyRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.historyVendor}>
+                            {(inv.unreadMessages || 0) > 0 ? "🔴 " : ""}
                             {inv.ocrData?.vendor || "Processing…"}
+                            {inv.report ? "  📊" : ""}
                           </Text>
                           <Text style={styles.historyMeta}>
                             {new Date(inv.createdAt).toLocaleDateString()}
@@ -1390,6 +1467,78 @@ export default function App() {
                           </View>
                         </View>
                       ))}
+                    </View>
+
+                    {/* Office Excel report */}
+                    <View style={styles.reportBox}>
+                      <Text style={styles.label}>📊 Office report</Text>
+                      {selected.report ? (
+                        <>
+                          <Text style={styles.detailNoteText}>{selected.report.fileName}</Text>
+                          <Text style={styles.historyMeta}>
+                            Shared {new Date(selected.report.createdAt).toLocaleString()}
+                          </Text>
+                          <GlassButton
+                            title={reportBusy ? "Preparing…" : "⬇ Download Excel"}
+                            onPress={handleDownloadReport}
+                            disabled={reportBusy}
+                            loading={reportBusy}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.historyMeta}>No report shared yet.</Text>
+                          <GlassButton
+                            title="📄 Request Report"
+                            onPress={handleRequestReport}
+                            disabled={msgSending}
+                          />
+                        </>
+                      )}
+                    </View>
+
+                    {/* Conversation with the office */}
+                    <View style={styles.threadBox}>
+                      <Text style={styles.label}>💬 Office chat</Text>
+                      {thread.length === 0 ? (
+                        <Text style={styles.historyMeta}>No messages yet — say hello or request the report above.</Text>
+                      ) : (
+                        thread.map((m) => (
+                          <View
+                            key={m.id}
+                            style={[styles.threadMsg, m.mine ? styles.threadMine : styles.threadTheirs]}
+                          >
+                            <Text style={styles.threadName}>
+                              {m.mine ? "You" : m.senderName}
+                              {m.kind === "request_report" ? " · 📄 report requested" : ""}
+                            </Text>
+                            <Text style={styles.threadBody}>{m.body}</Text>
+                            <Text style={styles.historyMeta}>
+                              {new Date(m.createdAt).toLocaleString()}
+                            </Text>
+                          </View>
+                        ))
+                      )}
+                      <View style={styles.threadInputRow}>
+                        <TextInput
+                          style={[styles.input, { flex: 1 }]}
+                          placeholder="Write to the office…"
+                          placeholderTextColor="#64748B"
+                          value={msgText}
+                          onChangeText={setMsgText}
+                          maxLength={500}
+                          multiline
+                        />
+                        <TouchableOpacity
+                          style={styles.threadSendBtn}
+                          onPress={handleSendMessage}
+                          disabled={msgSending || !msgText.trim()}
+                        >
+                          <Text style={styles.threadSendText}>
+                            {msgSending ? "…" : "Send"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </>
                 )}
@@ -2404,6 +2553,69 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#FDE68A",
     marginTop: 2,
+  },
+  reportBox: {
+    borderWidth: 1,
+    borderColor: "rgba(52,211,153,0.35)",
+    backgroundColor: "rgba(52,211,153,0.08)",
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 10,
+    gap: 6,
+  },
+  threadBox: {
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.30)",
+    backgroundColor: "rgba(148,163,184,0.06)",
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 10,
+    gap: 8,
+  },
+  threadMsg: {
+    borderRadius: 12,
+    padding: 10,
+    maxWidth: "92%",
+  },
+  threadMine: {
+    alignSelf: "flex-end",
+    backgroundColor: "rgba(59,130,246,0.25)",
+    borderWidth: 1,
+    borderColor: "rgba(59,130,246,0.45)",
+  },
+  threadTheirs: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(148,163,184,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.30)",
+  },
+  threadName: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#93C5FD",
+    marginBottom: 2,
+  },
+  threadBody: {
+    fontSize: 13,
+    color: "#F1F5F9",
+  },
+  threadInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  threadSendBtn: {
+    backgroundColor: "#2563EB",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 48,
+    justifyContent: "center",
+  },
+  threadSendText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
   editBox: {
     marginTop: 4,

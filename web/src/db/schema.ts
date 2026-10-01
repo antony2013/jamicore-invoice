@@ -139,6 +139,38 @@ export const invoiceStatusLog = pgTable("invoice_status_log", {
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// 7. Invoice Reports — Excel work products the OFFICE STAFF produce per
+// invoice (generated from the invoice, or a custom .xlsx upload). The CLIENT
+// downloads the latest report from the mobile app.
+export const invoiceReports = pgTable("invoice_reports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+  // S3 key of the .xlsx file (reports/<invoiceId>/<file>)
+  s3Key: text("s3_key").notNull().unique(),
+  fileName: text("file_name").notNull(),
+  // "generated" = built by the server from invoice data; "uploaded" = staff file
+  source: text("source").notNull().default("uploaded"),
+  uploadedBy: uuid("uploaded_by").references(() => staff.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// 8. Invoice Messages — the client↔staff conversation thread per invoice.
+// senderType "staff" = office staff/admin; "client" = owner OR team member
+// (senderName snapshots who wrote it). kind "request_report" = the client
+// asking for a particular report. Read flags drive "new message" dots.
+export const invoiceMessages = pgTable("invoice_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+  senderType: text("sender_type").notNull(), // "staff" | "client"
+  senderId: text("sender_id").notNull(),
+  senderName: text("sender_name").notNull(),
+  kind: text("kind").notNull().default("text"), // "text" | "request_report" | "system"
+  body: text("body").notNull(),
+  isReadByStaff: boolean("is_read_by_staff").notNull().default(false),
+  isReadByClient: boolean("is_read_by_client").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
@@ -203,6 +235,8 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   }),
   assignments: many(assignments),
   statusLogs: many(invoiceStatusLog),
+  reports: many(invoiceReports),
+  messages: many(invoiceMessages),
 }));
 
 export const assignmentsRelations = relations(assignments, ({ one }) => ({
@@ -230,5 +264,19 @@ export const invoiceStatusLogRelations = relations(invoiceStatusLog, ({ one }) =
   actor: one(staff, {
     fields: [invoiceStatusLog.changedBy],
     references: [staff.id],
+  }),
+}));
+
+export const invoiceReportsRelations = relations(invoiceReports, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceReports.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+export const invoiceMessagesRelations = relations(invoiceMessages, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceMessages.invoiceId],
+    references: [invoices.id],
   }),
 }));

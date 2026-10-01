@@ -302,7 +302,105 @@ export async function getMyInvoices() {
     createdAt: string;
     updatedAt: string;
     statusLogs: Array<{ status: string; note?: string | null; timestamp: string }>;
+    /** Office Excel report (null until staff shares one) */
+    report?: { fileName: string; createdAt: string } | null;
+    /** Unread staff messages on this invoice's thread */
+    unreadMessages?: number;
   }>;
+}
+
+export type InvoiceMessage = {
+  id: string;
+  senderType: string;
+  senderName: string;
+  kind: string;
+  body: string;
+  mine: boolean;
+  createdAt: string;
+};
+
+/**
+ * 14. Office Excel report for one of my invoices (download URL, 5-min TTL).
+ */
+export async function getMyInvoiceReportUrl(id: string): Promise<{ fileName: string; createdAt: string; downloadUrl: string } | null> {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/report`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to fetch report.");
+  }
+  return data.report;
+}
+
+/**
+ * Download the report file and open the share sheet (Save / Open in Excel).
+ */
+export async function downloadAndShareReport(downloadUrl: string, fileName: string): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const FileSystem = require("expo-file-system/legacy");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Sharing = require("expo-sharing");
+  const safeName = fileName.toLowerCase().endsWith(".xlsx") ? fileName : `${fileName}.xlsx`;
+  const target = `${FileSystem.documentDirectory}${safeName}`;
+  const dl = await FileSystem.downloadAsync(downloadUrl, target);
+  const available = await Sharing.isAvailableAsync();
+  if (!available) {
+    throw new Error("Sharing is not available on this device.");
+  }
+  await Sharing.shareAsync(dl.uri, {
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    dialogTitle: "Excel report",
+  });
+}
+
+/**
+ * 15. Per-invoice conversation thread with the office.
+ */
+export async function getInvoiceMessages(id: string): Promise<InvoiceMessage[]> {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to fetch messages.");
+  }
+  return data.messages;
+}
+
+export async function sendInvoiceMessage(id: string, body: string): Promise<InvoiceMessage> {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ body, kind: "text" }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to send message.");
+  }
+  return data.message;
+}
+
+/**
+ * One-tap "please share the Excel report for this invoice".
+ */
+export async function requestInvoiceReport(id: string): Promise<InvoiceMessage> {
+  const token = requireAuth();
+  const response = await fetch(`${currentApiBaseUrl}/api/client-invoices/${id}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ kind: "request_report" }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to request report.");
+  }
+  return data.message;
 }
 
 export type TeamMember = {

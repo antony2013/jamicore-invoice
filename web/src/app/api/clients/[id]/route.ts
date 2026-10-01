@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, clients, clientStaff, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
+import { assignments, clients, clientStaff, invoices, invoiceReports, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { deleteObjectFromS3 } from "@/lib/s3";
 import { isValidTransition } from "@/lib/status-flow";
@@ -198,7 +198,10 @@ export async function DELETE(
     };
 
     const body = await request.json().catch(() => ({}));
-    if (body?.confirmUsername !== (client as any).username) {
+    // Legacy OTP-era rows may have no username — then the client NAME is the
+    // confirm token instead (the UI shows whichever one applies).
+    const confirmToken = (client as any).username || (client as any).name;
+    if (!confirmToken || body?.confirmUsername !== confirmToken) {
       return NextResponse.json(
         {
           error: "Confirmation required. Re-send with confirmUsername set to the client's user ID to permanently delete everything below.",
@@ -209,10 +212,23 @@ export async function DELETE(
     }
 
     // S3 objects first (best-effort — a failure must not strand DB rows,
-    // the key is reported back instead).
+    // the key is reported back instead). Report files die with the invoice
+    // rows (FK cascade) — collect their keys up front.
     let s3Failures = 0;
+    const ids = clientInvoices.map((i) => i.id);
+    const doomedReports =
+      ids.length > 0
+        ? await db.query.invoiceReports.findMany({
+            where: inArray(invoiceReports.invoiceId, ids),
+            columns: { s3Key: true },
+          })
+        : [];
     for (const inv of clientInvoices) {
       const ok = await deleteObjectFromS3((inv as any).s3Key);
+      if (!ok) s3Failures++;
+    }
+    for (const rep of doomedReports) {
+      const ok = await deleteObjectFromS3(rep.s3Key);
       if (!ok) s3Failures++;
     }
 

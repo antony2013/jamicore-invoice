@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices, invoiceStatusLog, outlets } from "@/db/schema";
+import { assignments, invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { deleteObjectFromS3 } from "@/lib/s3";
 import { categorySchema, validateCategory } from "@/lib/categories";
-import { hasManualAssignment, isClientEditable } from "@/lib/client-edit-rules";
+import { hasManualAssignment, isClientEditable, DELETE_WINDOW_MS } from "@/lib/client-edit-rules";
 
 /**
  * Client self-service on their OWN invoice.
@@ -168,7 +168,6 @@ export async function DELETE(
     // 1-hour withdrawal window from upload time. After that the record is
     // locked for the office — even if still unassigned (prevents silent
     // late deletions).
-    const DELETE_WINDOW_MS = 60 * 60 * 1000;
     const ageMs = Date.now() - new Date(current.createdAt).getTime();
     if (ageMs > DELETE_WINDOW_MS) {
       return NextResponse.json(
@@ -179,13 +178,26 @@ export async function DELETE(
 
     // DB row + logs first (assignments/status logs cascade); S3 object
     // best-effort after — a leftover object is invisible, a broken row is not.
+    // The status + manual-assignment checks are REPEATED inside the tx: if
+    // the office touched the row between our read and this write, the
+    // withdraw aborts instead of deleting an invoice under active review.
     await db.transaction(async (tx) => {
-      await tx.insert(invoiceStatusLog).values({
-        invoiceId: id,
-        status: current.status,
-        changedBy: null,
-        note: "Invoice withdrawn by client",
+      const fresh = await tx.query.invoices.findFirst({
+        where: eq(invoices.id, id),
+        columns: { id: true, status: true },
       });
+      if (!fresh) {
+        throw new Error("Invoice no longer exists.");
+      }
+      const freshManual = await tx.query.assignments.findFirst({
+        where: eq(assignments.invoiceId, id),
+        columns: { id: true },
+      });
+      if (!isClientEditable(fresh.status, !!freshManual)) {
+        throw new Error(
+          `Invoice moved to '${fresh.status}' while withdrawing — the office now owns it. Contact them to remove it.`
+        );
+      }
       await tx.delete(invoices).where(eq(invoices.id, id));
     });
 

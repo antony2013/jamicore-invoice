@@ -23,6 +23,20 @@ export async function GET(request: Request) {
     const clientParam = searchParams.get("client");
     const categoryParam = searchParams.get("category");
 
+    const UUID_RE = /^[0-9a-f-]{36}$/i;
+    const VALID_STATUSES = [
+      "uploaded", "ocr_pending", "ocr_done", "ocr_failed", "assigned",
+      "in_review", "needs_info", "verified", "collected", "disputed",
+    ];
+    if (statusParam && !VALID_STATUSES.includes(statusParam)) {
+      return NextResponse.json({ error: "Invalid status filter." }, { status: 400 });
+    }
+    for (const [label, v] of [["outlet", outletParam], ["client", clientParam], ["assigned_to", assignedToParam]] as const) {
+      if (v && v !== "me" && !UUID_RE.test(v)) {
+        return NextResponse.json({ error: `Invalid ${label} filter.` }, { status: 400 });
+      }
+    }
+
     let whereClause = undefined;
     const conditions = [];
 

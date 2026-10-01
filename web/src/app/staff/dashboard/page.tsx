@@ -60,6 +60,8 @@ export default function StaffDashboard() {
         inv.ocrData?.vendor,
         inv.ocrData?.invoiceNo,
         inv.ocrData?.amount != null ? String(inv.ocrData.amount) : "",
+        inv.category,
+        inv.categoryDetail,
       ]
         .filter(Boolean)
         .join(" ")
@@ -136,7 +138,7 @@ export default function StaffDashboard() {
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Finished ✅</div>
             <div className="text-2xl font-bold text-emerald-600 mt-1">
-              {invoices.filter((i) => i.status === "collected").length}
+              {invoices.filter((i) => ["collected", "disputed"].includes(i.status)).length}
             </div>
           </div>
         </div>
@@ -223,6 +225,13 @@ export default function StaffDashboard() {
                       }`}
                     >
                       {inv.priority}
+                    </span>
+                  </div>
+                  <div className="mb-3">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 text-[10px] font-bold uppercase">
+                      {inv.category === "other" && inv.categoryDetail
+                        ? inv.categoryDetail
+                        : { sales_invoice: "Sales Invoice", purchase_bill: "Purchase Bill", expense_bill: "Expense Bill", asset_bill: "Asset Bill", other: "Other" }[inv.category as string] || inv.category || "Sales Invoice"}
                     </span>
                   </div>
 

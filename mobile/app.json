@@ -39,7 +39,8 @@
         }
       ],
       "expo-dev-client",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-sharing"
     ]
   }
 }
