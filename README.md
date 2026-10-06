@@ -109,3 +109,67 @@ npm run db:migrate
   on a schedule you choose. Keep an off-site `pg_dump` before purges.
 - Mobile release builds lock the API URL to `extra.apiBaseUrl`
   (`mobile/app.json`); the in-app server switcher is dev-only.
+
+## Deployment runbook
+
+Do these in order, every deploy. No new features here — just safe rollout.
+
+### 1. Backup (before anything else)
+```bash
+docker exec jamicore-postgres pg_dump -U postgres -d invoice_db -F p --no-owner \
+  > ~/jamicore-backups/invoice_db-$(date +%Y%m%d-%H%M%S).sql
+```
+Verify the dump contains data (`grep -c "^COPY public" <file>` should be > 0).
+Keep dumps outside the repo; never commit one.
+
+### 2. Required env vars (production refuses to boot without them)
+`DATABASE_URL`, `NEXTAUTH_SECRET`, `JWT_SECRET` — fail-closed via
+`requireSecret()` (dev fallback only when `NODE_ENV=development`).
+Plus: `S3_ENDPOINT` (phone-reachable), `S3_BUCKET_NAME`, `AWS_*` keys,
+`NEXTAUTH_URL=https://<your-domain>`. Full table: `web/.env.example`.
+
+### 3. Migration order
+```bash
+cd web
+npm run db:migrate   # applies pending files in numeric order; never edit old ones
+```
+Current chain: `0000`–`0012` (Phase 1), `0013` (audit_log + soft-delete),
+`0014` (perf indexes). Review generated SQL before applying.
+
+### 4. Rollback (restore from dump)
+```bash
+# stop the app first, then:
+docker exec -i jamicore-postgres psql -U postgres -d invoice_db < ~/jamicore-backups/<file>.sql
+# if the schema itself must go back too: drop + recreate the DB, restore,
+# then `npm run db:migrate` will re-apply only what's missing.
+```
+
+### 5. `db:rotate` usage and consequences
+After any credential leak (hashes were once served to browsers):
+```bash
+npm run db:rotate -- --apply --scope=all   # dry-run without --apply
+```
+- **Staff**: each gets a new random password, printed ONCE to stdout
+  (copy now — never logged). Everyone must re-login (token_version bump).
+- **Clients**: passwords set to NULL — owners **cannot log in until an admin
+  sets a new password** in `/admin/clients`. Team PINs randomized — owners
+  must reset them in the Team screen.
+
+### 6. Health endpoint
+`GET /api/health` (no auth): `{status:"ok"}` / HTTP 503 with
+`{status:"unavailable"}` on DB failure (no internals). Point your
+uptime monitor and Coolify healthcheck at it.
+
+### 7. Cron entries
+```cron
+# S3 orphans (>24h, no DB row), daily
+0 3 * * *  cd /srv/jamicore-invoice/web && npm run s3:cleanup -- --apply
+# Hard-purge soft-deleted invoices (>30d), weekly — DB first, S3 after, audited
+0 4 * * 0  cd /srv/jamicore-invoice/web && npm run db:purge -- --older-than-days=30 --apply
+```
+
+### TODO: audit_log retention / partitioning
+`audit_log` is append-only and grows forever. Plan (not implemented):
+monthly RANGE partitioning on `at` + a retention job (e.g. detach/drop
+partitions older than N months, or archive to cold storage). Until then,
+watch table size (`pg_total_relation_size('audit_log')`) as part of ops.
