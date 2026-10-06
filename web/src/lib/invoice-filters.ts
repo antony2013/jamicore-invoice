@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, invoices } from "@/db/schema";
+import { notDeleted } from "@/lib/invoice-access";
 import type { OfficeSession } from "@/lib/session";
 
 /**
@@ -80,7 +81,8 @@ export async function buildInvoiceConditions(
   me: OfficeSession,
   opts?: { skipStatus?: boolean }
 ) {
-  const conditions: ReturnType<typeof eq>[] = [];
+  // Soft-deleted rows are invisible to every list/stat/export.
+  const conditions: Array<ReturnType<typeof eq> | ReturnType<typeof sql>> = [notDeleted()];
 
   if (me.role !== "admin") {
     conditions.push(eq(invoices.assignedTo, me.id));

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, integer, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, uuid, integer, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // Enums
@@ -137,6 +137,11 @@ export const invoices = pgTable("invoices", {
   categoryDetail: text("category_detail"),
   // Which client-staff member uploaded (null = client owner themself)
   uploadedByStaffId: uuid("uploaded_by_staff_id").references(() => clientStaff.id, { onDelete: "set null" }),
+  // Soft delete (Phase 2.2): rows are never hard-deleted via API. Queries
+  // must exclude deleted rows (see `notDeleted` in lib/invoice-access).
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: text("deleted_by"),
+  deleteReason: text("delete_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -159,6 +164,30 @@ export const invoiceStatusLog = pgTable("invoice_status_log", {
   note: text("note"),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// 6b. Append-only audit log (Phase 2.2): who did what, with before/after.
+// Deliberately NO foreign keys and NO cascade — history must survive the
+// rows it describes. NOTHING in the codebase may UPDATE or DELETE these rows.
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+    actorType: text("actor_type").notNull(), // 'staff' | 'client' | 'client_staff' | 'system'
+    actorId: text("actor_id"),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id"),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    meta: jsonb("meta"),
+    ip: text("ip"),
+  },
+  (t) => [
+    index("audit_log_entity_idx").on(t.entityType, t.entityId, t.at.desc()),
+    index("audit_log_at_idx").on(t.at.desc()),
+  ]
+);
 
 // 7. Invoice Reports — Excel work products the OFFICE STAFF produce per
 // invoice (generated from the invoice, or a custom .xlsx upload). The CLIENT

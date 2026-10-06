@@ -3,6 +3,7 @@ import { desc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
+import { writeAudit, getClientIp } from "@/lib/audit";
 import {
   buildInvoiceConditions,
   combineConditions,
@@ -10,12 +11,9 @@ import {
 } from "@/lib/invoice-filters";
 
 /**
- * Admin CSV export (same filters as the list, no pagination, max 20,000
- * rows). Streamed so large exports never buffer the whole file in memory.
- *
- * TODO(phase-2.2): write an audit_log entry (admin, export, row count,
- * filters) once the audit_log table exists. Currently exports are NOT
- * audit-logged.
+ * Admin CSV export (same filters, no pagination, max 20,000 rows). Streamed
+ * so large exports never buffer the whole file in memory. Audit-logged with
+ * the filter set and emitted row count.
  */
 export const dynamic = "force-dynamic";
 
@@ -101,6 +99,15 @@ export async function GET(request: Request) {
               id: lastRow.id,
             };
           }
+          await writeAudit(db, {
+            actor: { type: "staff", id: me.id },
+            action: "invoice.export_csv",
+            entityType: "invoice",
+            entityId: null,
+            after: { rows: emitted, capped: emitted >= MAX_EXPORT_ROWS },
+            meta: { filters: parsed },
+            ip: getClientIp(request),
+          });
         } finally {
           controller.close();
         }

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { invoices } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireOffice } from "@/lib/session";
+import { officeInvoiceOr404 } from "@/lib/invoice-access";
 import { generatePresignedViewUrl } from "@/lib/s3";
 
 export async function GET(
@@ -10,26 +8,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
 
     const { id } = await params;
 
-    const invoice = await db.query.invoices.findFirst({
-      where: eq(invoices.id, id),
-    });
-
-    if (!invoice) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-    }
-
-    // Strict separation: staff view only their own assigned invoices.
-    const role = (session.user as any).role as string;
-    if (role !== "admin" && invoice.assignedTo !== (session.user as any).id) {
-      return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
-    }
+    const found = await officeInvoiceOr404(id, me);
+    if ("error" in found) return found.error;
+    const invoice = found.invoice;
 
     // Generate fresh short-lived signed GET URL (5 min TTL)
     const signedViewUrl = await generatePresignedViewUrl(invoice.s3Key);

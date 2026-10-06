@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { auth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/session";
 
 /**
  * Per-staff workload counts for the admin view.
@@ -17,10 +17,8 @@ import { auth } from "@/lib/auth";
  */
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as unknown as { role?: string }).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const raw = await db.execute(sql`
       SELECT assigned_to AS "staffId",
@@ -31,7 +29,7 @@ export async function GET() {
              COUNT(*) FILTER (WHERE status = 'disputed') AS "disputed",
              COUNT(*) AS "total"
       FROM invoices
-      WHERE assigned_to IS NOT NULL
+      WHERE assigned_to IS NOT NULL AND deleted_at IS NULL
       GROUP BY assigned_to
     `);
 
@@ -62,7 +60,7 @@ export async function GET() {
     const rawClients = await db.execute(sql`
       SELECT assigned_to AS "staffId", COUNT(DISTINCT client_id) AS "clients"
       FROM invoices
-      WHERE assigned_to IS NOT NULL
+      WHERE assigned_to IS NOT NULL AND deleted_at IS NULL
       GROUP BY assigned_to
     `);
     const clientRows = (Array.isArray(rawClients)

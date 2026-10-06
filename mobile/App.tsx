@@ -644,6 +644,7 @@ export default function App() {
         outletId: editOutletId,
         category: editCategory,
         categoryDetail: editCategory === "other" ? editCategoryDetail.trim() : null,
+        expectedUpdatedAt: selected.updatedAt,
       });
       setEditing(false);
       Alert.alert("Saved", "Invoice updated.");
@@ -660,7 +661,7 @@ export default function App() {
     if (!selected) return;
     Alert.alert(
       "Withdraw Invoice?",
-      "This deletes the upload and its file. Continue?",
+      "This hides the upload from your history (the office retains its copy). Continue?",
       [
         { text: "Cancel", style: "cancel" },
         {

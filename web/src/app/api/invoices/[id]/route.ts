@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { invoices, invoiceStatusLog, assignments, invoiceReports, outlets, staff } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
+import { notDeleted } from "@/lib/invoice-access";
 import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 import { isValidTransition, isTerminalStatus, InvoiceStatus } from "@/lib/status-flow";
 import { concurrentEditError, transitionInvoice, updatedAtMatches } from "@/lib/invoice-transitions";
 import { handleRouteError } from "@/lib/http-errors";
+import { writeAudit } from "@/lib/audit";
 import { categorySchema, validateCategory } from "@/lib/categories";
 import { deleteObjectFromS3 } from "@/lib/s3";
 
@@ -22,7 +24,7 @@ export async function GET(
     const { id } = await params;
 
     const invoice = await db.query.invoices.findFirst({
-      where: eq(invoices.id, id),
+      where: and(eq(invoices.id, id), notDeleted()),
       with: {
         client: safeClient,
         assignedStaff: safeStaff,
@@ -82,6 +84,9 @@ const updateInvoiceSchema = z.object({
   // Category correction + custom text for Other
   category: categorySchema.optional(),
   categoryDetail: z.string().trim().max(200).nullable().optional(),
+  // Optimistic-lock token: the updatedAt the editor loaded. Compared with
+  // the row (409 on mismatch) instead of trusting only the in-request read.
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
 });
 
 export async function PATCH(
@@ -106,7 +111,7 @@ export async function PATCH(
     }
 
     const currentInvoice = await db.query.invoices.findFirst({
-      where: eq(invoices.id, id),
+      where: and(eq(invoices.id, id), notDeleted()),
     });
 
     if (!currentInvoice) {
@@ -130,6 +135,18 @@ export async function PATCH(
     }
 
     const { status: nextStatus, ocrData, priority, note, outletId } = result.data;
+
+    // Optimistic-lock token check: the editor's copy must match the row.
+    if (result.data.expectedUpdatedAt !== undefined) {
+      const expectedMs = new Date(result.data.expectedUpdatedAt).getTime();
+      const currentMs = new Date(currentInvoice.updatedAt).getTime();
+      if (expectedMs !== currentMs) {
+        return NextResponse.json(
+          { error: "Invoice was modified by someone else. Refresh and retry." },
+          { status: 409 }
+        );
+      }
+    }
 
     // Amount must be a real number — NaN/strings-that-aren't-numbers 400
     // instead of corrupting the row (z.number() accepts NaN).
@@ -179,27 +196,35 @@ export async function PATCH(
       }
     }
 
+    // Data fields accompanying the PATCH (status changes go through the
+    // helper below; data-only edits use the optimistic lock). before/after
+    // snapshots feed the audit entry — changed fields only.
+    const dataSet: Record<string, unknown> = {};
+    if (priority) dataSet.priority = priority;
+    if (outletId !== undefined) dataSet.outletId = outletId;
+    if (result.data.category !== undefined) {
+      dataSet.category = nextCategory;
+      dataSet.categoryDetail =
+        nextCategory === "other" ? (nextDetail as string).trim() : null;
+    } else if (result.data.categoryDetail !== undefined && currentInvoice.category === "other") {
+      dataSet.categoryDetail = result.data.categoryDetail?.trim() || null;
+    }
+    if (ocrData) {
+      dataSet.ocrData = {
+        ...currentInvoice.ocrData,
+        ...ocrData,
+      };
+    }
+    const dataBefore: Record<string, unknown> = {};
+    for (const k of Object.keys(dataSet)) {
+      dataBefore[k] = (currentInvoice as any)[k] ?? null;
+    }
+
     const updated = await db.transaction(async (tx) => {
       // Status change → the single race-safe helper (conditional update +
       // log row inside this transaction).
       if (nextStatus && nextStatus !== currentInvoice.status) {
-        const dataSet: Record<string, unknown> = {};
-        if (priority) dataSet.priority = priority;
-        if (outletId !== undefined) dataSet.outletId = outletId;
-        if (result.data.category !== undefined) {
-          dataSet.category = nextCategory;
-          dataSet.categoryDetail =
-            nextCategory === "other" ? (nextDetail as string).trim() : null;
-        } else if (result.data.categoryDetail !== undefined && currentInvoice.category === "other") {
-          dataSet.categoryDetail = result.data.categoryDetail?.trim() || null;
-        }
-        if (ocrData) {
-          dataSet.ocrData = {
-            ...currentInvoice.ocrData,
-            ...ocrData,
-          };
-        }
-        return transitionInvoice(tx, {
+        const row = await transitionInvoice(tx, {
           invoiceId: id,
           expectedStatus: currentInvoice.status,
           nextStatus,
@@ -207,36 +232,26 @@ export async function PATCH(
           note: note || `Status updated from ${currentInvoice.status} to ${nextStatus}`,
           extraSet: dataSet,
         });
+        if (Object.keys(dataSet).length > 0) {
+          await writeAudit(tx, {
+            actor: { type: "staff", id: staffId },
+            action: "invoice.edit",
+            entityType: "invoice",
+            entityId: id,
+            before: dataBefore,
+            after: dataSet,
+            meta: { note: note ?? null },
+          });
+        }
+        return row;
       }
 
       // Data-only edit → optimistic lock on status + updatedAt so two
       // editors cannot silently overwrite each other.
       const updatePayload: any = {
         updatedAt: new Date(),
+        ...dataSet,
       };
-
-      if (priority) {
-        updatePayload.priority = priority;
-      }
-
-      if (outletId !== undefined) {
-        updatePayload.outletId = outletId;
-      }
-
-      if (result.data.category !== undefined) {
-        updatePayload.category = nextCategory;
-        updatePayload.categoryDetail =
-          nextCategory === "other" ? (nextDetail as string).trim() : null;
-      } else if (result.data.categoryDetail !== undefined && currentInvoice.category === "other") {
-        updatePayload.categoryDetail = result.data.categoryDetail?.trim() || null;
-      }
-
-      if (ocrData) {
-        updatePayload.ocrData = {
-          ...currentInvoice.ocrData,
-          ...ocrData,
-        };
-      }
 
       const [res] = await tx
         .update(invoices)
@@ -265,6 +280,19 @@ export async function PATCH(
         });
       }
 
+      // Audit entry for data edits — always (independent of the note).
+      if (Object.keys(dataSet).length > 0) {
+        await writeAudit(tx, {
+          actor: { type: "staff", id: staffId },
+          action: "invoice.edit",
+          entityType: "invoice",
+          entityId: id,
+          before: dataBefore,
+          after: dataSet,
+          meta: { note: note ?? null },
+        });
+      }
+
       return res;
     });
 
@@ -281,10 +309,13 @@ const TERMINAL_DELETE_BLOCKED = ["collected", "disputed"] as const;
 const STAFF_DELETABLE = ["assigned", "in_review", "needs_info"] as const;
 
 /**
- * Office delete (hard delete: DB row + cascade logs/assignments + S3 file).
+ * Office SOFT delete: sets deleted_at/by/reason and hides the row from every
+ * list/detail/stat/export. Status logs, assignments, messages, reports and
+ * the S3 objects are KEPT (purge only via the db:purge script).
  * - Admin: anything EXCEPT terminal collected/disputed (money trail stays).
  * - Staff: only own assigned invoices in pre-verification states
  *   (assigned/in_review/needs_info). Verified+ is an office decision.
+ * Requires a `reason` (min 5 chars). Permission rules unchanged.
  */
 export async function DELETE(
   request: Request,
@@ -299,7 +330,7 @@ export async function DELETE(
     const { id } = await params;
 
     const current = await db.query.invoices.findFirst({
-      where: eq(invoices.id, id),
+      where: and(eq(invoices.id, id), notDeleted()),
     });
     if (!current) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
@@ -324,33 +355,53 @@ export async function DELETE(
       }
     }
 
-    const s3Key = current.s3Key;
-    // Attached Excel reports (S3 keys die with the row — collect first)
-    const doomedReports = await db.query.invoiceReports.findMany({
-      where: eq(invoiceReports.invoiceId, id),
-      columns: { s3Key: true },
-    });
+    const body = await request.json().catch(() => ({}));
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    if (reason.length < 5) {
+      return NextResponse.json(
+        { error: "A reason of at least 5 characters is required to delete an invoice." },
+        { status: 400 }
+      );
+    }
+
     await db.transaction(async (tx) => {
-      await tx.delete(invoiceStatusLog).where(eq(invoiceStatusLog.invoiceId, id));
-      await tx.delete(assignments).where(eq(assignments.invoiceId, id));
-      await tx.delete(invoices).where(eq(invoices.id, id));
+      const [soft] = await tx
+        .update(invoices)
+        .set({
+          deletedAt: new Date(),
+          deletedBy: `${role}:${actorId}`,
+          deleteReason: reason,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(invoices.id, id),
+            eq(invoices.status, current.status as any),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .returning({ id: invoices.id });
+      if (!soft) {
+        throw concurrentEditError();
+      }
+      await writeAudit(tx, {
+        actor: { type: "staff", id: actorId },
+        action: "invoice.soft_delete",
+        entityType: "invoice",
+        entityId: id,
+        before: { status: current.status },
+        after: { deleted: true },
+        meta: { reason, role },
+      });
     });
 
-    // Best-effort S3 cleanup (row is already gone; leftovers are invisible)
-    const s3ok = await deleteObjectFromS3(s3Key);
-    for (const rep of doomedReports) {
-      await deleteObjectFromS3(rep.s3Key);
-    }
-    console.log(
-      `Invoice ${id} deleted by ${role} ${actorId} (status was ${current.status}, s3 cleanup: ${s3ok})`
-    );
+    console.log(`Invoice ${id} soft-deleted by ${role} ${actorId} (reason: ${reason})`);
 
     return NextResponse.json({
       success: true,
-      message: s3ok ? "Invoice and file deleted." : "Invoice deleted (file cleanup pending).",
+      message: "Invoice deleted. Its history, files and reports are retained.",
     });
   } catch (error: any) {
-    console.error("Error in DELETE /api/invoices/[id]:", error);
-    return NextResponse.json({ error: "Failed to delete invoice" }, { status: 500 });
+    return handleRouteError(error, "DELETE /api/invoices/[id]");
   }
 }

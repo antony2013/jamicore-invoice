@@ -92,6 +92,13 @@
       "when": 1791261765626,
       "tag": "0012_phase1-security-lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791269493057,
+      "tag": "0013_phase22-audit-softdelete",
+      "breakpoints": true
     }
   ]
 }

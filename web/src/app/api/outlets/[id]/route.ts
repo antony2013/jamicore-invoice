@@ -4,9 +4,11 @@ import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { clientStaff, invoices, outlets, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
+import { notDeleted } from "@/lib/invoice-access";
 import { isValidTransition } from "@/lib/status-flow";
 import { transitionInvoice } from "@/lib/invoice-transitions";
 import { handleRouteError } from "@/lib/http-errors";
+import { writeAudit, getClientIp } from "@/lib/audit";
 
 const updateOutletSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -84,6 +86,17 @@ export async function PATCH(
       .where(eq(outlets.id, id))
       .returning();
 
+    if (assignedStaffId !== undefined) {
+      await writeAudit(db, {
+        actor: { type: "staff", id: me.id },
+        action: "outlet.default_staff",
+        entityType: "outlet",
+        entityId: id,
+        after: { assignedStaffId },
+        ip: getClientIp(request),
+      });
+    }
+
     // Backlog sweep: unassigned invoices already tagged with this outlet
     // route to the new default immediately (admin is the assigner).
     // ONE transaction for the whole sweep (all-or-nothing); each row goes
@@ -91,7 +104,7 @@ export async function PATCH(
     let swept = 0;
     if (assignedStaffId) {
       const backlog = await db.query.invoices.findMany({
-        where: and(eq(invoices.outletId, id), isNull(invoices.assignedTo)),
+        where: and(eq(invoices.outletId, id), isNull(invoices.assignedTo), notDeleted()),
         columns: { id: true, status: true },
       });
       const adminId = me.id;
@@ -106,6 +119,7 @@ export async function PATCH(
             note: "Bulk-assigned via outlet default staff",
             assignedTo: result.data.assignedStaffId,
             expectedAssignedTo: null,
+            allowSameStatus: true,
             assignment: { staffId: assignedStaffId, assignedBy: adminId },
           });
           swept++;

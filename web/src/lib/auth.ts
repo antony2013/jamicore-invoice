@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { staff } from "@/db/schema";
 import { checkRateLimit } from "@/lib/rate-limiter";
+import { writeAudit } from "@/lib/audit";
 
 /** Constant dummy hash — compared on miss so timing never reveals existence. */
 const DUMMY_BCRYPT_HASH = "$2b$12$KIXxQG8h7vZ3mQwErTyUuO8hG5fSdFgHjKlZxCvBnM1q2w3e4r5t6y7u8i";
@@ -55,17 +56,40 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // indistinguishable from wrong-passwords.
         if (!user) {
           await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+          await writeAudit(db, {
+            actor: { type: "staff", id: email },
+            action: "auth.login_failure",
+            entityType: "staff",
+            meta: { reason: "unknown_email" },
+            ip,
+          });
           return null;
         }
 
         // Deactivated accounts can never sign in.
         if ((user as { isActive?: boolean }).isActive === false) {
           await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+          await writeAudit(db, {
+            actor: { type: "staff", id: user.id },
+            action: "auth.login_failure",
+            entityType: "staff",
+            entityId: user.id,
+            meta: { reason: "inactive" },
+            ip,
+          });
           return null;
         }
 
         const isValid = await bcrypt.compare(password, user.passwordHash);
         if (!isValid) {
+          await writeAudit(db, {
+            actor: { type: "staff", id: user.id },
+            action: "auth.login_failure",
+            entityType: "staff",
+            entityId: user.id,
+            meta: { reason: "wrong_password" },
+            ip,
+          });
           return null;
         }
 

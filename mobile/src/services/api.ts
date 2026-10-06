@@ -650,6 +650,8 @@ export type ClientInvoiceUpdate = {
   outletId?: string | null;
   category?: InvoiceCategory;
   categoryDetail?: string | null;
+  /** Optimistic-lock token: the updatedAt the editor loaded (409 on drift). */
+  expectedUpdatedAt?: string;
 };
 
 /**

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, invoices, invoiceStatusLog, staff } from "@/db/schema";
+import { invoices, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
-import { OPEN_INVOICE_STATUSES } from "@/lib/invoice-access";
+import { notDeleted, OPEN_INVOICE_STATUSES } from "@/lib/invoice-access";
+import { transitionInvoice } from "@/lib/invoice-transitions";
+import { handleRouteError } from "@/lib/http-errors";
+import { writeAudit } from "@/lib/audit";
 
 const reassignSchema = z.object({
   toStaffId: z.string().uuid("Invalid target staff ID"),
@@ -55,29 +58,38 @@ export async function POST(
     const openRows = await db.query.invoices.findMany({
       where: and(
         eq(invoices.assignedTo, fromStaffId),
-        inArray(invoices.status, [...OPEN_INVOICE_STATUSES] as any)
+        inArray(invoices.status, [...OPEN_INVOICE_STATUSES] as any),
+        notDeleted()
       ),
       columns: { id: true, status: true },
     });
 
     await db.transaction(async (tx) => {
       for (const row of openRows) {
-        await tx
-          .update(invoices)
-          .set({ assignedTo: toStaffId, updatedAt: new Date() })
-          .where(eq(invoices.id, row.id));
-        await tx.insert(assignments).values({
+        // Same-status move through the single helper: conditional on the
+        // row still being open AND still assigned here (parallel moves
+        // collide into 409 and roll back), plus log + audit rows.
+        await transitionInvoice(tx, {
           invoiceId: row.id,
-          staffId: toStaffId,
-          assignedBy: me.id,
-        });
-        await tx.insert(invoiceStatusLog).values({
-          invoiceId: row.id,
-          status: row.status as any,
-          changedBy: me.id,
+          expectedStatus: row.status,
+          nextStatus: row.status,
+          actor: { type: "staff", id: me.id },
           note: `Bulk re-assigned from ${source.name} to ${target.name}`,
+          assignedTo: toStaffId,
+          expectedAssignedTo: fromStaffId,
+          allowSameStatus: true,
+          assignment: { staffId: toStaffId, assignedBy: me.id },
         });
       }
+      await writeAudit(tx, {
+        actor: { type: "staff", id: me.id },
+        action: "staff.bulk_reassign",
+        entityType: "staff",
+        entityId: fromStaffId,
+        before: { openInvoices: openRows.map((r) => r.id) },
+        after: { toStaffId, moved: openRows.length },
+        meta: { from: source.name, to: target.name },
+      });
     });
 
     return NextResponse.json({
@@ -86,7 +98,6 @@ export async function POST(
       moved: openRows.length,
     });
   } catch (error: any) {
-    console.error("Error in POST /api/staff/[id]/reassign-open:", error);
-    return NextResponse.json({ error: "Failed to reassign invoices" }, { status: 500 });
+    return handleRouteError(error, "POST /api/staff/[id]/reassign-open");
   }
 }

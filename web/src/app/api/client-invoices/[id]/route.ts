@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
-import { deleteObjectFromS3 } from "@/lib/s3";
 import { categorySchema, validateCategory } from "@/lib/categories";
 import { hasManualAssignment, isClientEditable, DELETE_WINDOW_MS } from "@/lib/client-edit-rules";
 import { concurrentEditError, updatedAtMatches } from "@/lib/invoice-transitions";
 import { ConflictError, handleRouteError, NotFoundError } from "@/lib/http-errors";
+import { clientInvoiceOr404 } from "@/lib/invoice-access";
+import { writeAudit } from "@/lib/audit";
 
 /**
  * Client self-service on their OWN invoice.
@@ -26,23 +27,17 @@ const updateSchema = z.object({
   outletId: z.string().uuid("Invalid outlet ID").nullable().optional(),
   category: categorySchema.optional(),
   categoryDetail: z.string().trim().max(200).nullable().optional(),
+  // Optimistic-lock token: the updatedAt the editor loaded (409 on mismatch).
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
 });
 
 async function ownInvoiceOr404(
   invoiceId: string,
   client: { clientId: string; role: string; sub: string }
 ) {
-  const invoice = await db.query.invoices.findFirst({
-    where: eq(invoices.id, invoiceId),
-  });
-  if (!invoice || invoice.clientId !== client.clientId) {
-    return { error: NextResponse.json({ error: "Invoice not found." }, { status: 404 }) as NextResponse };
-  }
-  // Team staff: only rows they personally uploaded. Owner: everything.
-  if (client.role === "client_staff" && invoice.uploadedByStaffId !== client.sub) {
-    return { error: NextResponse.json({ error: "Invoice not found." }, { status: 404 }) as NextResponse };
-  }
-  return { invoice };
+  // Shared helper: own-client scope + team-staff own-uploads rule +
+  // soft-deleted rows read as 404.
+  return clientInvoiceOr404(invoiceId, client);
 }
 
 export async function PATCH(
@@ -79,6 +74,19 @@ export async function PATCH(
         { error: "Validation failed", details: result.error.format() },
         { status: 400 }
       );
+    }
+
+    // Optimistic-lock token check against the row (not just the in-request
+    // read the conditional UPDATE below also guards).
+    if (result.data.expectedUpdatedAt !== undefined) {
+      const expectedMs = new Date(result.data.expectedUpdatedAt).getTime();
+      const currentMs = new Date(current.updatedAt).getTime();
+      if (expectedMs !== currentMs) {
+        return NextResponse.json(
+          { error: "Invoice was modified by someone else. Refresh and retry." },
+          { status: 409 }
+        );
+      }
     }
 
     const { note, pageNotes, outletId } = result.data;
@@ -141,6 +149,26 @@ export async function PATCH(
         changedBy: null,
         note: "Client updated invoice details",
       });
+      // Audit entry — changed fields only (clientNote, not raw `note`).
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const k of ["clientNote", "pageNotes", "outletId", "category", "categoryDetail"] as const) {
+        if (k in patch) {
+          before[k] = (current as any)[k] ?? null;
+          after[k] = (patch as any)[k];
+        }
+      }
+      await writeAudit(tx, {
+        actor: {
+          type: client.role === "client_staff" ? "client_staff" : "client",
+          id: client.sub,
+        },
+        action: "invoice.edit",
+        entityType: "invoice",
+        entityId: id,
+        before,
+        after,
+      });
       return [row];
     });
 
@@ -189,17 +217,18 @@ export async function DELETE(
       );
     }
 
-    // DB row + logs first (assignments/status logs cascade); S3 object
-    // best-effort after — a leftover object is invisible, a broken row is not.
+    // Soft withdraw: the row stays (history, thread, office visibility)
+    // with deleted_at set; the file stays in S3 (purge is office-side).
     // The status + manual-assignment checks are REPEATED inside the tx: if
     // the office touched the row between our read and this write, the
-    // withdraw aborts instead of deleting an invoice under active review.
+    // withdraw aborts instead of hiding an invoice under active review.
+    const WITHDRAW_REASON = "Withdrawn by client";
     await db.transaction(async (tx) => {
       const fresh = await tx.query.invoices.findFirst({
         where: eq(invoices.id, id),
-        columns: { id: true, status: true },
+        columns: { id: true, status: true, deletedAt: true },
       });
-      if (!fresh) {
+      if (!fresh || fresh.deletedAt) {
         throw new NotFoundError("Invoice no longer exists.");
       }
       const freshManual = await tx.query.assignments.findFirst({
@@ -211,15 +240,42 @@ export async function DELETE(
           `Invoice moved to '${fresh.status}' while withdrawing — the office now owns it. Contact them to remove it.`
         );
       }
-      await tx.delete(invoices).where(eq(invoices.id, id));
+      const [soft] = await tx
+        .update(invoices)
+        .set({
+          deletedAt: new Date(),
+          deletedBy: `client:${client.sub}`,
+          deleteReason: WITHDRAW_REASON,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(invoices.id, id),
+            eq(invoices.status, fresh.status as any),
+            isNull(invoices.deletedAt)
+          )
+        )
+        .returning({ id: invoices.id });
+      if (!soft) {
+        throw concurrentEditError();
+      }
+      await writeAudit(tx, {
+        actor: {
+          type: client.role === "client_staff" ? "client_staff" : "client",
+          id: client.sub,
+        },
+        action: "invoice.soft_delete",
+        entityType: "invoice",
+        entityId: id,
+        before: { status: fresh.status },
+        after: { deleted: true },
+        meta: { reason: WITHDRAW_REASON },
+      });
     });
 
-    const s3ok = await deleteObjectFromS3(current.s3Key);
     return NextResponse.json({
       success: true,
-      message: s3ok
-        ? "Invoice withdrawn and file deleted."
-        : "Invoice withdrawn (file cleanup pending).",
+      message: "Invoice withdrawn. It is hidden from your history but retained by the office.",
     });
   } catch (error: unknown) {
     // Transaction-thrown user messages (e.g. office touched the row mid-

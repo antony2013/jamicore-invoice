@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { clients, clientStaff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { safeStaff } from "@/lib/safe-columns";
+import { writeAudit, getClientIp } from "@/lib/audit";
 import { touchPresence } from "@/lib/presence";
 
 const phoneSchema = z
@@ -66,6 +67,7 @@ export async function GET() {
       email: (c as { email?: string | null }).email ?? null,
       assignedStaffId: (c as { assignedStaffId?: string | null }).assignedStaffId ?? null,
       assignedStaffName: (c as any).assignedStaff?.name ?? null,
+      archivedAt: (c as { archivedAt?: Date | null }).archivedAt ?? null,
       createdAt: c.createdAt,
       totalInvoices: c.invoices.length,
     }));
@@ -123,6 +125,15 @@ export async function POST(request: Request) {
         email: email ?? null,
       })
       .returning();
+
+    await writeAudit(db, {
+      actor: { type: "staff", id: me.id },
+      action: "client.create",
+      entityType: "client",
+      entityId: created.id,
+      after: { name: created.name, username },
+      ip: getClientIp(request),
+    });
 
     return NextResponse.json(
       {

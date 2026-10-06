@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { invoiceStatusLog } from "@/db/schema";
+import { invoices, invoiceStatusLog } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { safeClient, safeStaff } from "@/lib/safe-columns";
 import { touchPresence } from "@/lib/presence";
@@ -37,7 +37,21 @@ export async function GET(request: Request) {
       limit,
     });
 
-    const formatted = logs.map((l) => ({
+    // Soft-deleted invoices vanish from the feed (their logs stay in the DB).
+    const invoiceIds = [...new Set(logs.map((l) => l.invoiceId).filter(Boolean))] as string[];
+    const deletedRows =
+      invoiceIds.length > 0
+        ? await db.query.invoices.findMany({
+            where: inArray(invoices.id, invoiceIds),
+            columns: { id: true, deletedAt: true },
+          })
+        : [];
+    const deletedSet = new Set(
+      deletedRows.filter((r) => r.deletedAt).map((r) => r.id)
+    );
+    const visible = logs.filter((l) => !deletedSet.has(l.invoiceId as string));
+
+    const formatted = visible.map((l) => ({
       id: l.id,
       status: l.status,
       note: l.note,

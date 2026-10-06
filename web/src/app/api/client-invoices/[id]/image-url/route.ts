@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { invoices } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
+import { clientInvoiceOr404 } from "@/lib/invoice-access";
 import { generatePresignedViewUrl } from "@/lib/s3";
 
 /**
@@ -24,17 +22,9 @@ export async function GET(
     }
 
     const { id } = await params;
-    const invoice = await db.query.invoices.findFirst({
-      where: eq(invoices.id, id),
-    });
-
-    if (!invoice || invoice.clientId !== client.clientId) {
-      return NextResponse.json({ error: "Invoice not found." }, { status: 404 });
-    }
-    // Team staff: only rows they personally uploaded.
-    if (client.role === "client_staff" && invoice.uploadedByStaffId !== client.sub) {
-      return NextResponse.json({ error: "Invoice not found." }, { status: 404 });
-    }
+    const found = await clientInvoiceOr404(id, client);
+    if ("error" in found) return found.error;
+    const invoice = found.invoice;
 
     const url = await generatePresignedViewUrl(invoice.s3Key);
     const isPdf = invoice.s3Key.toLowerCase().endsWith(".pdf");

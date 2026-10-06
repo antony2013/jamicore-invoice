@@ -297,7 +297,8 @@ export default function AdminClientsPage() {
     }
   }
 
-  // Step 2: typed user ID matches → permanent cascade delete.
+  // Step 2: typed user ID matches → delete (zero-invoice clients only;
+  // the server 409s anything with history and tells you to archive).
   async function handleRemoveStep2() {
     if (!removing) return;
     setRemoveError(null);
@@ -314,6 +315,34 @@ export default function AdminClientsPage() {
       setRemoveCounts(null);
       setRemoveConfirm("");
       setSuccess(data.message);
+      load();
+    } catch (err: any) {
+      setRemoveError(err.message);
+    } finally {
+      setRemovingBusy(false);
+    }
+  }
+
+  // Archive / unarchive: keeps history, blocks login, kills tokens.
+  async function handleArchive(client: any, to: boolean) {
+    setRemovingBusy(true);
+    setRemoveError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/clients/${client.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: to }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update archive state");
+      setRemoving(null);
+      setRemoveCounts(null);
+      setSuccess(
+        to
+          ? `Client "${client.name}" archived — login blocked, existing tokens revoked. History is preserved.`
+          : `Client "${client.name}" unarchived — login restored.`
+      );
       load();
     } catch (err: any) {
       setRemoveError(err.message);
@@ -475,7 +504,14 @@ export default function AdminClientsPage() {
                 clients.map((c) => (
                   <Fragment key={c.id}>
                     <tr className="hover:bg-slate-50/80">
-                      <td className="px-6 py-4 font-medium text-slate-800">{c.name}</td>
+                      <td className="px-6 py-4 font-medium text-slate-800">
+                        {c.name}{" "}
+                        {c.archivedAt && (
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                            archived
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 font-mono">{c.username || <span className="text-amber-600">no login — reset below</span>}</td>
                       <td className="px-6 py-4 font-mono">{c.phone || "—"}</td>
                       <td className="px-6 py-4">{c.email || "—"}</td>
@@ -543,9 +579,17 @@ export default function AdminClientsPage() {
                           onClick={() => handleRemoveStep1(c)}
                           disabled={removingBusy}
                           className="px-2.5 py-1 border border-red-200 hover:bg-red-50 text-red-600 rounded text-xs font-medium disabled:opacity-50"
-                          title="Permanently remove this client and everything under it (two-step verify)"
+                          title="Archive, or permanently remove when the client has zero invoices (two-step verify)"
                         >
                           Remove
+                        </button>
+                        <button
+                          onClick={() => handleArchive(c, !c.archivedAt)}
+                          disabled={removingBusy}
+                          className="px-2.5 py-1 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded text-xs font-medium disabled:opacity-50"
+                          title={c.archivedAt ? "Restore login for this client" : "Archive: block login, revoke tokens, keep history"}
+                        >
+                          {c.archivedAt ? "Unarchive" : "Archive"}
                         </button>
                       </div>
                     </td>
@@ -557,16 +601,40 @@ export default function AdminClientsPage() {
                           <h4 className="text-xs font-bold text-red-800 mb-1">
                             Remove “{c.name}” (@{c.username || c.name}) permanently?
                           </h4>
-                          <p className="text-xs text-red-700 mb-2">
-                            This destroys {removeCounts?.invoices ?? "…"} invoice(s) (files included),{" "}
-                            {removeCounts?.outlets ?? "…"} outlet(s) and {removeCounts?.members ?? "…"} team member(s).
-                            This cannot be undone.
-                          </p>
                           {removeError && (
                             <div className="mb-2 p-2 rounded-lg bg-white border border-red-300 text-red-700 text-xs">
                               {removeError}
                             </div>
                           )}
+                          {(removeCounts?.invoices ?? 0) > 0 ? (
+                            <>
+                              <p className="text-xs text-red-700 mb-2">
+                                This client has {removeCounts?.invoices} invoice(s) — history is
+                                preserved even for withdrawn ones, so hard delete is blocked.{" "}
+                                Archive instead: login is blocked, tokens die, everything stays.
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleArchive(c, true)}
+                                  disabled={removingBusy}
+                                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold disabled:opacity-50"
+                                >
+                                  {removingBusy ? "Working…" : "Archive instead"}
+                                </button>
+                                <button
+                                  onClick={cancelRemove}
+                                  className="px-3 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xs text-red-700 mb-2">
+                                Zero invoices — this destroys {removeCounts?.outlets ?? "…"} outlet(s)
+                                and {removeCounts?.members ?? "…"} team member(s). This cannot be undone.
+                              </p>
                           <div className="flex items-center gap-2">
                             <input
                               value={removeConfirm}
@@ -590,6 +658,8 @@ export default function AdminClientsPage() {
                               Cancel
                             </button>
                           </div>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

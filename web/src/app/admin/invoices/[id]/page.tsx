@@ -42,6 +42,7 @@ export default function AdminInvoiceDetailPage({
   const [outletMsg, setOutletMsg] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // Read-only visibility into the client↔staff thread + Excel report
   const [messages, setMessages] = useState<any[]>([]);
@@ -104,6 +105,7 @@ export default function AdminInvoiceDetailPage({
           outletId: outletId || null,
           category,
           categoryDetail: category === "other" ? categoryDetail.trim() : null,
+          expectedUpdatedAt: invoice?.updatedAt ?? undefined,
         }),
       });
       const data = await res.json();
@@ -125,10 +127,18 @@ export default function AdminInvoiceDetailPage({
       setDeleteArmed(true);
       return;
     }
+    if (deleteReason.trim().length < 5) {
+      setDeleteError("Give a reason of at least 5 characters to delete.");
+      return;
+    }
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`/api/invoices/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/invoices/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: deleteReason.trim() }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to delete invoice");
       window.location.href = "/admin/dashboard";
@@ -674,6 +684,16 @@ export default function AdminInvoiceDetailPage({
                   Terminal invoices cannot be deleted (audit trail is preserved).
                 </p>
               ) : (
+                <>
+                {deleteArmed && (
+                  <input
+                    value={deleteReason}
+                    onChange={(e) => setDeleteReason(e.target.value)}
+                    placeholder="Reason for deleting (min 5 chars) *"
+                    maxLength={200}
+                    className="w-full mb-2 px-3 py-2 border border-red-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-400"
+                  />
+                )}
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
@@ -686,9 +706,10 @@ export default function AdminInvoiceDetailPage({
                   {deleting
                     ? "Deleting…"
                     : deleteArmed
-                      ? "Click again to confirm delete (row + file)"
+                      ? "Confirm delete with reason"
                       : "Delete Invoice"}
                 </button>
+                </>
               )}
             </div>
           </div>

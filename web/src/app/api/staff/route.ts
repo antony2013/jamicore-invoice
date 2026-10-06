@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
+import { writeAudit, getClientIp } from "@/lib/audit";
 import { touchPresence } from "@/lib/presence";
 
 const createStaffSchema = z.object({
@@ -77,6 +78,15 @@ export async function POST(request: Request) {
         role: staff.role,
         createdAt: staff.createdAt,
       });
+
+    await writeAudit(db, {
+      actor: { type: "staff", id: me.id },
+      action: "staff.create",
+      entityType: "staff",
+      entityId: created.id,
+      after: { name: created.name, email: created.email, role: created.role },
+      ip: getClientIp(request),
+    });
 
     return NextResponse.json(
       {

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
+import { notDeleted } from "@/lib/invoice-access";
 import { deleteObjectFromS3, inspectUploadObject, MAX_UPLOAD_BYTES } from "@/lib/s3";
 import { categorySchema, validateCategory } from "@/lib/categories";
 
@@ -65,9 +66,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Idempotency Check: if invoice row already exists for this s3Key, return existing row
+    // 3. Idempotency Check: if a LIVE invoice row already exists for this
+    // s3Key, return it. Soft-deleted rows don't count (re-upload after a
+    // withdraw creates a fresh row — keys are unique per upload anyway).
     const existingInvoice = await db.query.invoices.findFirst({
-      where: eq(invoices.s3Key, s3Key),
+      where: and(eq(invoices.s3Key, s3Key), notDeleted()),
     });
 
     if (existingInvoice) {
@@ -214,7 +217,7 @@ export async function POST(request: Request) {
         (txError as { cause?: { code?: string } })?.cause?.code;
       if (code === "23505") {
         const existing = await db.query.invoices.findFirst({
-          where: eq(invoices.s3Key, s3Key),
+          where: and(eq(invoices.s3Key, s3Key), notDeleted()),
         });
         if (existing) {
           return NextResponse.json({

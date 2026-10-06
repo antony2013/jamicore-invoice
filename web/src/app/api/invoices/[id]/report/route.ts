@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "@/db";
 import { invoiceReports, invoiceStatusLog, invoices } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
+import { writeAudit, getClientIp } from "@/lib/audit";
+import { notDeleted } from "@/lib/invoice-access";
 import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 import { officeInvoiceOr404 } from "@/lib/invoice-access";
 import {
@@ -138,12 +140,21 @@ export async function POST(
       }
       const safeName = fileName.toLowerCase().endsWith(".xlsx") ? fileName : `${fileName}.xlsx`;
       const created = await replaceReport(id, s3Key, safeName, "uploaded", staffId);
+      await writeAudit(db, {
+        actor: { type: "staff", id: staffId },
+        action: "report.upload",
+        entityType: "invoice",
+        entityId: id,
+        after: { fileName: created.fileName },
+        ip: getClientIp(request),
+      });
       return NextResponse.json({ success: true, report: created });
     }
 
     // action === "generate": build the Excel from live invoice data
+    // (officeInvoiceOr404 above already excluded soft-deleted rows)
     const full = await db.query.invoices.findFirst({
-      where: eq(invoices.id, id),
+      where: and(eq(invoices.id, id), notDeleted()),
       with: { client: safeClient, assignedStaff: safeStaff, outlet: true, uploadedBy: safeClientStaff },
     });
     if (!full) {
@@ -181,6 +192,14 @@ export async function POST(
     await putObjectToS3(key, bytes, REPORT_CONTENT_TYPE);
     const stamp = new Date().toISOString().slice(0, 10);
     const created = await replaceReport(id, key, `invoice-report-${stamp}.xlsx`, "generated", staffId);
+    await writeAudit(db, {
+      actor: { type: "staff", id: staffId },
+      action: "report.generate",
+      entityType: "invoice",
+      entityId: id,
+      after: { fileName: created.fileName },
+      ip: getClientIp(request),
+    });
     return NextResponse.json({ success: true, report: created });
   } catch (error: any) {
     console.error("Error in POST /api/invoices/[id]/report:", error);

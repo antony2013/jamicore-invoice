@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, clients, clientStaff, invoices, invoiceReports, invoiceStatusLog, outlets, staff } from "@/db/schema";
+import { clients, clientStaff, invoices, outlets, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
-import { deleteObjectFromS3 } from "@/lib/s3";
+import { notDeleted } from "@/lib/invoice-access";
 import { isValidTransition } from "@/lib/status-flow";
 import { transitionInvoice } from "@/lib/invoice-transitions";
 import { handleRouteError } from "@/lib/http-errors";
+import { writeAudit, getClientIp } from "@/lib/audit";
 
 const phoneSchema = z
   .string()
@@ -31,6 +32,9 @@ const updateClientSchema = z.object({
   email: z.string().email("Invalid email address").toLowerCase().trim().nullable().optional(),
   // Default staff for this client (all invoices route here). Null clears it.
   assignedStaffId: z.string().uuid("Invalid staff ID").nullable().optional(),
+  // Archive switch: archived clients cannot log in and their tokens die.
+  // Unarchive restores login (a fresh password is still required if reset).
+  archived: z.boolean().optional(),
 });
 
 export async function PATCH(
@@ -56,7 +60,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const { name, username, password, phone, email, assignedStaffId } = result.data;
+    const { name, username, password, phone, email, assignedStaffId, archived } = result.data;
 
     // Duplicate check for changed unique fields (usernames span owners + team)
     if (username && username !== (current as any).username) {
@@ -83,6 +87,11 @@ export async function PATCH(
       // Password reset kills the owner's other sessions.
       (patch as any).tokenVersion = sql`token_version + 1`;
     }
+    // Archive/unarchive: blocks (or restores) login + kills live tokens.
+    if (archived !== undefined) {
+      (patch as any).archivedAt = archived ? new Date() : null;
+      (patch as any).tokenVersion = sql`token_version + 1`;
+    }
     if (phone !== undefined) (patch as any).phone = phone;
     if (email !== undefined) (patch as any).email = email;
     if (assignedStaffId !== undefined) {
@@ -104,6 +113,37 @@ export async function PATCH(
       .where(eq(clients.id, id))
       .returning();
 
+    // Audit the lifecycle changes (sweep rows audit themselves inside the tx).
+    if (password !== undefined) {
+      await writeAudit(db, {
+        actor: { type: "staff", id: me.id },
+        action: "client.password_reset",
+        entityType: "client",
+        entityId: id,
+        ip: getClientIp(request),
+      });
+    }
+    if (archived !== undefined) {
+      await writeAudit(db, {
+        actor: { type: "staff", id: me.id },
+        action: archived ? "client.archive" : "client.unarchive",
+        entityType: "client",
+        entityId: id,
+        ip: getClientIp(request),
+      });
+    }
+    if (assignedStaffId !== undefined) {
+      await writeAudit(db, {
+        actor: { type: "staff", id: me.id },
+        action: "client.default_staff",
+        entityType: "client",
+        entityId: id,
+        before: { assignedStaffId: (current as any).assignedStaffId ?? null },
+        after: { assignedStaffId },
+        ip: getClientIp(request),
+      });
+    }
+
     // Backlog sweep: every unassigned uploaded (or legacy OCR-processed) invoice of this
     // client routes to the new default staff immediately (admin is the
     // assigner). Future uploads auto-route at confirm time.
@@ -112,7 +152,7 @@ export async function PATCH(
     let swept = 0;
     if (assignedStaffId) {
       const backlog = await db.query.invoices.findMany({
-        where: and(eq(invoices.clientId, id), isNull(invoices.assignedTo)),
+        where: and(eq(invoices.clientId, id), isNull(invoices.assignedTo), notDeleted()),
         columns: { id: true, status: true },
       });
       await db.transaction(async (tx) => {
@@ -126,6 +166,7 @@ export async function PATCH(
             note: `Bulk-assigned via client default staff`,
             assignedTo: assignedStaffId,
             expectedAssignedTo: null,
+            allowSameStatus: true,
             assignment: { staffId: assignedStaffId, assignedBy: me.id },
           });
           swept++;
@@ -159,8 +200,11 @@ export async function PATCH(
  * Step 1: DELETE with no (or wrong) confirmUsername → 400 + counts of what
  * would be destroyed. Nothing is deleted.
  * Step 2: DELETE with { confirmUsername } matching the client's user ID
- * exactly → full cascade: S3 objects (best-effort) + invoices (logs and
- * assignment history cascade) + outlets + team members + client.
+ * exactly:
+ * - clients WITH invoices (including soft-deleted ones) → 409: archive
+ *   instead (archive keeps history, blocks login, kills tokens).
+ * - zero-invoice clients → hard delete: DB transaction FIRST (outlets +
+ *   team cascade), S3 objects only AFTER commit, audit entry inside the tx.
  */
 export async function DELETE(
   request: Request,
@@ -176,11 +220,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const [clientInvoices, clientOutlets, team] = await Promise.all([
-      db.query.invoices.findMany({
-        where: eq(invoices.clientId, id),
-        columns: { id: true, s3Key: true },
-      }),
+    // ANY invoices — live or soft-deleted — block hard deletion.
+    const invoiceCount = await db.query.invoices.findMany({
+      where: eq(invoices.clientId, id),
+      columns: { id: true },
+    });
+    const [clientOutlets, team] = await Promise.all([
       db.query.outlets.findMany({
         where: eq(outlets.clientId, id),
         columns: { id: true },
@@ -191,7 +236,7 @@ export async function DELETE(
       }),
     ]);
     const counts = {
-      invoices: clientInvoices.length,
+      invoices: invoiceCount.length,
       outlets: clientOutlets.length,
       members: team.length,
     };
@@ -210,46 +255,41 @@ export async function DELETE(
       );
     }
 
-    // S3 objects first (best-effort — a failure must not strand DB rows,
-    // the key is reported back instead). Report files die with the invoice
-    // rows (FK cascade) — collect their keys up front.
-    let s3Failures = 0;
-    const ids = clientInvoices.map((i) => i.id);
-    const doomedReports =
-      ids.length > 0
-        ? await db.query.invoiceReports.findMany({
-            where: inArray(invoiceReports.invoiceId, ids),
-            columns: { s3Key: true },
-          })
-        : [];
-    for (const inv of clientInvoices) {
-      const ok = await deleteObjectFromS3((inv as any).s3Key);
-      if (!ok) s3Failures++;
-    }
-    for (const rep of doomedReports) {
-      const ok = await deleteObjectFromS3(rep.s3Key);
-      if (!ok) s3Failures++;
+    if (counts.invoices > 0) {
+      return NextResponse.json(
+        {
+          error: `This client has ${counts.invoices} invoice(s) (history is preserved even for withdrawn ones). Hard delete is blocked — archive the client instead.`,
+          counts,
+        },
+        { status: 409 }
+      );
     }
 
+    // Zero-invoice hard delete: transaction first, S3 after commit.
+    const doomedOutlets = clientOutlets.map((o) => o.id);
     await db.transaction(async (tx) => {
-      // Assignment history + status logs cascade off the invoice rows.
-      await tx.delete(invoices).where(eq(invoices.clientId, id));
       await tx.delete(outlets).where(eq(outlets.clientId, id));
       // Team members cascade off the client row.
       await tx.delete(clients).where(eq(clients.id, id));
+      await writeAudit(tx, {
+        actor: { type: "staff", id: me.id },
+        action: "client.hard_delete",
+        entityType: "client",
+        entityId: id,
+        before: { name: (client as any).name, outlets: doomedOutlets.length, members: team.length },
+        meta: { confirmToken },
+      });
     });
 
     return NextResponse.json({
       success: true,
       message:
         `Client "${(client as any).name}" removed ` +
-        `(${counts.invoices} invoice(s), ${counts.outlets} outlet(s), ${counts.members} team member(s)).` +
-        (s3Failures > 0 ? ` ${s3Failures} S3 object(s) could not be deleted — clean them manually.` : ""),
+        `(${counts.outlets} outlet(s), ${counts.members} team member(s)). No invoices existed, so no files needed cleanup.`,
       deleted: counts,
-      s3Failures,
+      s3Failures: 0,
     });
   } catch (error: any) {
-    console.error("Error deleting client:", error);
-    return NextResponse.json({ error: "Failed to delete client" }, { status: 500 });
+    return handleRouteError(error, "DELETE /api/clients/[id]");
   }
 }

@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
 
 /** Invoices that still need a human (open work). */
 export const OPEN_INVOICE_STATUSES = ["assigned", "in_review", "needs_info"] as const;
+
+/**
+ * Shared soft-delete exclusion for EVERY invoice query (Phase 2.2).
+ * Soft-deleted rows vanish from lists/detail/stats/exports but keep their
+ * logs, messages, reports and S3 objects.
+ */
+export function notDeleted() {
+  return isNull(invoices.deletedAt);
+}
+
+/** Raw-SQL twin for db.execute queries (staff stats). */
+export function notDeletedSql() {
+  return sql`"invoices"."deleted_at" IS NULL`;
+}
 
 export type OfficeUser = { id: string; role: string; name?: string };
 export type ClientUser = { clientId: string; role: string; sub: string; name?: string };
@@ -15,7 +29,9 @@ export type ClientUser = { clientId: string; role: string; sub: string; name?: s
  * staff cannot probe other rows).
  */
 export async function officeInvoiceOr404(id: string, user: OfficeUser) {
-  const invoice = await db.query.invoices.findFirst({ where: eq(invoices.id, id) });
+  const invoice = await db.query.invoices.findFirst({
+    where: and(eq(invoices.id, id), notDeleted()),
+  });
   if (!invoice) {
     return { error: NextResponse.json({ error: "Invoice not found" }, { status: 404 }) as NextResponse };
   }
@@ -30,7 +46,9 @@ export async function officeInvoiceOr404(id: string, user: OfficeUser) {
  * scoped to rows THEY uploaded (owner sees everything).
  */
 export async function clientInvoiceOr404(id: string, client: ClientUser) {
-  const invoice = await db.query.invoices.findFirst({ where: eq(invoices.id, id) });
+  const invoice = await db.query.invoices.findFirst({
+    where: and(eq(invoices.id, id), notDeleted()),
+  });
   if (!invoice || invoice.clientId !== client.clientId) {
     return { error: NextResponse.json({ error: "Invoice not found." }, { status: 404 }) as NextResponse };
   }

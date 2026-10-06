@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { clients, clientStaff } from "@/db/schema";
 import { signClientToken } from "@/lib/jwt";
 import { checkRateLimit } from "@/lib/rate-limiter";
+import { writeAudit, getClientIp } from "@/lib/audit";
 
 /** Constant dummy hash so misses cost the same as wrong-passwords. */
 const DUMMY_BCRYPT_HASH = "$2b$12$KIXxQG8h7vZ3mQwErTyUuO8hG5fSdFgHjKlZxCvBnM1q2w3e4r5t6y7u8i";
@@ -142,9 +143,15 @@ export async function POST(request: Request) {
       }
     }
 
+    // One audit row per failed attempt (rate-limited floods never reach here).
+    await writeAudit(db, {
+      actor: { type: "client", id: normalized },
+      action: "auth.login_failure",
+      entityType: "client",
+      ip: getClientIp(request),
+    });
     return NextResponse.json({ error: "Invalid user ID or password." }, { status: 401 });
-  } catch (error: unknown) {
-    console.error("Error in /api/client-auth/login:", error);
+  } catch (error: unknown) {    console.error("Error in /api/client-auth/login:", error);
     return NextResponse.json({ error: "Internal server error during login" }, { status: 500 });
   }
 }

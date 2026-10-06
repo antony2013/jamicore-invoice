@@ -40,6 +40,7 @@ export default function StaffInvoiceVerifyPage({
   const [note, setNote] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
   // Client↔staff thread
   const [messages, setMessages] = useState<any[]>([]);
   const [msgBody, setMsgBody] = useState("");
@@ -58,10 +59,18 @@ export default function StaffInvoiceVerifyPage({
       setDeleteArmed(true);
       return;
     }
+    if (deleteReason.trim().length < 5) {
+      setError("Give a reason of at least 5 characters to delete.");
+      return;
+    }
     setDeleting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/invoices/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/invoices/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: deleteReason.trim() }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to delete invoice");
       window.location.href = "/staff/dashboard";
@@ -157,6 +166,7 @@ export default function StaffInvoiceVerifyPage({
             date,
           },
           ...(note ? { note: `Data verified/corrected by staff: ${note}` } : {}),
+          expectedUpdatedAt: invoice?.updatedAt ?? undefined,
         }),
       });
 
@@ -736,6 +746,15 @@ export default function StaffInvoiceVerifyPage({
                 <h3 className="text-xs font-bold uppercase tracking-wider text-red-700 mb-2">
                   Danger Zone
                 </h3>
+                {deleteArmed && (
+                  <input
+                    value={deleteReason}
+                    onChange={(e) => setDeleteReason(e.target.value)}
+                    placeholder="Reason for deleting (min 5 chars) *"
+                    maxLength={200}
+                    className="w-full mb-2 px-3 py-2 border border-red-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-400"
+                  />
+                )}
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
@@ -748,7 +767,7 @@ export default function StaffInvoiceVerifyPage({
                   {deleting
                     ? "Deleting…"
                     : deleteArmed
-                      ? "Click again to confirm delete"
+                      ? "Confirm delete with reason"
                       : "Delete Invoice"}
                 </button>
               </div>

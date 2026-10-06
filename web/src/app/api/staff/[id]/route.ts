@@ -5,7 +5,9 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
-import { OPEN_INVOICE_STATUSES } from "@/lib/invoice-access";
+import { notDeleted, OPEN_INVOICE_STATUSES } from "@/lib/invoice-access";
+import { handleRouteError } from "@/lib/http-errors";
+import { writeAudit, getClientIp } from "@/lib/audit";
 
 const updateStaffSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100).optional(),
@@ -33,7 +35,8 @@ export async function GET(
     const openInvoices = await db.query.invoices.findMany({
       where: and(
         eq(invoices.assignedTo, id),
-        inArray(invoices.status, [...OPEN_INVOICE_STATUSES] as any)
+        inArray(invoices.status, [...OPEN_INVOICE_STATUSES] as any),
+        notDeleted()
       ),
       columns: { id: true },
     });
@@ -134,15 +137,47 @@ export async function PATCH(
     const openInvoices = await db.query.invoices.findMany({
       where: and(
         eq(invoices.assignedTo, id),
-        inArray(invoices.status, [...OPEN_INVOICE_STATUSES] as any)
+        inArray(invoices.status, [...OPEN_INVOICE_STATUSES] as any),
+        notDeleted()
       ),
       columns: { id: true },
     });
 
     const bits: string[] = [];
-    if (password !== undefined) bits.push("Password reset — share the new password, old sessions revoked.");
-    if (isActive !== undefined) bits.push(isActive ? "Account reactivated." : "Account deactivated — login blocked, sessions revoked.");
-    if (role !== undefined && role !== current.role) bits.push(`Role changed to ${role}.`);
+    if (password !== undefined) {
+      bits.push("Password reset — share the new password, old sessions revoked.");
+      await writeAudit(db, {
+        actor: { type: "staff", id: me.id },
+        action: "staff.password_reset",
+        entityType: "staff",
+        entityId: id,
+        ip: getClientIp(request),
+      });
+    }
+    if (isActive !== undefined) {
+      bits.push(isActive ? "Account reactivated." : "Account deactivated — login blocked, sessions revoked.");
+      await writeAudit(db, {
+        actor: { type: "staff", id: me.id },
+        action: isActive ? "staff.reactivate" : "staff.deactivate",
+        entityType: "staff",
+        entityId: id,
+        before: { isActive: current.isActive },
+        after: { isActive },
+        ip: getClientIp(request),
+      });
+    }
+    if (role !== undefined && role !== current.role) {
+      bits.push(`Role changed to ${role}.`);
+      await writeAudit(db, {
+        actor: { type: "staff", id: me.id },
+        action: "staff.role_change",
+        entityType: "staff",
+        entityId: id,
+        before: { role: current.role },
+        after: { role },
+        ip: getClientIp(request),
+      });
+    }
     if (name !== undefined) bits.push("Name updated.");
 
     return NextResponse.json({
@@ -152,7 +187,6 @@ export async function PATCH(
       openInvoiceCount: openInvoices.length,
     });
   } catch (error: any) {
-    console.error("Error updating staff:", error);
-    return NextResponse.json({ error: "Failed to update staff member" }, { status: 500 });
+    return handleRouteError(error, "PATCH /api/staff/[id]");
   }
 }

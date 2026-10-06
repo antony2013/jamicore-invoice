@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { assignments, invoices, invoiceMessages, invoiceReports, invoiceStatusLog } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { safeClientStaff } from "@/lib/safe-columns";
+import { notDeleted } from "@/lib/invoice-access";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { isClientEditable, isClientWithdrawable } from "@/lib/client-edit-rules";
 
@@ -42,9 +43,10 @@ export async function GET(request: Request) {
     const whereClause = cursor
       ? and(
           scope,
+          notDeleted(),
           sql`(${invoices.createdAt}, ${invoices.id}) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`
         )
-      : scope;
+      : and(scope, notDeleted());
 
     const rows = await db.query.invoices.findMany({
       where: whereClause,

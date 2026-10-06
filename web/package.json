@@ -16,7 +16,8 @@
     "db:reset": "tsx src/db/reset-prod.ts",
     "db:studio": "drizzle-kit studio",
     "s3:cleanup": "tsx src/db/cleanup-orphans.ts",
-    "db:rotate": "tsx src/db/rotate-credentials.ts"
+    "db:rotate": "tsx src/db/rotate-credentials.ts",
+    "db:purge": "tsx src/db/purge-deleted.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",

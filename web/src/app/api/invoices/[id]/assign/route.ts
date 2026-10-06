@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { invoices, assignments, invoiceStatusLog, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
+import { notDeleted } from "@/lib/invoice-access";
 import { isValidTransition, InvoiceStatus } from "@/lib/status-flow";
 import { transitionInvoice } from "@/lib/invoice-transitions";
 import { handleRouteError } from "@/lib/http-errors";
@@ -37,9 +38,9 @@ export async function POST(
 
     const { staffId, priority, note } = result.data;
 
-    // Fetch current invoice
+    // Fetch current invoice (soft-deleted rows read as missing)
     const currentInvoice = await db.query.invoices.findFirst({
-      where: eq(invoices.id, id),
+      where: and(eq(invoices.id, id), notDeleted()),
     });
 
     if (!currentInvoice) {
@@ -90,6 +91,7 @@ export async function POST(
         extraSet: priority ? { priority } : {},
         assignedTo: staffId,
         expectedAssignedTo: currentInvoice.assignedTo ?? null,
+        allowSameStatus: true,
         assignment: { staffId, assignedBy: adminId },
       });
     });

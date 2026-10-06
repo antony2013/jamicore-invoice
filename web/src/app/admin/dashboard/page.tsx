@@ -278,6 +278,12 @@ export default function AdminDashboard() {
             >
               History
             </Link>
+            <Link
+              href="/admin/audit"
+              className="text-xs text-slate-600 hover:text-slate-900 font-medium"
+            >
+              Audit
+            </Link>
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
