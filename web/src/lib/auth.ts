@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
@@ -6,6 +7,7 @@ import { db } from "@/db";
 import { staff } from "@/db/schema";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { writeAudit } from "@/lib/audit";
+import { requireSecret } from "@/lib/required-env";
 
 /** Constant dummy hash — compared on miss so timing never reveals existence. */
 const DUMMY_BCRYPT_HASH = "$2b$12$KIXxQG8h7vZ3mQwErTyUuO8hG5fSdFgHjKlZxCvBnM1q2w3e4r5t6y7u8i";
@@ -18,7 +20,7 @@ function clientIp(request: unknown): string {
   return first || "unknown-ip";
 }
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const authOptions: NextAuthConfig = {
   // Required behind reverse proxies (Coolify/Traefik terminates HTTPS and
   // forwards plain HTTP): without this Auth.js rejects the host and all
   // /api/auth/* routes 500.
@@ -156,14 +158,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     maxAge: 12 * 60 * 60, // 12 hours
     updateAge: 60 * 60, // refresh rolling session hourly
   },
-  secret: (() => {
-    const s = process.env.NEXTAUTH_SECRET;
-    if (!s) {
-      if (process.env.NODE_ENV === "production") {
-        throw new Error("NEXTAUTH_SECRET is not set. Refusing to start in production.");
-      }
-      return "dev-only-nextauth-secret-do-not-use-in-production-12";
-    }
-    return s;
-  })(),
-});
+  secret: requireSecret(
+    "NEXTAUTH_SECRET",
+    "dev-only-nextauth-secret-do-not-use-in-production-12"
+  ),
+};
+
+// Exported for tests (callback unit tests); app code uses the bound helpers.
+export const { handlers, signIn, signOut, auth } = NextAuth(authOptions);

@@ -1,3 +1,7 @@
+> **Historical.** This prompt describes an early plan (OTP login, OCR pipeline).
+> The actual system uses admin-created password login and manual data entry;
+> OTP and OCR were removed. Kept for context only.
+
 # Build Prompt: Invoice Collection System
 
 You are building a full-stack invoice collection system with three parts: a native mobile app (client-facing), a Next.js web app (admin + staff), and a shared backend API + database. Build this in **vertical slices** — each slice should be fully working end-to-end (DB → API → UI) before moving to the next, not layer-by-layer.

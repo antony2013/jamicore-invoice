@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { requireSecret } from "@/lib/required-env";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -14,8 +15,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const secret = process.env.NEXTAUTH_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
+  // Fail closed: no fallback secret outside explicit local development.
+  let secret: string;
+  try {
+    secret = requireSecret(
+      "NEXTAUTH_SECRET",
+      "dev-only-nextauth-secret-do-not-use-in-production-12"
+    );
+  } catch {
     return new NextResponse("Server misconfigured", { status: 500 });
   }
 
@@ -29,7 +36,7 @@ export async function middleware(request: NextRequest) {
     forwardedProto === "https" || request.nextUrl.protocol === "https:";
   const token = await getToken({
     req: request,
-    secret: secret || "dev-only-nextauth-secret-do-not-use-in-production-12",
+    secret,
     secureCookie: isSecure,
     cookieName: isSecure
       ? "__Secure-authjs.session-token"

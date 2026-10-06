@@ -245,8 +245,8 @@ export async function DELETE(
     };
 
     const body = await request.json().catch(() => ({}));
-    // Legacy OTP-era rows may have no username — then the client NAME is the
-    // confirm token instead (the UI shows whichever one applies).
+    // Very old rows (pre-password era) may have no username — then the client
+    // NAME is the confirm token instead (the UI shows whichever one applies).
     const confirmToken = (client as any).username || (client as any).name;
     if (!confirmToken || body?.confirmUsername !== confirmToken) {
       return NextResponse.json(

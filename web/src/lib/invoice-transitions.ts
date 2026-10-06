@@ -1,6 +1,6 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, invoices, invoiceStatusLog } from "@/db/schema";
+import { assignments, auditLog, invoices, invoiceStatusLog } from "@/db/schema";
 import { isTerminalStatus, isValidTransition, InvoiceStatus } from "@/lib/status-flow";
 import { BadRequestError, ConflictError, ForbiddenError } from "@/lib/http-errors";
 import { writeAudit } from "@/lib/audit";
@@ -77,8 +77,14 @@ export async function transitionInvoice(tx: DbTx, input: TransitionInput) {
     );
   }
 
-  // Maker-checker (Phase 2.3): verified -> collected must be a DIFFERENT
-  // account than the one that set verified (read from the status log).
+  // Maker-checker (Phase 2.3, Step-3 hardened): verified -> collected
+  // must be a DIFFERENT account than the one that set verified. The
+  // verifier is the LATEST audit_log `invoice.status` entry for this
+  // invoice whose after.status = 'verified' (a data-edit echo never
+  // carries after.status, so edits can't move the checker). Legacy rows
+  // with no such audit entry fall back to the earliest 'verified'
+  // status_log row, and fail OPEN (with a console warning) if even that
+  // is missing.
   // ENFORCE_MAKER_CHECKER=false disables; admins are exempt only with
   // ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT=true.
   if (
@@ -89,21 +95,44 @@ export async function transitionInvoice(tx: DbTx, input: TransitionInput) {
     const adminExempt =
       !!actor.isAdmin && (process.env.ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT ?? "false") === "true";
     if (!adminExempt && actor.id) {
-      // The transition INTO verified is the EARLIEST 'verified' log entry —
-      // later data-edit echoes (same status, with a note) don't move the
-      // checker. (asc = first = the account that actually verified.)
-      const verifier = await tx.query.invoiceStatusLog.findFirst({
+      const auditHits = await tx.query.auditLog.findMany({
         where: and(
-          eq(invoiceStatusLog.invoiceId, invoiceId),
-          eq(invoiceStatusLog.status, "verified" as any)
+          eq(auditLog.entityType, "invoice"),
+          eq(auditLog.entityId, invoiceId),
+          eq(auditLog.action, "invoice.status"),
+          sql`${auditLog.after}->>'status' = 'verified'`
         ),
-        orderBy: [asc(invoiceStatusLog.timestamp)],
-        columns: { changedBy: true },
+        orderBy: [desc(auditLog.at)],
+        limit: 1,
+        columns: { actorId: true },
       });
-      if (verifier?.changedBy && verifier.changedBy === actor.id) {
-        throw new ForbiddenError(
-          "Maker-checker: the account that verified this invoice cannot also collect it. Ask another staff member."
-        );
+      const verifierId = auditHits[0]?.actorId ?? null;
+      if (verifierId) {
+        if (verifierId === actor.id) {
+          throw new ForbiddenError(
+            "Maker-checker: the account that verified this invoice cannot also collect it. Ask another staff member."
+          );
+        }
+      } else {
+        // Legacy fallback: earliest 'verified' status_log row.
+        const legacy = await tx.query.invoiceStatusLog.findFirst({
+          where: and(
+            eq(invoiceStatusLog.invoiceId, invoiceId),
+            eq(invoiceStatusLog.status, "verified" as any)
+          ),
+          orderBy: [asc(invoiceStatusLog.timestamp)],
+          columns: { changedBy: true },
+        });
+        if (legacy?.changedBy && legacy.changedBy === actor.id) {
+          throw new ForbiddenError(
+            "Maker-checker: the account that verified this invoice cannot also collect it. Ask another staff member."
+          );
+        }
+        if (!legacy?.changedBy) {
+          console.warn(
+            `maker-checker fail-open: no audit entry for invoice ${invoiceId} (legacy row)`
+          );
+        }
       }
     }
   }

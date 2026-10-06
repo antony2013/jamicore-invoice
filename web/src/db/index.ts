@@ -1,16 +1,14 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import { requireSecret } from "@/lib/required-env";
 
 function resolveConnectionString(): string {
-  const s = process.env.DATABASE_URL;
-  if (!s) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("DATABASE_URL is not set. Refusing to start in production.");
-    }
-    return "postgres://postgres:postgres@localhost:5432/invoice_db";
-  }
-  return s;
+  // No localhost default outside explicit local development.
+  return requireSecret(
+    "DATABASE_URL",
+    "postgres://postgres:postgres@localhost:5432/invoice_db"
+  );
 }
 
 type PgClient = ReturnType<typeof postgres>;

@@ -21,7 +21,8 @@ export const priorityEnum = pgEnum("invoice_priority", ["low", "normal", "urgent
 
 // 1. Clients Table (Mobile App Users)
 // Identity: admin-created username + password (bcrypt). Phone/email are
-// contact info only. Legacy OTP-era rows may have null username/password.
+// contact info only. Very old rows (pre-password era) may have null
+// username/password.
 export const clients = pgTable("clients", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -30,8 +31,8 @@ export const clients = pgTable("clients", {
   phone: text("phone").unique(),
   email: text("email").unique(),
   // Default staff for this client: ALL of their invoices (current backlog
-  // via bulk-assign, new ones via OCR auto-assign) route to this person.
-  // Null = manual assignment per invoice.
+  // via bulk-assign, new ones via default-staff auto-assign at upload) route
+  // to this person. Null = manual assignment per invoice.
   assignedStaffId: uuid("assigned_staff_id").references(() => staff.id, { onDelete: "set null" }),
   // Session revocation counter — password reset or archive bumps it.
   tokenVersion: integer("token_version").notNull().default(0),

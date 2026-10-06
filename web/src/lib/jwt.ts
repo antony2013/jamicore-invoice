@@ -2,17 +2,12 @@ import { SignJWT, jwtVerify } from "jose";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, clientStaff } from "@/db/schema";
+import { requireSecret } from "@/lib/required-env";
 
 function getSecretKey(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("JWT_SECRET is not set. Refusing to start with a fallback secret in production.");
-    }
-    // Dev-only fallback (never committed to prod env)
-    return new TextEncoder().encode("dev-only-jwt-secret-do-not-use-in-production-123456");
-  }
-  return new TextEncoder().encode(secret);
+  return new TextEncoder().encode(
+    requireSecret("JWT_SECRET", "dev-only-jwt-secret-do-not-use-in-production-123456")
+  );
 }
 
 const ISSUER = "jamicore-invoice";
