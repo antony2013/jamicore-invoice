@@ -3,7 +3,8 @@ import { z } from "zod";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, outlets } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/session";
+import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 
 const createOutletSchema = z.object({
   clientId: z.string().uuid("Invalid client ID"),
@@ -18,17 +19,15 @@ const createOutletSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId");
 
     const rows = await db.query.outlets.findMany({
       where: clientId ? eq(outlets.clientId, clientId) : undefined,
-      with: { client: true, createdBy: true, assignedStaff: true },
+      with: { client: safeClient, createdBy: safeClientStaff, assignedStaff: safeStaff },
       orderBy: [asc(outlets.name)],
     });
 
@@ -54,10 +53,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const body = await request.json();
     const result = createOutletSchema.safeParse(body);

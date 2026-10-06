@@ -14,7 +14,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:reset": "tsx src/db/reset-prod.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "s3:cleanup": "tsx src/db/cleanup-orphans.ts",
+    "db:rotate": "tsx src/db/rotate-credentials.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",
@@ -22,17 +24,20 @@
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.39.3",
+    "drizzle-orm": "^0.45.3",
     "exceljs": "^4.4.0",
     "jose": "^5.9.6",
     "lucide-react": "^0.475.0",
-    "next": "15.1.7",
-    "next-auth": "^5.0.0-beta.32",
+    "next": "15.5.27",
+    "next-auth": "5.0.0-beta.32",
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.1",
     "zod": "^3.24.2"
+  },
+  "overrides": {
+    "uuid": ">=11.1.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

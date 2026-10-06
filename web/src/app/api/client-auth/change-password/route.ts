@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const rl = checkRateLimit(`client-pw:${client.sub}`, 10, 15 * 60 * 1000);
+    const rl = await checkRateLimit(`client-pw:${client.sub}`, 10, 15 * 60 * 1000);
     if (!rl.allowed) {
       return NextResponse.json(
         {
@@ -59,7 +59,11 @@ export async function POST(request: Request) {
 
     await db
       .update(clients)
-      .set({ passwordHash: await bcrypt.hash(result.data.newPassword, 10) })
+      .set({
+        passwordHash: await bcrypt.hash(result.data.newPassword, 12),
+        // Old tokens (other devices) die on next request.
+        tokenVersion: sql`token_version + 1`,
+      })
       .where(eq(clients.id, client.sub));
 
     return NextResponse.json({ success: true, message: "Password changed successfully." });

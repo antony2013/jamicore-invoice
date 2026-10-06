@@ -4,6 +4,9 @@
     "slug": "jamicore-invoice-scanner",
     "version": "1.0.0",
     "orientation": "default",
+    "extra": {
+      "apiBaseUrl": "https://ac.jamicore.com"
+    },
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {

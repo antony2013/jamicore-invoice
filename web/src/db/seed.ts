@@ -26,8 +26,8 @@ async function seed() {
     }
     console.warn("Using dev-only seed passwords (set SEED_*_PASSWORD to override).");
   }
-  const passwordHash = await bcrypt.hash(adminPassword || "dev-admin-only-do-not-use", 10);
-  const staffPasswordHash = await bcrypt.hash(staffPassword || "dev-staff-only-do-not-use", 10);
+  const passwordHash = await bcrypt.hash(adminPassword || "dev-admin-only-do-not-use", 12);
+  const staffPasswordHash = await bcrypt.hash(staffPassword || "dev-staff-only-do-not-use", 12);
 
   // Check admin
   const existingAdmin = await db.query.staff.findFirst({

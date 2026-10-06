@@ -62,7 +62,7 @@ export type AllowedContentType = (typeof ALLOWED_TYPES)[number];
 export async function generatePresignedUploadUrl(
   s3Key: string,
   contentType: string,
-  contentLength?: number
+  contentLength: number
 ): Promise<string> {
   const normalized = contentType.toLowerCase();
   if (!(ALLOWED_TYPES as readonly string[]).includes(normalized)) {
@@ -70,17 +70,15 @@ export async function generatePresignedUploadUrl(
       `Unsupported content-type: ${contentType}. Allowed types: ${ALLOWED_TYPES.join(", ")}`
     );
   }
-  if (contentLength !== undefined) {
-    if (!Number.isInteger(contentLength) || contentLength <= 0 || contentLength > MAX_UPLOAD_BYTES) {
-      throw new Error(`Invalid contentLength: must be 1..${MAX_UPLOAD_BYTES} bytes.`);
-    }
+  if (!Number.isInteger(contentLength) || contentLength <= 0 || contentLength > MAX_UPLOAD_BYTES) {
+    throw new Error(`Invalid contentLength: must be 1..${MAX_UPLOAD_BYTES} bytes.`);
   }
 
   const command = new PutObjectCommand({
     Bucket: BUCKET_NAME,
     Key: s3Key,
     ContentType: contentType,
-    ...(contentLength !== undefined ? { ContentLength: contentLength } : {}),
+    ContentLength: contentLength,
   });
 
   // Short-lived upload URL (expires in 15 minutes)
@@ -88,31 +86,68 @@ export async function generatePresignedUploadUrl(
 }
 
 /**
- * Verify whether an object exists in S3 (HeadObject).
- * Required by Slice 1 to ensure an uploaded file actually exists before DB insert.
- *
- * FAILS CLOSED: any error (missing object, 403, network) returns exists:false
- * except when explicit mock mode is enabled via ALLOW_S3_MOCK=true
- * (local dev without S3). The old implicit "test credentials" bypass is removed.
+ * Upload validation bundle: existence + size + stored ContentType +
+ * first-bytes magic check. Used by confirm-upload before any DB row exists.
  */
-export async function checkObjectExistsInS3(s3Key: string): Promise<{ exists: boolean; size?: number }> {
+export type UploadInspection = {
+  exists: boolean;
+  size?: number;
+  contentType?: string;
+  magicOk?: boolean;
+  magicDetail?: string;
+};
+
+const MAGIC_BY_EXT: Record<string, Array<{ label: string; test: (b: Uint8Array) => boolean }>> = {
+  jpg: [{ label: "JPEG FF D8 FF", test: (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff }],
+  png: [
+    {
+      label: "PNG signature",
+      test: (b) =>
+        b.length >= 8 &&
+        b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+        b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a,
+    },
+  ],
+  pdf: [{ label: "%PDF-", test: (b) => b.length >= 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d }],
+};
+
+/** Shared magic-byte check (also used for .xlsx report confirm). */
+export function checkMagicBytes(bytes: Uint8Array, kind: "jpg" | "png" | "pdf" | "xlsx"): boolean {
+  if (kind === "xlsx") {
+    return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+  }
+  const rules = MAGIC_BY_EXT[kind];
+  return rules ? rules.some((r) => r.test(bytes)) : false;
+}
+
+export async function inspectUploadObject(s3Key: string): Promise<UploadInspection> {
   try {
-    const command = new HeadObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: s3Key,
-    });
-    const response = await s3Client.send(command);
-    return { exists: true, size: response.ContentLength };
+    const head = await s3Client.send(new HeadObjectCommand({ Bucket: BUCKET_NAME, Key: s3Key }));
+    const size = head.ContentLength;
+    const contentType = head.ContentType;
+    // First 16 bytes for the magic check (single small ranged GET).
+    let magicOk: boolean | undefined;
+    let magicDetail: string | undefined;
+    try {
+      const got = await s3Client.send(
+        new GetObjectCommand({ Bucket: BUCKET_NAME, Key: s3Key, Range: "bytes=0-15" })
+      );
+      const bytes = new Uint8Array(await got.Body!.transformToByteArray());
+      const ext = s3Key.split(".").pop()?.toLowerCase();
+      if (ext === "jpg" || ext === "png" || ext === "pdf" || ext === "xlsx") {
+        magicOk = checkMagicBytes(bytes, ext as "jpg" | "png" | "pdf" | "xlsx");
+        magicDetail = magicOk ? undefined : `bad magic for .${ext}`;
+      }
+    } catch {
+      magicOk = undefined; // ranged GET unsupported — skip the check, don't fail
+    }
+    return { exists: true, size, contentType, magicOk, magicDetail };
   } catch (error: unknown) {
     const err = error as { name?: string; $metadata?: { httpStatusCode?: number } };
     if (err?.name === "NotFound" || err?.$metadata?.httpStatusCode === 404) {
       return { exists: false };
     }
-    if (process.env.ALLOW_S3_MOCK === "true" && process.env.NODE_ENV !== "production") {
-      console.warn(`[S3 MOCK] HeadObject failed for "${s3Key}" but ALLOW_S3_MOCK=true — treating as exists (dev only).`);
-      return { exists: true, size: 1024 };
-    }
-    console.error(`[S3] HeadObject failed for "${s3Key}":`, error);
+    console.error(`[S3] inspectUploadObject failed for "${s3Key}":`, error);
     return { exists: false };
   }
 }

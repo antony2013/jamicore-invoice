@@ -1,4 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { clients, clientStaff } from "@/db/schema";
 
 function getSecretKey(): Uint8Array {
   const secret = process.env.JWT_SECRET;
@@ -26,6 +29,7 @@ export interface ClientJWTPayload {
   email?: string | null;
   name: string; // Display name (owner or staff member name)
   staffName?: string | null; // Set when role === "client_staff"
+  tv: number; // token_version at issue time — must match the live row
 }
 
 /**
@@ -42,6 +46,7 @@ export async function signClientToken(payload: {
   email?: string | null;
   name: string;
   staffName?: string | null;
+  tv: number;
 }): Promise<string> {
   return new SignJWT({
     sub: payload.id,
@@ -52,6 +57,7 @@ export async function signClientToken(payload: {
     email: payload.email ?? undefined,
     name: payload.name,
     staffName: payload.staffName ?? undefined,
+    tv: payload.tv,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -77,22 +83,25 @@ export async function verifyClientToken(token: string): Promise<ClientJWTPayload
     if ((role !== "client" && role !== "client_staff") || !payload.sub || typeof payload.sub !== "string") {
       return null;
     }
-    // Legacy tokens (pre-team, role always "client", sub === client id):
-    // clientId claim missing -> sub IS the client id.
-    const clientId =
-      typeof payload.clientId === "string" && payload.clientId.length > 0
-        ? payload.clientId
-        : (payload.sub as string);
+    // No legacy fallback: clientId is mandatory and `tv` must be present.
+    // Tokens issued before revocation support force a clean re-login.
+    if (typeof payload.clientId !== "string" || payload.clientId.length === 0) {
+      return null;
+    }
+    if (typeof payload.tv !== "number") {
+      return null;
+    }
 
     return {
       sub: payload.sub as string,
       role: role as ClientRole,
-      clientId,
+      clientId: payload.clientId as string,
       username: (payload.username as string | undefined) ?? null,
       phone: (payload.phone as string | undefined) ?? null,
       email: (payload.email as string | undefined) ?? null,
       name: (payload.name as string) || "",
       staffName: (payload.staffName as string | undefined) ?? null,
+      tv: payload.tv as number,
     };
   } catch {
     return null;
@@ -101,9 +110,11 @@ export async function verifyClientToken(token: string): Promise<ClientJWTPayload
 
 /**
  * Helper to extract and verify token directly from Next.js Request Authorization header.
- * For team staff, ALSO verifies the account is still active — so owner
- * deactivation takes effect immediately instead of lingering until the
- * 7-day JWT expires.
+ * Revalidates against the live row on EVERY call, so password/PIN resets,
+ * deactivation and archiving take effect immediately instead of lingering
+ * until the 7-day JWT expires:
+ * - owner: row must exist, archived_at must be null, token_version === tv
+ * - team staff: row must exist and be active, token_version === tv
  */
 export async function authenticateClientRequest(request: Request): Promise<ClientJWTPayload | null> {
   const authHeader = request.headers.get("authorization");
@@ -113,18 +124,27 @@ export async function authenticateClientRequest(request: Request): Promise<Clien
   const token = authHeader.substring(7).trim();
   const payload = await verifyClientToken(token);
   if (!payload) return null;
-  if (payload.role === "client_staff") {
-    try {
-      const { db } = await import("@/db");
-      const { clientStaff } = await import("@/db/schema");
-      const { eq } = await import("drizzle-orm");
+  try {
+    if (payload.role === "client_staff") {
       const row = await db.query.clientStaff.findFirst({
         where: eq(clientStaff.id, payload.sub),
       });
       if (!row || !row.isActive) return null;
-    } catch {
-      return null;
+      if ((row.tokenVersion ?? 0) !== payload.tv) return null;
+      // The owning client being archived kills team tokens too.
+      const home = await db.query.clients.findFirst({
+        where: eq(clients.id, row.clientId),
+      });
+      if (!home || home.archivedAt) return null;
+    } else {
+      const row = await db.query.clients.findFirst({
+        where: eq(clients.id, payload.sub),
+      });
+      if (!row || row.archivedAt) return null;
+      if ((row.tokenVersion ?? 0) !== payload.tv) return null;
     }
+  } catch {
+    return null;
   }
   return payload;
 }

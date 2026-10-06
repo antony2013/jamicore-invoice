@@ -2,18 +2,17 @@ import { NextResponse } from "next/server";
 import { and, eq, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices, clients, staff } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireOffice } from "@/lib/session";
+import { safeClient, safeStaff } from "@/lib/safe-columns";
 import { touchPresence } from "@/lib/presence";
 
 export async function GET(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
 
-    const role = (session.user as any).role as string;
-    const staffId = (session.user as any).id as string;
+    const role = me.role;
+    const staffId = me.id;
     touchPresence(staffId);
 
     const { searchParams } = new URL(request.url);
@@ -73,8 +72,8 @@ export async function GET(request: Request) {
     const invoiceList = await db.query.invoices.findMany({
       where: whereClause,
       with: {
-        client: true,
-        assignedStaff: true,
+        client: safeClient,
+        assignedStaff: safeStaff,
         outlet: true,
       },
       orderBy: [desc(invoices.createdAt)],

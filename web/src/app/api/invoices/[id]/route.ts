@@ -3,7 +3,8 @@ import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { invoices, invoiceStatusLog, assignments, invoiceReports, outlets, staff } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireOffice } from "@/lib/session";
+import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 import { isValidTransition, isTerminalStatus, InvoiceStatus } from "@/lib/status-flow";
 import { categorySchema, validateCategory } from "@/lib/categories";
 import { deleteObjectFromS3 } from "@/lib/s3";
@@ -13,20 +14,18 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
 
     const { id } = await params;
 
     const invoice = await db.query.invoices.findFirst({
       where: eq(invoices.id, id),
       with: {
-        client: true,
-        assignedStaff: true,
+        client: safeClient,
+        assignedStaff: safeStaff,
         outlet: true,
-        uploadedBy: true,
+        uploadedBy: safeClientStaff,
       },
     });
 
@@ -35,8 +34,7 @@ export async function GET(
     }
 
     // Strict separation: staff see only invoices assigned to them.
-    const role = (session.user as any).role as string;
-    if (role !== "admin" && invoice.assignedTo !== (session.user as any).id) {
+    if (me.role !== "admin" && invoice.assignedTo !== me.id) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
@@ -44,7 +42,7 @@ export async function GET(
     const logs = await db.query.invoiceStatusLog.findMany({
       where: eq(invoiceStatusLog.invoiceId, id),
       with: {
-        actor: true,
+        actor: safeStaff,
       },
       orderBy: [desc(invoiceStatusLog.timestamp)],
     });
@@ -89,12 +87,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
 
-    const staffId = (session.user as any).id;
+    const staffId = me.id;
     const { id } = await params;
 
     const body = await request.json();
@@ -116,7 +112,7 @@ export async function PATCH(
     }
 
     // Strict separation: staff mutate only their own assigned invoices.
-    const actorRole = (session.user as any).role as string;
+    const actorRole = me.role;
     if (actorRole !== "admin" && currentInvoice.assignedTo !== staffId) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
@@ -263,13 +259,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
 
-    const role = (session.user as any).role as string;
-    const actorId = (session.user as any).id as string;
+    const role = me.role;
+    const actorId = me.id;
     const { id } = await params;
 
     const current = await db.query.invoices.findFirst({

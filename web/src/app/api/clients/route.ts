@@ -4,7 +4,8 @@ import bcrypt from "bcryptjs";
 import { desc, eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, clientStaff } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/session";
+import { safeStaff } from "@/lib/safe-columns";
 import { touchPresence } from "@/lib/presence";
 
 const phoneSchema = z
@@ -45,16 +46,14 @@ function toPublicClient(c: typeof clients.$inferSelect) {
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
-    touchPresence((session.user as any).id);
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
+    touchPresence(me.id);
 
     const clientList = await db.query.clients.findMany({
       with: {
         invoices: true,
-        assignedStaff: true,
+        assignedStaff: safeStaff,
       },
       orderBy: [desc(clients.createdAt)],
     });
@@ -83,10 +82,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const body = await request.json();
     const result = createClientSchema.safeParse(body);
@@ -115,7 +112,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
     const [created] = await db
       .insert(clients)
       .values({

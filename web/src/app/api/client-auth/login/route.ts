@@ -7,6 +7,9 @@ import { clients, clientStaff } from "@/db/schema";
 import { signClientToken } from "@/lib/jwt";
 import { checkRateLimit } from "@/lib/rate-limiter";
 
+/** Constant dummy hash so misses cost the same as wrong-passwords. */
+const DUMMY_BCRYPT_HASH = "$2b$12$KIXxQG8h7vZ3mQwErTyUuO8hG5fSdFgHjKlZxCvBnM1q2w3e4r5t6y7u8i";
+
 const loginSchema = z.object({
   // User ID (client owner username OR team staff username)
   username: z.string().min(1, "User ID is required").max(100).trim(),
@@ -28,9 +31,14 @@ export async function POST(request: Request) {
 
     const { username, password } = result.data;
     const normalized = username.toLowerCase();
+    const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0]?.trim() || "unknown-ip";
 
-    // Brute-force guard per user ID (generic error below avoids user enumeration)
-    const rl = checkRateLimit(`client-login:${normalized}`, 10, 15 * 60 * 1000);
+    // Brute-force guard per user ID AND per IP (generic error below avoids user enumeration)
+    const [rlUser, rlIp] = await Promise.all([
+      checkRateLimit(`client-login:${normalized}`, 10, 15 * 60 * 1000),
+      checkRateLimit(`client-login-ip:${ip}`, 30, 15 * 60 * 1000),
+    ]);
+    const rl = !rlUser.allowed ? rlUser : rlIp;
     if (!rl.allowed) {
       return NextResponse.json(
         {
@@ -46,7 +54,21 @@ export async function POST(request: Request) {
       where: eq(clients.username, normalized),
     });
     const ownerHash = (owner as { passwordHash?: string | null } | undefined)?.passwordHash;
-    if (owner && ownerHash && (await bcrypt.compare(password, ownerHash))) {
+    if (!owner || !ownerHash) {
+      // Unknown account: burn bcrypt time so the miss is indistinguishable.
+      await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+    } else if ((owner as { archivedAt?: Date | null }).archivedAt) {
+      await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+    } else if (await bcrypt.compare(password, ownerHash)) {
+      // Opportunistic cost upgrade for old hashes.
+      try {
+        if (bcrypt.getRounds(ownerHash) < 12) {
+          const upgraded = await bcrypt.hash(password, 12);
+          await db.update(clients).set({ passwordHash: upgraded }).where(eq(clients.id, owner.id));
+        }
+      } catch {
+        // Best-effort only.
+      }
       const token = await signClientToken({
         id: owner.id,
         role: "client",
@@ -55,6 +77,7 @@ export async function POST(request: Request) {
         phone: owner.phone ?? null,
         email: owner.email ?? null,
         name: owner.name,
+        tv: (owner as { tokenVersion?: number }).tokenVersion ?? 0,
       });
       return NextResponse.json({
         success: true,
@@ -76,8 +99,22 @@ export async function POST(request: Request) {
     const member = await db.query.clientStaff.findFirst({
       where: eq(clientStaff.username, normalized),
     });
-    if (member && member.isActive && (await bcrypt.compare(password, member.pinHash))) {
+    if (!member) {
+      await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+    } else if (member.isActive && (await bcrypt.compare(password, member.pinHash))) {
       const home = await db.query.clients.findFirst({ where: eq(clients.id, member.clientId) });
+      // Archived owning client kills team logins too.
+      if (!home || (home as { archivedAt?: Date | null }).archivedAt) {
+        await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+      } else {
+        try {
+          if (bcrypt.getRounds(member.pinHash) < 12) {
+            const upgraded = await bcrypt.hash(password, 12);
+            await db.update(clientStaff).set({ pinHash: upgraded }).where(eq(clientStaff.id, member.id));
+          }
+        } catch {
+          // Best-effort only.
+        }
       const token = await signClientToken({
         id: member.id,
         role: "client_staff",
@@ -85,6 +122,7 @@ export async function POST(request: Request) {
         username: member.username,
         name: member.name,
         staffName: member.name,
+        tv: (member as { tokenVersion?: number }).tokenVersion ?? 0,
       });
       return NextResponse.json({
         success: true,
@@ -101,6 +139,7 @@ export async function POST(request: Request) {
           email: null,
         },
       });
+      }
     }
 
     return NextResponse.json({ error: "Invalid user ID or password." }, { status: 401 });

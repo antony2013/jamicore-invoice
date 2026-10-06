@@ -1,79 +1,48 @@
-interface RateLimitRecord {
-  count: number;
+import { sql } from "drizzle-orm";
+import { db } from "@/db";
+
+/**
+ * Postgres-backed fixed-window rate limiter (shared across processes and
+ * restarts — one row per key in `rate_limits`). Atomic via a single
+ * INSERT ... ON CONFLICT upsert; expired rows are cleaned opportunistically
+ * on ~1% of calls.
+ */
+export type RateLimitResult = {
+  allowed: boolean;
+  remaining: number;
   resetTime: number;
-}
+};
 
-// In-memory rate limiting store (keyed by identifier, e.g. "client-login:jane.doe" or "upload:clientId").
-//
-// NOTE (production): this Map is per-process — it diverges across replicas /
-// serverless instances and resets on restart. It is a Slice-1 guard, not a
-// distributed limiter. For multi-instance production, replace with a shared
-// store (Redis/Upstash) behind the same `checkRateLimit` signature.
-// (Spec asks to confirm before adding services — this is that confirmation point.)
-const rateLimitMap = new Map<string, RateLimitRecord>();
-
-/**
- * Clean expired entries periodically.
- * Guarded so serverless/Edge imports don't leak intervals per-invocation.
- */
-let cleanupScheduled = false;
-function ensureCleanupScheduled() {
-  if (cleanupScheduled) return;
-  cleanupScheduled = true;
-  const timer = setInterval(() => {
-    const now = Date.now();
-    for (const [key, record] of rateLimitMap.entries()) {
-      if (now > record.resetTime) {
-        rateLimitMap.delete(key);
-      }
-    }
-  }, 60 * 1000);
-  // Don't keep the process alive just for cleanup (esp. worker/test runners)
-  const t = timer as unknown as { unref?: () => void };
-  if (typeof t.unref === "function") t.unref();
-}
-ensureCleanupScheduled();
-
-/**
- * Checks and increments rate limit counter.
- * @param key Unique key for the rate limit subject (e.g. "client-login:jane.doe")
- * @param maxLimit Maximum allowed attempts within window
- * @param windowMs Window duration in milliseconds
- * @returns { allowed: boolean, remaining: number, resetTime: number }
- */
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   maxLimit: number,
   windowMs: number
-): { allowed: boolean; remaining: number; resetTime: number } {
+): Promise<RateLimitResult> {
   const now = Date.now();
-  const existing = rateLimitMap.get(key);
+  // ISO strings (not Date objects) — the pg driver serializes these
+  // deterministically across drizzle versions.
+  const windowEndIso = new Date(now + windowMs).toISOString();
 
-  if (!existing || now > existing.resetTime) {
-    const newRecord: RateLimitRecord = {
-      count: 1,
-      resetTime: now + windowMs,
-    };
-    rateLimitMap.set(key, newRecord);
-    return {
-      allowed: true,
-      remaining: maxLimit - 1,
-      resetTime: newRecord.resetTime,
-    };
+  // Opportunistic cleanup (~1% of calls, fire-and-forget)
+  if (Math.random() < 0.01) {
+    db.execute(sql`DELETE FROM rate_limits WHERE reset_at < now()`).catch(() => undefined);
   }
 
-  if (existing.count >= maxLimit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      resetTime: existing.resetTime,
-    };
-  }
+  const rows = (await db.execute(sql`
+    INSERT INTO rate_limits (key, count, reset_at)
+    VALUES (${key}, 1, ${windowEndIso}::timestamptz)
+    ON CONFLICT (key) DO UPDATE SET
+      count = CASE WHEN rate_limits.reset_at <= now() THEN 1 ELSE rate_limits.count + 1 END,
+      reset_at = CASE WHEN rate_limits.reset_at <= now() THEN ${windowEndIso}::timestamptz ELSE rate_limits.reset_at END
+    RETURNING count, reset_at
+  `)) as unknown as Array<{ count: number; reset_at: Date | string }>;
 
-  existing.count += 1;
+  const row = rows[0];
+  const count = Number(row?.count ?? 1);
+  const resetTime = new Date(row?.reset_at ?? windowEndIso).getTime();
   return {
-    allowed: true,
-    remaining: maxLimit - existing.count,
-    resetTime: existing.resetTime,
+    allowed: count <= maxLimit,
+    remaining: Math.max(0, maxLimit - count),
+    resetTime,
   };
 }

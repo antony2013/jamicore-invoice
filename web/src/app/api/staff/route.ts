@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { staff } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 
 const createStaffSchema = z.object({
@@ -16,11 +16,9 @@ const createStaffSchema = z.object({
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as unknown as { role?: string }).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
-    touchPresence((session.user as unknown as { id?: string }).id);
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
+    touchPresence(me.id);
 
     const staffList = await db.query.staff.findMany({
       columns: {
@@ -28,6 +26,7 @@ export async function GET() {
         name: true,
         email: true,
         role: true,
+        isActive: true,
         lastSeenAt: true,
         createdAt: true,
       },
@@ -45,10 +44,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as unknown as { role?: string }).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const body = await request.json();
     const result = createStaffSchema.safeParse(body);
@@ -69,7 +66,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
     const [created] = await db
       .insert(staff)
       .values({ name: name.trim(), email, role, passwordHash })

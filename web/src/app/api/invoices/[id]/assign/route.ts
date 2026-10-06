@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { invoices, assignments, invoiceStatusLog, staff } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/session";
 import { isValidTransition, InvoiceStatus } from "@/lib/status-flow";
 
 const assignSchema = z.object({
@@ -17,12 +17,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin privileges required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
-    const adminId = (session.user as any).id;
+    const adminId = me.id;
     const { id } = await params;
 
     const body = await request.json();
@@ -49,36 +47,39 @@ export async function POST(
     // Strictly validate against status transition matrix.
     // Assignable: freshly uploaded invoices, plus legacy ocr_done/ocr_failed
     // rows draining from before automated OCR was removed.
-    const isReassign = currentInvoice.status === "assigned";
+    // Re-assignable (assignee changes, status UNCHANGED): assigned,
+    // in_review, needs_info. Terminal + verified stay blocked.
+    const REASSIGNABLE = ["assigned", "in_review", "needs_info"];
+    const isReassign = REASSIGNABLE.includes(currentInvoice.status);
     const allowed = isReassign
       ? true
       : isValidTransition(currentInvoice.status as InvoiceStatus, "assigned");
     if (!allowed) {
       return NextResponse.json(
         {
-          error: `Cannot assign invoice in current status '${currentInvoice.status}'. Only uploaded (or legacy OCR-processed) invoices can be assigned.`,
+          error: `Cannot assign invoice in current status '${currentInvoice.status}'. Only uploaded (or legacy OCR-processed) invoices can be assigned; assigned / in-review / info-needed ones can be re-assigned.`,
         },
         { status: 400 }
       );
     }
 
-    // Ensure target exists and is a STAFF account (never an admin —
-    // admins can't open the staff portal, so such invoices would strand).
+    // Ensure target exists, is ACTIVE, and is a STAFF account (never an
+    // admin — admins can't open the staff portal, so such invoices strand).
     const targetStaff = await db.query.staff.findFirst({
       where: eq(staff.id, staffId),
     });
 
-    if (!targetStaff || targetStaff.role !== "staff") {
-      return NextResponse.json({ error: "Select a valid staff member (admin accounts cannot take invoices)." }, { status: 400 });
+    if (!targetStaff || targetStaff.role !== "staff" || targetStaff.isActive === false) {
+      return NextResponse.json({ error: "Select an ACTIVE staff member (admin accounts cannot take invoices)." }, { status: 400 });
     }
 
-    // Execute assignment in transaction
+    // Execute assignment in transaction (re-assign keeps the current status)
     const updatedInvoice = await db.transaction(async (tx) => {
       // 1. Update invoice
       const [inv] = await tx
         .update(invoices)
         .set({
-          status: "assigned",
+          status: isReassign ? currentInvoice.status : "assigned",
           assignedTo: staffId,
           ...(priority ? { priority } : {}),
           updatedAt: new Date(),
@@ -96,7 +97,7 @@ export async function POST(
       // 3. Insert audit log
       await tx.insert(invoiceStatusLog).values({
         invoiceId: id,
-        status: "assigned",
+        status: isReassign ? (currentInvoice.status as any) : "assigned",
         changedBy: adminId,
         note: note || (isReassign
           ? `Re-assigned to ${targetStaff.name} (${targetStaff.email})`

@@ -9,9 +9,9 @@ const uploadUrlSchema = z.object({
   contentType: z.enum(["image/jpeg", "image/png", "application/pdf"], {
     errorMap: () => ({ message: "Only JPEG, PNG images and PDF files are supported" }),
   }),
-  // Expected body size in bytes — embedded into the signed PUT so S3
-  // rejects mismatched lengths at the policy level (not just client-side).
-  contentLength: z.number().int().positive().max(MAX_UPLOAD_BYTES).optional(),
+  // Expected body size in bytes — REQUIRED and embedded into the signed PUT
+  // so S3 rejects mismatched lengths at the policy level (not just client-side).
+  contentLength: z.number().int().positive().max(MAX_UPLOAD_BYTES),
 });
 
 export async function POST(request: Request) {
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
     // 2. Rate-limiting: Max 30 upload-url requests per hour per login identity
     const rateLimitKey = `upload:${client.sub}`;
-    const rateLimit = checkRateLimit(rateLimitKey, 30, 60 * 60 * 1000);
+    const rateLimit = await checkRateLimit(rateLimitKey, 30, 60 * 60 * 1000);
 
     if (!rateLimit.allowed) {
       return NextResponse.json(

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, clients, clientStaff, invoices, invoiceReports, invoiceStatusLog, outlets, staff } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/session";
 import { deleteObjectFromS3 } from "@/lib/s3";
 import { isValidTransition } from "@/lib/status-flow";
 
@@ -36,10 +36,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const { id } = await params;
     const body = await request.json();
@@ -78,7 +76,11 @@ export async function PATCH(
     const patch: Partial<typeof clients.$inferInsert> = {};
     if (name !== undefined) patch.name = name.trim();
     if (username !== undefined) (patch as any).username = username;
-    if (password !== undefined) (patch as any).passwordHash = await bcrypt.hash(password, 10);
+    if (password !== undefined) {
+      (patch as any).passwordHash = await bcrypt.hash(password, 12);
+      // Password reset kills the owner's other sessions.
+      (patch as any).tokenVersion = sql`token_version + 1`;
+    }
     if (phone !== undefined) (patch as any).phone = phone;
     if (email !== undefined) (patch as any).email = email;
     if (assignedStaffId !== undefined) {
@@ -118,12 +120,12 @@ export async function PATCH(
           await tx.insert(assignments).values({
             invoiceId: inv.id,
             staffId: assignedStaffId,
-            assignedBy: (session.user as any).id,
+            assignedBy: me.id,
           });
           await tx.insert(invoiceStatusLog).values({
             invoiceId: inv.id,
             status: "assigned",
-            changedBy: (session.user as any).id,
+            changedBy: me.id,
             note: `Bulk-assigned via client default staff`,
           });
         });
@@ -166,10 +168,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const { id } = await params;
     const client = await db.query.clients.findFirst({ where: eq(clients.id, id) });

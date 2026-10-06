@@ -4,15 +4,17 @@ import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "@/db";
 import { invoiceReports, invoiceStatusLog, invoices } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireOffice } from "@/lib/session";
+import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 import { officeInvoiceOr404 } from "@/lib/invoice-access";
 import {
   MAX_REPORT_BYTES,
   REPORT_CONTENT_TYPE,
-  checkObjectExistsInS3,
+  checkMagicBytes,
   deleteObjectFromS3,
   generatePresignedReportUploadUrl,
   generatePresignedViewUrl,
+  inspectUploadObject,
   putObjectToS3,
 } from "@/lib/s3";
 import { buildInvoiceReportXlsx } from "@/lib/excel-report";
@@ -59,12 +61,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
+
     const { id } = await params;
-    const found = await officeInvoiceOr404(id, session.user as any);
+    const found = await officeInvoiceOr404(id, me);
     if ("error" in found) return found.error;
 
     const report = await latestReport(id);
@@ -91,13 +92,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const staffId = (session.user as any).id as string;
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
+
+    const staffId = me.id;
     const { id } = await params;
-    const found = await officeInvoiceOr404(id, session.user as any);
+    const found = await officeInvoiceOr404(id, me);
     if ("error" in found) return found.error;
 
     const body = await request.json();
@@ -123,9 +123,18 @@ export async function POST(
       if (!s3Key.startsWith(`reports/${id}/`) || !s3Key.toLowerCase().endsWith(".xlsx")) {
         return NextResponse.json({ error: "Report key does not belong to this invoice." }, { status: 400 });
       }
-      const { exists } = await checkObjectExistsInS3(s3Key);
-      if (!exists) {
+      const inspected = await inspectUploadObject(s3Key);
+      if (!inspected.exists) {
         return NextResponse.json({ error: "File not found in storage. Upload first." }, { status: 400 });
+      }
+      // Uploaded reports must really be zips (Phase 2.4): wrong magic →
+      // delete the object, reject the confirm.
+      if (inspected.magicOk === false || inspected.size === undefined || inspected.size > MAX_REPORT_BYTES) {
+        await deleteObjectFromS3(s3Key);
+        return NextResponse.json(
+          { error: inspected.magicOk === false ? "File is not a valid .xlsx (bad magic bytes)." : "Report file is too large." },
+          { status: 400 }
+        );
       }
       const safeName = fileName.toLowerCase().endsWith(".xlsx") ? fileName : `${fileName}.xlsx`;
       const created = await replaceReport(id, s3Key, safeName, "uploaded", staffId);
@@ -135,14 +144,14 @@ export async function POST(
     // action === "generate": build the Excel from live invoice data
     const full = await db.query.invoices.findFirst({
       where: eq(invoices.id, id),
-      with: { client: true, assignedStaff: true, outlet: true, uploadedBy: true },
+      with: { client: safeClient, assignedStaff: safeStaff, outlet: true, uploadedBy: safeClientStaff },
     });
     if (!full) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
     const logs = await db.query.invoiceStatusLog.findMany({
       where: eq(invoiceStatusLog.invoiceId, id),
-      with: { actor: true },
+      with: { actor: safeStaff },
       orderBy: [desc(invoiceStatusLog.timestamp)],
     });
     const bytes = await buildInvoiceReportXlsx({

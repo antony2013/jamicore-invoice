@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceStatusLog } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireOffice } from "@/lib/session";
+import { safeClient, safeStaff } from "@/lib/safe-columns";
 import { touchPresence } from "@/lib/presence";
 
 /**
@@ -13,13 +14,11 @@ import { touchPresence } from "@/lib/presence";
  */
 export async function GET(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
 
-    const role = (session.user as any).role as string;
-    const staffId = (session.user as any).id as string;
+    const role = me.role;
+    const staffId = me.id;
     touchPresence(staffId);
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10) || 100, 200);
@@ -27,10 +26,10 @@ export async function GET(request: Request) {
     const logs = await db.query.invoiceStatusLog.findMany({
       where: role === "admin" ? undefined : eq(invoiceStatusLog.changedBy, staffId),
       with: {
-        actor: true,
+        actor: safeStaff,
         invoice: {
           with: {
-            client: true,
+            client: safeClient,
           },
         },
       },

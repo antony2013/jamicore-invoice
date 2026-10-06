@@ -164,20 +164,24 @@ function PrimaryButton({
 }
 
 /** Server endpoint switcher — usable logged-out (login) and logged-in
- *  (account), so local <-> cloud switching never needs reinstall. */
+ *  (account), so local <-> cloud switching never needs reinstall.
+ *  Hidden in release builds (visible=false): production URL is locked. */
 function ServerSwitcher({
   serverUrl,
   setServerUrlState,
   showServerConfig,
   setShowServerConfig,
   onSave,
+  visible,
 }: {
   serverUrl: string;
   setServerUrlState: (v: string) => void;
   showServerConfig: boolean;
   setShowServerConfig: (v: boolean) => void;
   onSave: () => void;
+  visible: boolean;
 }) {
+  if (!visible) return null;
   return (
     <>
       <TouchableOpacity
@@ -672,8 +676,8 @@ export default function App() {
       setPwMsg(isOwner ? "New passwords do not match." : "New PINs do not match.");
       return;
     }
-    if (isOwner ? newPw.length < 8 : !/^\d{4,6}$/.test(newPw)) {
-      setPwMsg(isOwner ? "New password must be at least 8 characters." : "New PIN must be 4-6 digits.");
+    if (isOwner ? newPw.length < 8 : !/^\d{6,8}$/.test(newPw)) {
+      setPwMsg(isOwner ? "New password must be at least 8 characters." : "New PIN must be 6-8 digits.");
       return;
     }
     setSavingEdit(true);
@@ -718,8 +722,8 @@ export default function App() {
       setTeamMsg("Name, user ID and PIN are all required.");
       return;
     }
-    if (!/^\d{4,6}$/.test(tmPin.trim())) {
-      setTeamMsg("PIN must be 4-6 digits.");
+    if (!/^\d{6,8}$/.test(tmPin.trim())) {
+      setTeamMsg("PIN must be 6-8 digits.");
       return;
     }
     setSavingEdit(true);
@@ -779,8 +783,8 @@ export default function App() {
   };
 
   const handleResetMemberPin = async (id: string) => {
-    if (!/^\d{4,6}$/.test(resetPin.trim())) {
-      setTeamMsg("New PIN must be 4-6 digits.");
+    if (!/^\d{6,8}$/.test(resetPin.trim())) {
+      setTeamMsg("New PIN must be 6-8 digits.");
       return;
     }
     setSavingEdit(true);
@@ -1149,6 +1153,7 @@ export default function App() {
                   showServerConfig={showServerConfig}
                   setShowServerConfig={setShowServerConfig}
                   onSave={handleUpdateServerUrl}
+                  visible={__DEV__}
                 />
               </GlassCard>
             )}
@@ -1801,7 +1806,7 @@ export default function App() {
                   autoCapitalize="none"
                   keyboardType={isOwner ? "default" : "number-pad"}
                 />
-                <Text style={styles.label}>{isOwner ? "New password (min 8)" : "New PIN (4-6 digits)"}</Text>
+                <Text style={styles.label}>{isOwner ? "New password (min 8)" : "New PIN (6-8 digits)"}</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="••••••••"
@@ -1836,6 +1841,7 @@ export default function App() {
                   showServerConfig={showServerConfig}
                   setShowServerConfig={setShowServerConfig}
                   onSave={handleUpdateServerUrl}
+                  visible={__DEV__}
                 />
                 <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
               </GlassCard>
@@ -1898,7 +1904,7 @@ export default function App() {
                           <View style={styles.teamResetRow}>
                             <TextInput
                               style={[styles.input, styles.teamPinInput]}
-                              placeholder="New 4-6 digit PIN"
+                              placeholder="New 6-8 digit PIN"
                               placeholderTextColor="#64748B"
                               value={resetPin}
                               onChangeText={setResetPin}
@@ -2004,7 +2010,7 @@ export default function App() {
                   />
                   <TextInput
                     style={[styles.input, { flex: 1 }]}
-                    placeholder="4-6 digit PIN"
+                    placeholder="6-8 digit PIN"
                     placeholderTextColor="#64748B"
                     value={tmPin}
                     onChangeText={setTmPin}

@@ -33,6 +33,11 @@ export const clients = pgTable("clients", {
   // via bulk-assign, new ones via OCR auto-assign) route to this person.
   // Null = manual assignment per invoice.
   assignedStaffId: uuid("assigned_staff_id").references(() => staff.id, { onDelete: "set null" }),
+  // Session revocation counter — password reset or archive bumps it.
+  tokenVersion: integer("token_version").notNull().default(0),
+  // Soft archive: archived clients cannot log in and their tokens die.
+  // (Hard delete is only allowed when the client has zero invoices.)
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -47,6 +52,9 @@ export const clientStaff = pgTable("client_staff", {
   username: text("username").notNull().unique(),
   pinHash: text("pin_hash").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  // Session revocation counter — every PIN change/deactivation bumps it;
+  // mobile JWTs carrying an older tv are rejected.
+  tokenVersion: integer("token_version").notNull().default(0),
   // Which outlet/branch this member works at (null = all/unspecified).
   // Plain uuid WITHOUT an FK (a two-way FK with outlets.createdByStaffId
   // would be a circular reference breaking type inference). Ownership is
@@ -80,9 +88,22 @@ export const staff = pgTable("staff", {
   email: text("email").notNull().unique(),
   role: roleEnum("role").notNull().default("staff"),
   passwordHash: text("password_hash").notNull(),
+  // Deactivation blocks login and kills live sessions (see tokenVersion).
+  isActive: boolean("is_active").notNull().default(true),
+  // Session revocation counter — password reset, deactivation or role
+  // change bumps it; JWTs with an older tokenVersion are rejected.
+  tokenVersion: integer("token_version").notNull().default(0),
   // Last activity heartbeat (page navs + key API calls). Online = < 5 min.
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// 3b. Rate-limit counters (Postgres-backed so limits survive restarts and
+// work across processes; one row per key, fixed windows).
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
 });
 
 // 4. Invoices Table

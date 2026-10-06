@@ -3,6 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
+import { safeClientStaff } from "@/lib/safe-columns";
 
 /**
  * Client's own outlets (mobile outlet picker at upload + Branches screen).
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
 
     const rows = await db.query.outlets.findMany({
       where: eq(outlets.clientId, client.clientId),
-      with: { createdBy: true },
+      with: { createdBy: safeClientStaff },
       orderBy: [asc(outlets.name)],
     });
 

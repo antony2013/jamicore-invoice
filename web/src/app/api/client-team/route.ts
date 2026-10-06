@@ -14,12 +14,12 @@ const usernameSchema = z
   .max(50)
   .regex(/^[a-z0-9._-]+$/, "User ID may contain letters, numbers, dots, underscores and hyphens");
 
-// Short numeric PIN for shop workers (4-6 digits). Low entropy by design —
+// Short numeric PIN for shop workers (6-8 digits). Low entropy by design —
 // compensated by per-username rate limiting on login + bcrypt hashing.
 const pinSchema = z
   .string()
   .trim()
-  .regex(/^\d{4,6}$/, "PIN must be 4-6 digits");
+  .regex(/^\d{6,8}$/, "PIN must be 6-8 digits");
 
 const createSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         clientId: auth.client.clientId,
         name: name.trim(),
         username,
-        pinHash: await bcrypt.hash(pin, 10),
+        pinHash: await bcrypt.hash(pin, 12),
         outletId: outletId ?? null,
       })
       .returning({ id: clientStaff.id, name: clientStaff.name, username: clientStaff.username });

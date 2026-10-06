@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { clientStaff } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Only team members can use this endpoint." }, { status: 403 });
     }
 
-    const rl = checkRateLimit(`client-pw:${client.sub}`, 10, 15 * 60 * 1000);
+    const rl = await checkRateLimit(`client-pw:${client.sub}`, 10, 15 * 60 * 1000);
     if (!rl.allowed) {
       return NextResponse.json({ error: "Too many attempts. Please try again later." }, { status: 429 });
     }
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const result = z
       .object({
         oldPin: z.string().min(1).max(128),
-        newPin: z.string().trim().regex(/^\d{4,6}$/, "New PIN must be 4-6 digits"),
+        newPin: z.string().trim().regex(/^\d{6,8}$/, "New PIN must be 6-8 digits"),
       })
       .safeParse(body);
     if (!result.success) {
@@ -47,7 +47,11 @@ export async function POST(request: Request) {
 
     await db
       .update(clientStaff)
-      .set({ pinHash: await bcrypt.hash(result.data.newPin, 10) })
+      .set({
+        pinHash: await bcrypt.hash(result.data.newPin, 12),
+        // Other sessions (other devices) die on next request.
+        tokenVersion: sql`token_version + 1`,
+      })
       .where(eq(clientStaff.id, client.sub));
 
     return NextResponse.json({ success: true, message: "PIN changed successfully." });

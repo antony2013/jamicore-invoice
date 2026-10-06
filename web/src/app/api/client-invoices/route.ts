@@ -3,6 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, invoices, invoiceMessages, invoiceReports, invoiceStatusLog } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
+import { safeClientStaff } from "@/lib/safe-columns";
 import { isClientEditable, isClientWithdrawable } from "@/lib/client-edit-rules";
 
 /**
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
 
     const rows = await db.query.invoices.findMany({
       where: scope,
-      with: { outlet: true, uploadedBy: true },
+      with: { outlet: true, uploadedBy: safeClientStaff },
       orderBy: [desc(invoices.createdAt)],
       limit: 100,
     });

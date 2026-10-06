@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw, UserPlus, ShieldCheck } from "lucide-react";
 
@@ -19,6 +19,12 @@ export default function AdminStaffPage() {
   // Per-row password reset (admin sets a new login password for the member)
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  // Lifecycle panel per row: active toggle (confirm shows open work),
+  // role change, and bulk-reassign of open invoices to another staffer.
+  const [lifecycleId, setLifecycleId] = useState<string | null>(null);
+  const [lifecycleInfo, setLifecycleInfo] = useState<{ openInvoiceCount: number } | null>(null);
+  const [lifecycleTarget, setLifecycleTarget] = useState("");
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -246,9 +252,107 @@ export default function AdminStaffPage() {
     }
   }
 
+  async function openLifecycle(staffRow: any) {
+    setLifecycleId(staffRow.id);
+    setLifecycleInfo(null);
+    setLifecycleTarget("");
+    setFormError(null);
+    try {
+      const res = await fetch(`/api/staff/${staffRow.id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load staff details");
+      setLifecycleInfo({ openInvoiceCount: data.openInvoiceCount ?? 0 });
+    } catch (err: any) {
+      setFormError(err.message);
+    }
+  }
+
+  async function handleToggleActive(staffRow: any) {
+    setLifecycleBusy(true);
+    setFormError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/staff/${staffRow.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !(staffRow.isActive ?? true) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update status");
+      setSuccess(data.message);
+      setLifecycleId(null);
+      setLifecycleInfo(null);
+      load();
+    } catch (err: any) {
+      setFormError(err.message);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
+  async function handleRoleChange(staffRow: any, role: string) {
+    if (role === staffRow.role) return;
+    setLifecycleBusy(true);
+    setFormError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/staff/${staffRow.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to change role");
+      setSuccess(data.message);
+      setLifecycleId(null);
+      setLifecycleInfo(null);
+      load();
+    } catch (err: any) {
+      setFormError(err.message);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
+  async function handleReassignOpen(staffRow: any) {
+    if (!lifecycleTarget) {
+      setFormError("Pick a target staff member first.");
+      return;
+    }
+    setLifecycleBusy(true);
+    setFormError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/staff/${staffRow.id}/reassign-open`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toStaffId: lifecycleTarget }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to reassign");
+      setSuccess(data.message);
+      setLifecycleId(null);
+      setLifecycleInfo(null);
+      setLifecycleTarget("");
+      load();
+    } catch (err: any) {
+      setFormError(err.message);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
   return (
-                  <tr key={s.id} className="hover:bg-slate-50/80">
-                    <td className="px-6 py-4 font-medium text-slate-800">{s.name}</td>
+                <Fragment key={s.id}>
+                  <tr className="hover:bg-slate-50/80">
+                    <td className="px-6 py-4 font-medium text-slate-800">
+                      {s.name}{" "}
+                      {(s as any).isActive === false && (
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                          inactive
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4">{s.email}</td>
                     <td className="px-6 py-4">
                       <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${s.role === "admin" ? "bg-slate-900 text-white" : "bg-blue-50 text-blue-700"}`}>
@@ -269,6 +373,7 @@ export default function AdminStaffPage() {
                     <td className="px-6 py-4 text-center font-bold text-slate-600">{st.clients}</td>
                     <td className="px-6 py-4">{new Date(s.createdAt).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1 flex-wrap">
                       {resettingId === s.id ? (
                         <div className="flex items-center justify-end gap-1">
                           <input
@@ -301,8 +406,85 @@ export default function AdminStaffPage() {
                           Reset password
                         </button>
                       )}
+                        <button
+                          onClick={() => (lifecycleId === s.id ? (setLifecycleId(null), setLifecycleInfo(null)) : openLifecycle(s))}
+                          className="px-2.5 py-1 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded text-xs font-medium"
+                          title="Deactivate/reactivate, change role, or reassign open invoices"
+                        >
+                          Manage
+                        </button>
+                      </div>
                     </td>
                   </tr>
+                  {lifecycleId === s.id && (
+                    <tr key={`${s.id}-lifecycle`} className="bg-slate-50/70">
+                      <td colSpan={12} className="px-6 py-4">
+                        <div className="max-w-2xl space-y-3">
+                          <h4 className="text-xs font-bold text-slate-800">
+                            Manage {s.name} ({s.email})
+                          </h4>
+                          <p className="text-xs text-slate-500">
+                            Open invoices with this person:{" "}
+                            <strong>{lifecycleInfo ? lifecycleInfo.openInvoiceCount : "…"}</strong>{" "}
+                            (assigned / in review / info needed). Deactivating strands them unless reassigned first.
+                          </p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${(s as any).isActive === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                              {(s as any).isActive === false ? "Inactive" : "Active"}
+                            </span>
+                            <button
+                              onClick={() => handleToggleActive(s)}
+                              disabled={lifecycleBusy}
+                              className="px-2.5 py-1 border border-amber-300 hover:bg-amber-50 text-amber-700 rounded text-xs font-medium disabled:opacity-50"
+                            >
+                              {(s as any).isActive === false ? "Reactivate" : "Deactivate"}
+                            </button>
+                            <select
+                              value={s.role}
+                              onChange={(e) => handleRoleChange(s, e.target.value)}
+                              disabled={lifecycleBusy}
+                              className="px-2 py-1 border border-slate-300 rounded text-xs bg-white outline-none"
+                              title="Change role"
+                            >
+                              <option value="staff">staff</option>
+                              <option value="admin">admin</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-slate-600">Move open invoices to:</span>
+                            <select
+                              value={lifecycleTarget}
+                              onChange={(e) => setLifecycleTarget(e.target.value)}
+                              className="px-2 py-1 border border-slate-300 rounded text-xs bg-white outline-none max-w-[220px]"
+                            >
+                              <option value="">Pick staff…</option>
+                              {staffList
+                                .filter((t: any) => t.id !== s.id && t.role === "staff" && (t as any).isActive !== false)
+                                .map((t: any) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.name} ({t.email})
+                                  </option>
+                                ))}
+                            </select>
+                            <button
+                              onClick={() => handleReassignOpen(s)}
+                              disabled={lifecycleBusy || !lifecycleTarget}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium disabled:opacity-50"
+                            >
+                              Reassign open
+                            </button>
+                            <button
+                              onClick={() => { setLifecycleId(null); setLifecycleInfo(null); }}
+                              className="px-2.5 py-1 border border-slate-200 rounded text-xs bg-white"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
                   );
                 })
               )}

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceMessages } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { requireOffice } from "@/lib/session";
 import { officeInvoiceOr404 } from "@/lib/invoice-access";
 
 /**
@@ -33,12 +33,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
+
     const { id } = await params;
-    const found = await officeInvoiceOr404(id, session.user as any);
+    const found = await officeInvoiceOr404(id, me);
     if ("error" in found) return found.error;
 
     const rows = await db.query.invoiceMessages.findMany({
@@ -63,11 +62,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const me = session.user as any;
+    const me = await requireOffice();
+    if (me instanceof NextResponse) return me;
+
     const { id } = await params;
     const found = await officeInvoiceOr404(id, me);
     if ("error" in found) return found.error;

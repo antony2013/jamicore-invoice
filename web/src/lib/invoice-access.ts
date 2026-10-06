@@ -3,6 +3,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
 
+/** Invoices that still need a human (open work). */
+export const OPEN_INVOICE_STATUSES = ["assigned", "in_review", "needs_info"] as const;
+
 export type OfficeUser = { id: string; role: string; name?: string };
 export type ClientUser = { clientId: string; role: string; sub: string; name?: string };
 

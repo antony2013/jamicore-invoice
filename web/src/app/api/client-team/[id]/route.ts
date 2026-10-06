@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { clientStaff, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
@@ -12,7 +12,7 @@ const updateSchema = z.object({
   pin: z
     .string()
     .trim()
-    .regex(/^\d{4,6}$/, "PIN must be 4-6 digits")
+    .regex(/^\d{6,8}$/, "PIN must be 6-8 digits")
     .optional(),
   // Deactivation blocks login but preserves upload attribution
   isActive: z.boolean().optional(),
@@ -51,8 +51,12 @@ export async function PATCH(
     const { name, pin, isActive, outletId } = result.data;
     const patch: Record<string, unknown> = {};
     if (name !== undefined) patch.name = name.trim();
-    if (pin !== undefined) patch.pinHash = await bcrypt.hash(pin, 10);
+    if (pin !== undefined) patch.pinHash = await bcrypt.hash(pin, 12);
     if (isActive !== undefined) patch.isActive = isActive;
+    // PIN resets and (de)activation kill the member's other sessions.
+    if (pin !== undefined || isActive !== undefined) {
+      patch.tokenVersion = sql`token_version + 1`;
+    }
     if (outletId !== undefined) {
       if (outletId !== null) {
         const outlet = await db.query.outlets.findFirst({ where: eq(outlets.id, outletId) });

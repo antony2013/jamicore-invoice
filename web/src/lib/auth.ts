@@ -4,6 +4,18 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { staff } from "@/db/schema";
+import { checkRateLimit } from "@/lib/rate-limiter";
+
+/** Constant dummy hash — compared on miss so timing never reveals existence. */
+const DUMMY_BCRYPT_HASH = "$2b$12$KIXxQG8h7vZ3mQwErTyUuO8hG5fSdFgHjKlZxCvBnM1q2w3e4r5t6y7u8i";
+
+/** Best-effort client IP (Coolify/Traefik sets x-forwarded-for). */
+function clientIp(request: unknown): string {
+  const headers = (request as { headers?: { get?: (k: string) => string | null } })?.headers;
+  const xff = headers?.get?.("x-forwarded-for") ?? "";
+  const first = xff.split(",")[0]?.trim();
+  return first || "unknown-ip";
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   // Required behind reverse proxies (Coolify/Traefik terminates HTTPS and
@@ -17,19 +29,38 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
         const email = String(credentials.email).toLowerCase().trim();
         const password = String(credentials.password);
+        const ip = clientIp(request);
+
+        // Brute-force guard BEFORE any DB lookup (silent null, no reveal).
+        const [byIp, byEmail] = await Promise.all([
+          checkRateLimit(`staff-login-ip:${ip}`, 30, 15 * 60 * 1000),
+          checkRateLimit(`staff-login-email:${email}`, 10, 15 * 60 * 1000),
+        ]);
+        if (!byIp.allowed || !byEmail.allowed) {
+          return null;
+        }
 
         const user = await db.query.staff.findFirst({
           where: eq(staff.email, email),
         });
 
+        // Unknown account: still burn bcrypt time so misses are
+        // indistinguishable from wrong-passwords.
         if (!user) {
+          await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
+          return null;
+        }
+
+        // Deactivated accounts can never sign in.
+        if ((user as { isActive?: boolean }).isActive === false) {
+          await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
           return null;
         }
 
@@ -38,11 +69,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        // Opportunistic upgrade: old cost-10 hashes become cost-12 on login.
+        try {
+          if (bcrypt.getRounds(user.passwordHash) < 12) {
+            const upgraded = await bcrypt.hash(password, 12);
+            await db.update(staff).set({ passwordHash: upgraded }).where(eq(staff.id, user.id));
+          }
+        } catch {
+          // Login already succeeded; upgrade is best-effort.
+        }
+
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
+          tokenVersion: (user as { tokenVersion?: number }).tokenVersion ?? 0,
         };
       },
     }),
@@ -52,17 +94,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as any).role;
+        token.tokenVersion = (user as any).tokenVersion ?? 0;
         return token;
       }
-      // Returning sessions re-validate the account on every request: a
-      // deleted/recreated staff row (stale id) kills the JWT instead of
-      // letting it 500 later on FK writes (assignments, status logs…).
+      // Returning sessions re-validate the account on every request:
+      // missing row, deactivation, role change or revocation (token_version
+      // bump) kills the JWT — and the live role is refreshed from the DB.
       if (token?.id) {
-        const stillThere = await db.query.staff.findFirst({
+        const row = await db.query.staff.findFirst({
           where: eq(staff.id, token.id as string),
-          columns: { id: true },
         });
-        if (!stillThere) return null as any;
+        if (
+          !row ||
+          (row as { isActive?: boolean }).isActive === false ||
+          ((row as { tokenVersion?: number }).tokenVersion ?? 0) !==
+            ((token.tokenVersion as number | undefined) ?? 0)
+        ) {
+          return null as any;
+        }
+        token.role = row.role;
       }
       return token;
     },
@@ -79,6 +129,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   session: {
     strategy: "jwt",
+    maxAge: 12 * 60 * 60, // 12 hours
+    updateAge: 60 * 60, // refresh rolling session hourly
   },
   secret: (() => {
     const s = process.env.NEXTAUTH_SECRET;

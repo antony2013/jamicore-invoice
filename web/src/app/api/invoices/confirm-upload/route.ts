@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
-import { checkObjectExistsInS3, MAX_UPLOAD_BYTES } from "@/lib/s3";
+import { deleteObjectFromS3, inspectUploadObject, MAX_UPLOAD_BYTES } from "@/lib/s3";
 import { categorySchema, validateCategory } from "@/lib/categories";
 
 const confirmUploadSchema = z.object({
@@ -78,28 +78,33 @@ export async function POST(request: Request) {
       });
     }
 
-    // 4. Verify the object actually exists in S3 (HeadObject check)
-    const s3Check = await checkObjectExistsInS3(s3Key);
+    // 4. Inspect the object: existence + size + stored type + magic bytes.
+    // Anything invalid is DELETED from S3 first, then rejected — bad bytes
+    // must never accumulate or reach a DB row.
+    const keyExt = s3Key.split(".").pop()?.toLowerCase();
+    if (keyExt !== "jpg" && keyExt !== "png" && keyExt !== "pdf") {
+      return NextResponse.json({ error: "Invalid file extension." }, { status: 400 });
+    }
+    const s3Check = await inspectUploadObject(s3Key);
     if (!s3Check.exists) {
       return NextResponse.json(
         { error: "File not found in storage. Ensure file upload succeeded before confirmation." },
         { status: 400 }
       );
     }
-
-    // Security check: Enforce maximum file size (15MB)
-    if (s3Check.size !== undefined && s3Check.size > MAX_UPLOAD_BYTES) {
+    const storedType = (s3Check.contentType || "").toLowerCase();
+    const expectedType = keyExt === "pdf" ? "application/pdf" : keyExt === "png" ? "image/png" : "image/jpeg";
+    const badSize =
+      s3Check.size === undefined || s3Check.size > MAX_UPLOAD_BYTES || s3Check.size < 1024;
+    if (storedType !== expectedType || badSize || s3Check.magicOk === false) {
+      await deleteObjectFromS3(s3Key);
       return NextResponse.json(
-        { error: "Uploaded file size exceeds the 15MB limit." },
-        { status: 400 }
-      );
-    }
-
-    // Reject implausibly small files (e.g. a failed mobile read that stored
-    // a few bytes of error text instead of a photo). Real photos are 50KB+.
-    if (s3Check.size !== undefined && s3Check.size < 1024) {
-      return NextResponse.json(
-        { error: "Uploaded file is too small to be a photo. Please retake and upload again." },
+        {
+          error:
+            s3Check.magicOk === false
+              ? `File content does not match its .${keyExt} extension — object deleted, please re-upload.`
+              : "Uploaded file failed validation (size or type) — object deleted, please re-upload.",
+        },
         { status: 400 }
       );
     }

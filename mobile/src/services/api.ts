@@ -4,7 +4,25 @@ import { manipulateAsync, SaveFormat, FlipType } from "expo-image-manipulator";
 import { printToFileAsync } from "expo-print";
 
 // Production backend. Override anytime from inside the app (tap the API badge).
-let currentApiBaseUrl = "https://ac.jamicore.com";
+// Release builds (!__DEV__) are LOCKED to the production URL from app config
+// (extra.apiBaseUrl) — the in-app switcher is hidden and custom URLs ignored.
+declare const __DEV__: boolean;
+
+function productionBaseUrl(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Constants = require("expo-constants").default;
+    const extra = (Constants?.expoConfig?.extra ?? {}) as { apiBaseUrl?: string };
+    if (typeof extra.apiBaseUrl === "string" && extra.apiBaseUrl.startsWith("https://")) {
+      return extra.apiBaseUrl.replace(/\/+$/, "");
+    }
+  } catch {
+    // Fall through to the compiled default below.
+  }
+  return "https://ac.jamicore.com";
+}
+
+let currentApiBaseUrl = __DEV__ ? "https://ac.jamicore.com" : productionBaseUrl();
 
 let clientAuthToken: string | null = null;
 declare const require: (module: string) => any;
@@ -24,7 +42,12 @@ const TOKEN_KEY = "jamicore_client_jwt";
 const CLIENT_KEY = "jamicore_client_profile";
 
 export function setApiBaseUrl(url: string) {
-  currentApiBaseUrl = url.replace(/\/+$/, "");
+  const clean = url.replace(/\/+$/, "");
+  // Release lock: only https production URLs are accepted outside dev.
+  if (!__DEV__ && clean !== productionBaseUrl()) {
+    return;
+  }
+  currentApiBaseUrl = clean;
 }
 
 export function getApiBaseUrl(): string {
