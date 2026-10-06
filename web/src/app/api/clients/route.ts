@@ -115,24 +115,26 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const [created] = await db
-      .insert(clients)
-      .values({
-        name: name.trim(),
-        username,
-        passwordHash,
-        phone: phone ?? null,
-        email: email ?? null,
-      })
-      .returning();
-
-    await writeAudit(db, {
-      actor: { type: "staff", id: me.id },
-      action: "client.create",
-      entityType: "client",
-      entityId: created.id,
-      after: { name: created.name, username },
-      ip: getClientIp(request),
+    const [created] = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(clients)
+        .values({
+          name: name.trim(),
+          username,
+          passwordHash,
+          phone: phone ?? null,
+          email: email ?? null,
+        })
+        .returning();
+      await writeAudit(tx, {
+        actor: { type: "staff", id: me.id },
+        action: "client.create",
+        entityType: "client",
+        entityId: row.id,
+        after: { name: row.name, username },
+        ip: getClientIp(request),
+      });
+      return [row];
     });
 
     return NextResponse.json(

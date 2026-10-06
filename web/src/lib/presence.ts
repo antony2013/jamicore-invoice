@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { staff } from "@/db/schema";
 
@@ -6,16 +6,20 @@ export const ONLINE_WINDOW_MS = 5 * 60 * 1000; // Online = active within 5 min
 
 /**
  * Fire-and-forget presence heartbeat. Never blocks the request, never throws.
- * Called from the list APIs the dashboards already poll (invoices, history,
- * staff, clients, outlets) — so "online" accurately means "working now".
- * NOTE: never call from Edge middleware (postgres.js needs Node runtime).
+ * Throttled INSIDE the SQL: the write fires only when last_seen_at is null
+ * or older than 60 seconds, so rapid dashboard polling doesn't hammer the row.
  */
 export function touchPresence(staffId: string | undefined | null) {
   if (!staffId) return;
   void db
     .update(staff)
     .set({ lastSeenAt: new Date() })
-    .where(eq(staff.id, staffId))
+    .where(
+      and(
+        eq(staff.id, staffId),
+        or(isNull(staff.lastSeenAt), lt(staff.lastSeenAt, sql`now() - interval '60 seconds'`))
+      )
+    )
     .catch((err) => console.error("[presence] heartbeat failed:", err));
 }
 

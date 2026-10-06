@@ -45,7 +45,9 @@ export const clients = pgTable("clients", {
 // the mobile app (Team screen). They sign in with user ID + short PIN
 // (bcrypt-hashed) and upload files on behalf of the client. Deactivation
 // (isActive=false) blocks login but preserves upload attribution.
-export const clientStaff = pgTable("client_staff", {
+export const clientStaff = pgTable(
+  "client_staff",
+  {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
@@ -61,12 +63,16 @@ export const clientStaff = pgTable("client_staff", {
   // validated in the API; outlet deletion nulls this out explicitly.
   outletId: uuid("outlet_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (t) => [index("client_staff_client_idx").on(t.clientId)]
+);
 
 // 2. Outlets Table — a client may own multiple shops/branches.
 // Invoices optionally point at the outlet they came from (null = Unspecified,
 // e.g. legacy rows from before outlets existed).
-export const outlets = pgTable("outlets", {
+export const outlets = pgTable(
+  "outlets",
+  {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
@@ -79,7 +85,9 @@ export const outlets = pgTable("outlets", {
   // uploads tagged with this outlet). Null = fall back to client default.
   assignedStaffId: uuid("assigned_staff_id").references(() => staff.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (t) => [index("outlets_client_idx").on(t.clientId)]
+);
 
 // 3. Staff Table (Admin and Staff web users)
 export const staff = pgTable("staff", {
@@ -107,7 +115,9 @@ export const rateLimits = pgTable("rate_limits", {
 });
 
 // 4. Invoices Table
-export const invoices = pgTable("invoices", {
+export const invoices = pgTable(
+  "invoices",
+  {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id").references(() => clients.id).notNull(),
   s3Key: text("s3_key").notNull().unique(),
@@ -144,26 +154,42 @@ export const invoices = pgTable("invoices", {
   deleteReason: text("delete_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (t) => [
+    index("invoices_status_created_idx").on(t.status, t.createdAt.desc()),
+    index("invoices_assigned_status_idx").on(t.assignedTo, t.status),
+    index("invoices_client_created_idx").on(t.clientId, t.createdAt.desc()),
+    index("invoices_outlet_idx").on(t.outletId),
+    index("invoices_deleted_idx").on(t.deletedAt),
+  ]
+);
 
 // 5. Assignments Table
-export const assignments = pgTable("assignments", {
+export const assignments = pgTable(
+  "assignments",
+  {
   id: uuid("id").defaultRandom().primaryKey(),
   invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
   staffId: uuid("staff_id").references(() => staff.id).notNull(),
   assignedBy: uuid("assigned_by").references(() => staff.id).notNull(),
   assignedAt: timestamp("assigned_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (t) => [index("assignments_invoice_idx").on(t.invoiceId)]
+);
 
 // 6. Invoice Status Log (Audit Trail)
-export const invoiceStatusLog = pgTable("invoice_status_log", {
+export const invoiceStatusLog = pgTable(
+  "invoice_status_log",
+  {
   id: uuid("id").defaultRandom().primaryKey(),
   invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
   status: invoiceStatusEnum("status").notNull(),
   changedBy: uuid("changed_by").references(() => staff.id), // Nullable: null means system/automated e.g. OCR worker
   note: text("note"),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (t) => [index("invoice_status_log_invoice_idx").on(t.invoiceId, t.timestamp.desc())]
+);
 
 // 6b. Append-only audit log (Phase 2.2): who did what, with before/after.
 // Deliberately NO foreign keys and NO cascade — history must survive the
@@ -192,7 +218,9 @@ export const auditLog = pgTable(
 // 7. Invoice Reports — Excel work products the OFFICE STAFF produce per
 // invoice (generated from the invoice, or a custom .xlsx upload). The CLIENT
 // downloads the latest report from the mobile app.
-export const invoiceReports = pgTable("invoice_reports", {
+export const invoiceReports = pgTable(
+  "invoice_reports",
+  {
   id: uuid("id").defaultRandom().primaryKey(),
   invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
   // S3 key of the .xlsx file (reports/<invoiceId>/<file>)
@@ -202,13 +230,17 @@ export const invoiceReports = pgTable("invoice_reports", {
   source: text("source").notNull().default("uploaded"),
   uploadedBy: uuid("uploaded_by").references(() => staff.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (t) => [index("invoice_reports_invoice_idx").on(t.invoiceId, t.createdAt.desc())]
+);
 
 // 8. Invoice Messages — the client↔staff conversation thread per invoice.
 // senderType "staff" = office staff/admin; "client" = owner OR team member
 // (senderName snapshots who wrote it). kind "request_report" = the client
 // asking for a particular report. Read flags drive "new message" dots.
-export const invoiceMessages = pgTable("invoice_messages", {
+export const invoiceMessages = pgTable(
+  "invoice_messages",
+  {
   id: uuid("id").defaultRandom().primaryKey(),
   invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
   senderType: text("sender_type").notNull(), // "staff" | "client"
@@ -219,7 +251,12 @@ export const invoiceMessages = pgTable("invoice_messages", {
   isReadByStaff: boolean("is_read_by_staff").notNull().default(false),
   isReadByClient: boolean("is_read_by_client").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (t) => [
+    index("invoice_messages_invoice_idx").on(t.invoiceId, t.createdAt),
+    index("invoice_messages_unread_idx").on(t.invoiceId, t.isReadByClient),
+  ]
+);
 
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({

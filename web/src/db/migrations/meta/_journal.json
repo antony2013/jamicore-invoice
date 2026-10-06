@@ -99,6 +99,13 @@
       "when": 1791269493057,
       "tag": "0013_phase22-audit-softdelete",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791284507517,
+      "tag": "0014_phase23-indexes",
+      "breakpoints": true
     }
   ]
 }

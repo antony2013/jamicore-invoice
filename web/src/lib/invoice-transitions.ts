@@ -1,8 +1,8 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, invoices, invoiceStatusLog } from "@/db/schema";
 import { isTerminalStatus, isValidTransition, InvoiceStatus } from "@/lib/status-flow";
-import { BadRequestError, ConflictError } from "@/lib/http-errors";
+import { BadRequestError, ConflictError, ForbiddenError } from "@/lib/http-errors";
 import { writeAudit } from "@/lib/audit";
 
 /** Drizzle transaction handle (from db.transaction). */
@@ -11,6 +11,8 @@ export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type TransitionActor = {
   type: "staff" | "client" | "client_staff" | "system";
   id: string | null;
+  /** True when the staffer is an admin (maker-checker exemption gate). */
+  isAdmin?: boolean;
 };
 
 export type TransitionInput = {
@@ -73,6 +75,37 @@ export async function transitionInvoice(tx: DbTx, input: TransitionInput) {
     throw new BadRequestError(
       `Invoice is in terminal state '${expectedStatus}'. No further updates or transitions are allowed.`
     );
+  }
+
+  // Maker-checker (Phase 2.3): verified -> collected must be a DIFFERENT
+  // account than the one that set verified (read from the status log).
+  // ENFORCE_MAKER_CHECKER=false disables; admins are exempt only with
+  // ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT=true.
+  if (
+    expectedStatus === "verified" &&
+    nextStatus === "collected" &&
+    (process.env.ENFORCE_MAKER_CHECKER ?? "true") !== "false"
+  ) {
+    const adminExempt =
+      !!actor.isAdmin && (process.env.ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT ?? "false") === "true";
+    if (!adminExempt && actor.id) {
+      // The transition INTO verified is the EARLIEST 'verified' log entry —
+      // later data-edit echoes (same status, with a note) don't move the
+      // checker. (asc = first = the account that actually verified.)
+      const verifier = await tx.query.invoiceStatusLog.findFirst({
+        where: and(
+          eq(invoiceStatusLog.invoiceId, invoiceId),
+          eq(invoiceStatusLog.status, "verified" as any)
+        ),
+        orderBy: [asc(invoiceStatusLog.timestamp)],
+        columns: { changedBy: true },
+      });
+      if (verifier?.changedBy && verifier.changedBy === actor.id) {
+        throw new ForbiddenError(
+          "Maker-checker: the account that verified this invoice cannot also collect it. Ask another staff member."
+        );
+      }
+    }
   }
 
   const setClause: Record<string, unknown> = {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices, invoiceStatusLog } from "@/db/schema";
+import { invoiceStatusLog } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { safeClient, safeStaff } from "@/lib/safe-columns";
 import { touchPresence } from "@/lib/presence";
@@ -23,8 +23,21 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10) || 100, 200);
 
+    // Soft-deleted invoices vanish from the feed IN SQL (before limit):
+    // a page returns the full requested count whenever enough live rows
+    // exist. Their logs stay in the DB untouched. (Drizzle aliases the
+    // outer table as "invoiceStatusLog" — reference the alias, not the
+    // physical table name.)
+    const liveInvoice = sql`EXISTS (
+      SELECT 1 FROM invoices
+      WHERE invoices.id = "invoiceStatusLog"."invoice_id"
+        AND invoices.deleted_at IS NULL
+    )`;
+    const scopeCond =
+      role === "admin" ? liveInvoice : and(eq(invoiceStatusLog.changedBy, staffId), liveInvoice);
+
     const logs = await db.query.invoiceStatusLog.findMany({
-      where: role === "admin" ? undefined : eq(invoiceStatusLog.changedBy, staffId),
+      where: scopeCond as any,
       with: {
         actor: safeStaff,
         invoice: {
@@ -37,21 +50,7 @@ export async function GET(request: Request) {
       limit,
     });
 
-    // Soft-deleted invoices vanish from the feed (their logs stay in the DB).
-    const invoiceIds = [...new Set(logs.map((l) => l.invoiceId).filter(Boolean))] as string[];
-    const deletedRows =
-      invoiceIds.length > 0
-        ? await db.query.invoices.findMany({
-            where: inArray(invoices.id, invoiceIds),
-            columns: { id: true, deletedAt: true },
-          })
-        : [];
-    const deletedSet = new Set(
-      deletedRows.filter((r) => r.deletedAt).map((r) => r.id)
-    );
-    const visible = logs.filter((l) => !deletedSet.has(l.invoiceId as string));
-
-    const formatted = visible.map((l) => ({
+    const formatted = logs.map((l) => ({
       id: l.id,
       status: l.status,
       note: l.note,

@@ -121,17 +121,58 @@ export async function PATCH(
       patch.tokenVersion = sql`token_version + 1`;
     }
 
-    const [updated] = await db
-      .update(staff)
-      .set(patch)
-      .where(eq(staff.id, id))
-      .returning({
-        id: staff.id,
-        name: staff.name,
-        email: staff.email,
-        role: staff.role,
-        isActive: staff.isActive,
-      });
+    // ONE transaction for update + audits (all-or-nothing).
+    const { updated, bits } = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(staff)
+        .set(patch)
+        .where(eq(staff.id, id))
+        .returning({
+          id: staff.id,
+          name: staff.name,
+          email: staff.email,
+          role: staff.role,
+          isActive: staff.isActive,
+        });
+
+      const msgs: string[] = [];
+      if (password !== undefined) {
+        msgs.push("Password reset — share the new password, old sessions revoked.");
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: "staff.password_reset",
+          entityType: "staff",
+          entityId: id,
+          ip: getClientIp(request),
+        });
+      }
+      if (isActive !== undefined) {
+        msgs.push(isActive ? "Account reactivated." : "Account deactivated — login blocked, sessions revoked.");
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: isActive ? "staff.reactivate" : "staff.deactivate",
+          entityType: "staff",
+          entityId: id,
+          before: { isActive: current.isActive },
+          after: { isActive },
+          ip: getClientIp(request),
+        });
+      }
+      if (role !== undefined && role !== current.role) {
+        msgs.push(`Role changed to ${role}.`);
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: "staff.role_change",
+          entityType: "staff",
+          entityId: id,
+          before: { role: current.role },
+          after: { role },
+          ip: getClientIp(request),
+        });
+      }
+      if (name !== undefined) msgs.push("Name updated.");
+      return { updated: row, bits: msgs };
+    });
 
     // Open work currently sitting with this person (caller decides reassign).
     const openInvoices = await db.query.invoices.findMany({
@@ -142,43 +183,6 @@ export async function PATCH(
       ),
       columns: { id: true },
     });
-
-    const bits: string[] = [];
-    if (password !== undefined) {
-      bits.push("Password reset — share the new password, old sessions revoked.");
-      await writeAudit(db, {
-        actor: { type: "staff", id: me.id },
-        action: "staff.password_reset",
-        entityType: "staff",
-        entityId: id,
-        ip: getClientIp(request),
-      });
-    }
-    if (isActive !== undefined) {
-      bits.push(isActive ? "Account reactivated." : "Account deactivated — login blocked, sessions revoked.");
-      await writeAudit(db, {
-        actor: { type: "staff", id: me.id },
-        action: isActive ? "staff.reactivate" : "staff.deactivate",
-        entityType: "staff",
-        entityId: id,
-        before: { isActive: current.isActive },
-        after: { isActive },
-        ip: getClientIp(request),
-      });
-    }
-    if (role !== undefined && role !== current.role) {
-      bits.push(`Role changed to ${role}.`);
-      await writeAudit(db, {
-        actor: { type: "staff", id: me.id },
-        action: "staff.role_change",
-        entityType: "staff",
-        entityId: id,
-        before: { role: current.role },
-        after: { role },
-        ip: getClientIp(request),
-      });
-    }
-    if (name !== undefined) bits.push("Name updated.");
 
     return NextResponse.json({
       success: true,

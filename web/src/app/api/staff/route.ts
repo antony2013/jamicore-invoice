@@ -68,24 +68,26 @@ export async function POST(request: Request) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const [created] = await db
-      .insert(staff)
-      .values({ name: name.trim(), email, role, passwordHash })
-      .returning({
-        id: staff.id,
-        name: staff.name,
-        email: staff.email,
-        role: staff.role,
-        createdAt: staff.createdAt,
+    const [created] = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(staff)
+        .values({ name: name.trim(), email, role, passwordHash })
+        .returning({
+          id: staff.id,
+          name: staff.name,
+          email: staff.email,
+          role: staff.role,
+          createdAt: staff.createdAt,
+        });
+      await writeAudit(tx, {
+        actor: { type: "staff", id: me.id },
+        action: "staff.create",
+        entityType: "staff",
+        entityId: row.id,
+        after: { name: row.name, email: row.email, role: row.role },
+        ip: getClientIp(request),
       });
-
-    await writeAudit(db, {
-      actor: { type: "staff", id: me.id },
-      action: "staff.create",
-      entityType: "staff",
-      entityId: created.id,
-      after: { name: created.name, email: created.email, role: created.role },
-      ip: getClientIp(request),
+      return [row];
     });
 
     return NextResponse.json(

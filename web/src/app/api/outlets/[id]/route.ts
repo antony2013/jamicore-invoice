@@ -75,47 +75,48 @@ export async function PATCH(
       }
     }
 
-    const [updated] = await db
-      .update(outlets)
-      .set({
-        ...(name !== undefined ? { name: name.trim() } : {}),
-        ...(address !== undefined ? { address: address?.trim() || null } : {}),
-        ...(phone !== undefined ? { phone: phone ?? null } : {}),
-        ...(assignedStaffId !== undefined ? { assignedStaffId } : {}),
-      })
-      .where(eq(outlets.id, id))
-      .returning();
-
-    if (assignedStaffId !== undefined) {
-      await writeAudit(db, {
-        actor: { type: "staff", id: me.id },
-        action: "outlet.default_staff",
-        entityType: "outlet",
-        entityId: id,
-        after: { assignedStaffId },
-        ip: getClientIp(request),
-      });
-    }
-
-    // Backlog sweep: unassigned invoices already tagged with this outlet
-    // route to the new default immediately (admin is the assigner).
-    // ONE transaction for the whole sweep (all-or-nothing); each row goes
-    // through transitionInvoice so a concurrent move aborts with 409.
+    // ONE transaction for update + audit + sweep (all-or-nothing).
     let swept = 0;
-    if (assignedStaffId) {
-      const backlog = await db.query.invoices.findMany({
-        where: and(eq(invoices.outletId, id), isNull(invoices.assignedTo), notDeleted()),
-        columns: { id: true, status: true },
-      });
-      const adminId = me.id;
-      await db.transaction(async (tx) => {
+    const [updated] = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(outlets)
+        .set({
+          ...(name !== undefined ? { name: name.trim() } : {}),
+          ...(address !== undefined ? { address: address?.trim() || null } : {}),
+          ...(phone !== undefined ? { phone: phone ?? null } : {}),
+          ...(assignedStaffId !== undefined ? { assignedStaffId } : {}),
+        })
+        .where(eq(outlets.id, id))
+        .returning();
+
+      if (assignedStaffId !== undefined) {
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: "outlet.default_staff",
+          entityType: "outlet",
+          entityId: id,
+          after: { assignedStaffId },
+          ip: getClientIp(request),
+        });
+      }
+
+      // Backlog sweep: unassigned invoices already tagged with this outlet
+      // route to the new default immediately (admin is the assigner).
+      // Each row goes through transitionInvoice so a concurrent move aborts
+      // with 409 and rolls everything back.
+      if (assignedStaffId) {
+        const backlog = await tx.query.invoices.findMany({
+          where: and(eq(invoices.outletId, id), isNull(invoices.assignedTo), notDeleted()),
+          columns: { id: true, status: true },
+        });
+        const adminId = me.id;
         for (const inv of backlog) {
           if (!isValidTransition(inv.status as any, "assigned")) continue;
           await transitionInvoice(tx, {
             invoiceId: inv.id,
             expectedStatus: inv.status,
             nextStatus: "assigned",
-            actor: { type: "staff", id: adminId },
+            actor: { type: "staff", id: adminId, isAdmin: true },
             note: "Bulk-assigned via outlet default staff",
             assignedTo: result.data.assignedStaffId,
             expectedAssignedTo: null,
@@ -124,8 +125,9 @@ export async function PATCH(
           });
           swept++;
         }
-      });
-    }
+      }
+      return [row];
+    });
 
     return NextResponse.json({ success: true, outlet: updated, swept });
   } catch (error: any) {

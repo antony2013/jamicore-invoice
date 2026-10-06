@@ -73,7 +73,7 @@ export async function POST(
           invoiceId: row.id,
           expectedStatus: row.status,
           nextStatus: row.status,
-          actor: { type: "staff", id: me.id },
+          actor: { type: "staff", id: me.id, isAdmin: true },
           note: `Bulk re-assigned from ${source.name} to ${target.name}`,
           assignedTo: toStaffId,
           expectedAssignedTo: fromStaffId,

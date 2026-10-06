@@ -136,6 +136,27 @@ export async function PATCH(
 
     const { status: nextStatus, ocrData, priority, note, outletId } = result.data;
 
+    // Money-field controls (Phase 2.3): once verified, money/category edits
+    // are staff-forbidden; admins need a real note (audited with before/after).
+    const touchesMoney =
+      ocrData !== undefined ||
+      result.data.category !== undefined ||
+      result.data.categoryDetail !== undefined;
+    if (touchesMoney && currentInvoice.status === "verified") {
+      if (me.role !== "admin") {
+        return NextResponse.json(
+          { error: "Verified invoices are locked for staff. Ask an admin to correct data." },
+          { status: 403 }
+        );
+      }
+      if (!note || note.trim().length < 5) {
+        return NextResponse.json(
+          { error: "Editing a verified invoice requires a note of at least 5 characters." },
+          { status: 400 }
+        );
+      }
+    }
+
     // Optimistic-lock token check: the editor's copy must match the row.
     if (result.data.expectedUpdatedAt !== undefined) {
       const expectedMs = new Date(result.data.expectedUpdatedAt).getTime();
@@ -228,7 +249,7 @@ export async function PATCH(
           invoiceId: id,
           expectedStatus: currentInvoice.status,
           nextStatus,
-          actor: { type: "staff", id: staffId },
+          actor: { type: "staff", id: staffId, isAdmin: me.role === "admin" },
           note: note || `Status updated from ${currentInvoice.status} to ${nextStatus}`,
           extraSet: dataSet,
         });

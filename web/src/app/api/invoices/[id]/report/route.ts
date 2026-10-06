@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { invoiceReports, invoiceStatusLog, invoices } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { writeAudit, getClientIp } from "@/lib/audit";
+import type { DbTx } from "@/lib/invoice-transitions";
 import { notDeleted } from "@/lib/invoice-access";
 import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 import { officeInvoiceOr404 } from "@/lib/invoice-access";
@@ -39,23 +40,27 @@ async function latestReport(invoiceId: string) {
 }
 
 async function replaceReport(
+  tx: DbTx,
   invoiceId: string,
   s3Key: string,
   fileName: string,
   source: string,
   staffId: string
 ) {
-  const prev = await latestReport(invoiceId);
-  const [created] = await db
+  const prev = await tx.query.invoiceReports.findFirst({
+    where: eq(invoiceReports.invoiceId, invoiceId),
+    orderBy: [desc(invoiceReports.createdAt)],
+  });
+  const [created] = await tx
     .insert(invoiceReports)
     .values({ invoiceId, s3Key, fileName, source, uploadedBy: staffId })
     .returning();
-  // Remove the replaced file (best-effort) so S3 never accumulates stale reports
+  // Remove the replaced ROW here (same tx); the old S3 object is deleted
+  // by the caller AFTER commit (2.3: S3-after-commit rule).
   if (prev && prev.s3Key !== s3Key) {
-    await db.delete(invoiceReports).where(eq(invoiceReports.id, prev.id));
-    await deleteObjectFromS3(prev.s3Key);
+    await tx.delete(invoiceReports).where(eq(invoiceReports.id, prev.id));
   }
-  return created;
+  return { created, prevKey: prev && prev.s3Key !== s3Key ? prev.s3Key : null };
 }
 
 export async function GET(
@@ -139,15 +144,19 @@ export async function POST(
         );
       }
       const safeName = fileName.toLowerCase().endsWith(".xlsx") ? fileName : `${fileName}.xlsx`;
-      const created = await replaceReport(id, s3Key, safeName, "uploaded", staffId);
-      await writeAudit(db, {
-        actor: { type: "staff", id: staffId },
-        action: "report.upload",
-        entityType: "invoice",
-        entityId: id,
-        after: { fileName: created.fileName },
-        ip: getClientIp(request),
+      const { created, prevKey } = await db.transaction(async (tx) => {
+        const out = await replaceReport(tx, id, s3Key, safeName, "uploaded", staffId);
+        await writeAudit(tx, {
+          actor: { type: "staff", id: staffId },
+          action: "report.upload",
+          entityType: "invoice",
+          entityId: id,
+          after: { fileName: out.created.fileName },
+          ip: getClientIp(request),
+        });
+        return out;
       });
+      if (prevKey) await deleteObjectFromS3(prevKey);
       return NextResponse.json({ success: true, report: created });
     }
 
@@ -191,15 +200,19 @@ export async function POST(
     const key = `reports/${id}/${randomUUID()}.xlsx`;
     await putObjectToS3(key, bytes, REPORT_CONTENT_TYPE);
     const stamp = new Date().toISOString().slice(0, 10);
-    const created = await replaceReport(id, key, `invoice-report-${stamp}.xlsx`, "generated", staffId);
-    await writeAudit(db, {
-      actor: { type: "staff", id: staffId },
-      action: "report.generate",
-      entityType: "invoice",
-      entityId: id,
-      after: { fileName: created.fileName },
-      ip: getClientIp(request),
+    const { created, prevKey } = await db.transaction(async (tx) => {
+      const out = await replaceReport(tx, id, key, `invoice-report-${stamp}.xlsx`, "generated", staffId);
+      await writeAudit(tx, {
+        actor: { type: "staff", id: staffId },
+        action: "report.generate",
+        entityType: "invoice",
+        entityId: id,
+        after: { fileName: out.created.fileName },
+        ip: getClientIp(request),
+      });
+      return out;
     });
+    if (prevKey) await deleteObjectFromS3(prevKey);
     return NextResponse.json({ success: true, report: created });
   } catch (error: any) {
     console.error("Error in POST /api/invoices/[id]/report:", error);

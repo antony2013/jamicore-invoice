@@ -84,7 +84,7 @@ export async function POST(
         invoiceId: id,
         expectedStatus: currentInvoice.status,
         nextStatus: isReassign ? currentInvoice.status : "assigned",
-        actor: { type: "staff", id: adminId },
+        actor: { type: "staff", id: adminId, isAdmin: true },
         note: note || (isReassign
           ? `Re-assigned to ${targetStaff.name} (${targetStaff.email})`
           : `Assigned to ${targetStaff.name} (${targetStaff.email})`),

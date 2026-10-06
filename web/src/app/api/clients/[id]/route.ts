@@ -107,62 +107,64 @@ export async function PATCH(
       (patch as any).assignedStaffId = assignedStaffId;
     }
 
-    const [updated] = await db
-      .update(clients)
-      .set(patch)
-      .where(eq(clients.id, id))
-      .returning();
-
-    // Audit the lifecycle changes (sweep rows audit themselves inside the tx).
-    if (password !== undefined) {
-      await writeAudit(db, {
-        actor: { type: "staff", id: me.id },
-        action: "client.password_reset",
-        entityType: "client",
-        entityId: id,
-        ip: getClientIp(request),
-      });
-    }
-    if (archived !== undefined) {
-      await writeAudit(db, {
-        actor: { type: "staff", id: me.id },
-        action: archived ? "client.archive" : "client.unarchive",
-        entityType: "client",
-        entityId: id,
-        ip: getClientIp(request),
-      });
-    }
-    if (assignedStaffId !== undefined) {
-      await writeAudit(db, {
-        actor: { type: "staff", id: me.id },
-        action: "client.default_staff",
-        entityType: "client",
-        entityId: id,
-        before: { assignedStaffId: (current as any).assignedStaffId ?? null },
-        after: { assignedStaffId },
-        ip: getClientIp(request),
-      });
-    }
-
-    // Backlog sweep: every unassigned uploaded (or legacy OCR-processed) invoice of this
-    // client routes to the new default staff immediately (admin is the
-    // assigner). Future uploads auto-route at confirm time.
-    // ONE transaction for the whole sweep (all-or-nothing); each row goes
-    // through transitionInvoice so a concurrent move aborts with 409.
+    // ONE transaction for update + audits + sweep (all-or-nothing: if the
+    // audit insert fails, the whole change rolls back).
     let swept = 0;
-    if (assignedStaffId) {
-      const backlog = await db.query.invoices.findMany({
-        where: and(eq(invoices.clientId, id), isNull(invoices.assignedTo), notDeleted()),
-        columns: { id: true, status: true },
-      });
-      await db.transaction(async (tx) => {
+    const [updated] = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(clients)
+        .set(patch)
+        .where(eq(clients.id, id))
+        .returning();
+
+      // Audit the lifecycle changes (sweep rows audit themselves below).
+      if (password !== undefined) {
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: "client.password_reset",
+          entityType: "client",
+          entityId: id,
+          ip: getClientIp(request),
+        });
+      }
+      if (archived !== undefined) {
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: archived ? "client.archive" : "client.unarchive",
+          entityType: "client",
+          entityId: id,
+          ip: getClientIp(request),
+        });
+      }
+      if (assignedStaffId !== undefined) {
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: "client.default_staff",
+          entityType: "client",
+          entityId: id,
+          before: { assignedStaffId: (current as any).assignedStaffId ?? null },
+          after: { assignedStaffId },
+          ip: getClientIp(request),
+        });
+      }
+
+      // Backlog sweep: every unassigned uploaded (or legacy OCR-processed)
+      // invoice of this client routes to the new default staff immediately
+      // (admin is the assigner). Future uploads auto-route at confirm time.
+      // Each row goes through transitionInvoice so a concurrent move aborts
+      // with 409 and rolls everything back.
+      if (assignedStaffId) {
+        const backlog = await tx.query.invoices.findMany({
+          where: and(eq(invoices.clientId, id), isNull(invoices.assignedTo), notDeleted()),
+          columns: { id: true, status: true },
+        });
         for (const inv of backlog) {
           if (!isValidTransition(inv.status as any, "assigned")) continue;
           await transitionInvoice(tx, {
             invoiceId: inv.id,
             expectedStatus: inv.status,
             nextStatus: "assigned",
-            actor: { type: "staff", id: me.id },
+            actor: { type: "staff", id: me.id, isAdmin: true },
             note: `Bulk-assigned via client default staff`,
             assignedTo: assignedStaffId,
             expectedAssignedTo: null,
@@ -171,8 +173,9 @@ export async function PATCH(
           });
           swept++;
         }
-      });
-    }
+      }
+      return [row];
+    });
 
     return NextResponse.json({
       success: true,
