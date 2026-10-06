@@ -286,6 +286,8 @@ export default function App() {
   // History state
   const [history, setHistory] = useState<HistoryInvoice[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   // Last uploaded invoice id (for instant "View" on the success screen)
   const [lastUploadId, setLastUploadId] = useState<string | null>(null);
 
@@ -294,7 +296,7 @@ export default function App() {
     if (!lastUploadId) return;
     setHistoryLoading(true);
     try {
-      const items = await getMyInvoices();
+      const { invoices: items } = await getMyInvoices();
       setHistory(items);
       const found = items.find((x) => x.id === lastUploadId);
       if (found) {
@@ -383,7 +385,7 @@ export default function App() {
             setSelectedOutletId(own.length === 1 ? own[0].id : null);
             setScreen("scan");
           }
-          getMyInvoices().then(setHistory).catch(() => undefined);
+          getMyInvoices().then((p) => setHistory(p.invoices)).catch(() => undefined);
         } catch (err: any) {
           if (isSessionExpired(err)) {
             await logout();
@@ -456,7 +458,7 @@ export default function App() {
         setScreen("scan");
       }
       // Silent history preload for My-counts chips (ignore failures)
-      getMyInvoices().then(setHistory).catch(() => undefined);
+      getMyInvoices().then((p) => setHistory(p.invoices)).catch(() => undefined);
     } catch (err: any) {
       Alert.alert("Login Failed", err.message);
     } finally {
@@ -490,13 +492,29 @@ export default function App() {
   const handleLoadHistory = async () => {
     setHistoryLoading(true);
     try {
-      const items = await getMyInvoices();
-      setHistory(items);
+      const page = await getMyInvoices(50);
+      setHistory(page.invoices);
+      setHistoryCursor(page.nextCursor);
       setScreen("history");
     } catch (err: any) {
       await handleApiError(err, "History Failed");
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  // Next history page (scroll or button) — appends, never replaces.
+  const handleLoadMoreHistory = async () => {
+    if (!historyCursor || historyLoadingMore) return;
+    setHistoryLoadingMore(true);
+    try {
+      const page = await getMyInvoices(50, historyCursor);
+      setHistory((prev) => [...prev, ...page.invoices]);
+      setHistoryCursor(page.nextCursor);
+    } catch (err: any) {
+      await handleApiError(err, "History Failed");
+    } finally {
+      setHistoryLoadingMore(false);
     }
   };
 
@@ -522,7 +540,7 @@ export default function App() {
 
   const refreshSelected = async (id: string) => {
     try {
-      const items = await getMyInvoices();
+      const { invoices: items } = await getMyInvoices();
       setHistory(items);
       const fresh = items.find((x) => x.id === id) || null;
       setSelected(fresh);
@@ -989,7 +1007,7 @@ export default function App() {
       setLastUploadId(confirmed?.invoice?.id ?? null);
       setScreen("success");
       // Refresh history in background so Scan count chips never go stale
-      getMyInvoices().then(setHistory).catch(() => undefined);
+      getMyInvoices().then((p) => setHistory(p.invoices)).catch(() => undefined);
     } catch (error: any) {
       await handleApiError(error, "Upload Failed");
     } finally {
@@ -1029,7 +1047,18 @@ export default function App() {
 
         <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
           <StatusBar style="light" />
-          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={400}
+            onScroll={({ nativeEvent }) => {
+              if (screen !== "history" || !historyCursor || historyLoadingMore) return;
+              const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+              if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 600) {
+                void handleLoadMoreHistory();
+              }
+            }}
+          >
             {/* Header */}
             <View style={styles.header}>
                 <View style={styles.brandRow}>
@@ -1509,6 +1538,14 @@ export default function App() {
                     />
                   </View>
                 </View>
+                {historyCursor && (
+                  <GlassButton
+                    title={historyLoadingMore ? "Loading…" : "Load more"}
+                    onPress={handleLoadMoreHistory}
+                    disabled={historyLoadingMore}
+                    loading={historyLoadingMore}
+                  />
+                )}
               </GlassCard>
             )}
 

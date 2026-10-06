@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -25,7 +25,14 @@ export default function AdminDashboard() {
   const [staffFilter, setStaffFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [clientList, setClientList] = useState<any[]>([]);
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
   const [search, setSearch] = useState<string>("");
+  const [stats, setStats] = useState<{ byStatus: Record<string, number>; unassigned: number; byPriority: Record<string, number>; total: number } | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStaffId, setBulkStaffId] = useState<string>("");
   const [bulkPriority, setBulkPriority] = useState<string>("normal");
@@ -37,34 +44,66 @@ export default function AdminDashboard() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  function listParams(cursor?: string | null) {
+    const params = new URLSearchParams();
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (outletFilter !== "all") params.set("outlet", outletFilter);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
+    if (staffFilter !== "all") params.set("assigned_to", staffFilter);
+    if (priorityFilter !== "all") params.set("priority", priorityFilter);
+    if (clientFilter !== "all") params.set("client", clientFilter);
+    if (fromDate) params.set("from", fromDate);
+    if (toDate) params.set("to", toDate);
+    if (search.trim()) params.set("q", search.trim());
+    params.set("limit", "50");
+    if (cursor) params.set("cursor", cursor);
+    return params.toString();
+  }
+
+  function statsParams() {
+    const params = new URLSearchParams();
+    if (outletFilter !== "all") params.set("outlet", outletFilter);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
+    if (staffFilter !== "all") params.set("assigned_to", staffFilter);
+    if (priorityFilter !== "all") params.set("priority", priorityFilter);
+    if (clientFilter !== "all") params.set("client", clientFilter);
+    if (fromDate) params.set("from", fromDate);
+    if (toDate) params.set("to", toDate);
+    if (search.trim()) params.set("q", search.trim());
+    const qs = params.toString();
+    return qs ? `/api/invoices/stats?${qs}` : "/api/invoices/stats";
+  }
+
   async function loadData() {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      if (outletFilter !== "all") params.set("outlet", outletFilter);
-      if (categoryFilter !== "all") params.set("category", categoryFilter);
-      if (staffFilter !== "all" && staffFilter !== "unassigned") params.set("assigned_to", staffFilter);
-      const qs = params.toString();
+      const qs = listParams();
       const url = qs ? `/api/invoices?${qs}` : "/api/invoices";
-      const [invRes, staffRes, outletRes] = await Promise.all([
+      const [invRes, statsRes, staffRes, outletRes, clientRes] = await Promise.all([
         fetch(url),
+        fetch(statsParams()),
         fetch("/api/staff"),
         fetch("/api/outlets"),
+        fetch("/api/clients"),
       ]);
 
       const invData = await invRes.json();
+      const statsData = await statsRes.json();
       const staffData = await staffRes.json();
       const outletData = await outletRes.json();
+      const clientData = await clientRes.json();
 
       if (invData.success) {
         setInvoices(invData.invoices);
+        setNextCursor(invData.nextCursor ?? null);
         setSelectedIds([]);
       } else {
         throw new Error(invData.error || "Failed to load invoices");
       }
+      if (statsData.success) setStats(statsData.stats);
       if (staffData.success) setStaffList(staffData.staff);
       if (outletData.success) setOutletList(outletData.outlets);
+      if (clientData.success) setClientList(clientData.clients);
     } catch (err: any) {
       console.error("Failed to load admin data:", err);
       setLoadError(err.message || "Failed to load dashboard data.");
@@ -73,36 +112,42 @@ export default function AdminDashboard() {
     }
   }
 
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const qs = listParams(nextCursor);
+      const res = await fetch(`/api/invoices?${qs}`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Failed to load more");
+      setInvoices((prev) => [...prev, ...data.invoices]);
+      setNextCursor(data.nextCursor ?? null);
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to load more invoices.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   useEffect(() => {
     loadData();
-  }, [statusFilter, outletFilter, staffFilter, categoryFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, outletFilter, staffFilter, categoryFilter, priorityFilter, clientFilter, fromDate, toDate]);
 
-  // Client-side visible rows: search + unassigned + priority
-  const visibleInvoices = invoices.filter((inv) => {
-    if (staffFilter === "unassigned" && inv.assignedTo) return false;
-    if (priorityFilter !== "all" && inv.priority !== priorityFilter) return false;
-    const q = search.trim().toLowerCase();
-    if (q) {
-      const hay = [
-        inv.id,
-        inv.s3Key,
-        inv.client?.name,
-        inv.client?.phone,
-        inv.client?.email,
-        inv.outlet?.name,
-        inv.category,
-        inv.categoryDetail,
-        inv.ocrData?.vendor,
-        inv.ocrData?.invoiceNo,
-        inv.ocrData?.amount != null ? String(inv.ocrData.amount) : "",
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      if (!hay.includes(q)) return false;
+  // Debounced server search (typing doesn't hammer the API; skipped on mount)
+  const searchFirst = useRef(true);
+  useEffect(() => {
+    if (searchFirst.current) {
+      searchFirst.current = false;
+      return;
     }
-    return true;
-  });
+    const t = setTimeout(() => loadData(), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  // Filtering now happens server-side; the table renders the loaded page(s).
+  const visibleInvoices = invoices;
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -146,37 +191,24 @@ export default function AdminDashboard() {
   }
 
   function handleExportCsv() {
-    const header = ["id", "client", "phone", "outlet", "category", "category_detail", "status", "priority", "amount", "vendor", "invoiceNo", "assignedTo", "createdAt"];
-    const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const lines = [header.join(",")];
-    for (const inv of visibleInvoices) {
-      lines.push(
-        [
-          inv.id,
-          inv.client?.name,
-          inv.client?.phone || inv.client?.email,
-          inv.outlet?.name,
-          inv.category,
-          inv.categoryDetail,
-          inv.status,
-          inv.priority,
-          inv.ocrData?.amount,
-          inv.ocrData?.vendor,
-          inv.ocrData?.invoiceNo,
-          inv.assignedStaff?.name,
-          inv.createdAt,
-        ]
-          .map(esc)
-          .join(",")
-      );
-    }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    // Server-side export (same filters, streamed, max 20,000 rows).
+    const params = new URLSearchParams();
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (outletFilter !== "all") params.set("outlet", outletFilter);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
+    if (staffFilter !== "all") params.set("assigned_to", staffFilter);
+    if (priorityFilter !== "all") params.set("priority", priorityFilter);
+    if (clientFilter !== "all") params.set("client", clientFilter);
+    if (fromDate) params.set("from", fromDate);
+    if (toDate) params.set("to", toDate);
+    if (search.trim()) params.set("q", search.trim());
+    const qs = params.toString();
     const a = document.createElement("a");
-    a.href = url;
+    a.href = qs ? `/api/invoices/export?${qs}` : "/api/invoices/export";
     a.download = `invoices-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
   }
 
   async function handleAssign(e: React.FormEvent) {
@@ -258,30 +290,32 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Status Highlights */}
+        {/* Status Highlights (server-computed over ALL matching rows, not just the loaded page) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Unassigned Queue</div>
             <div className="text-2xl font-bold text-slate-900 mt-2">
-              {invoices.filter((i) => !i.assignedTo && ["uploaded", "ocr_pending", "ocr_done", "ocr_failed"].includes(i.status)).length}
+              {stats ? stats.unassigned : "…"}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">New Uploads</div>
             <div className="text-2xl font-bold text-blue-600 mt-2">
-              {invoices.filter((i) => i.status === "uploaded").length}
+              {stats ? stats.byStatus.uploaded ?? 0 : "…"}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">In Review</div>
             <div className="text-2xl font-bold text-amber-600 mt-2">
-              {invoices.filter((i) => ["assigned", "in_review", "needs_info"].includes(i.status)).length}
+              {stats
+                ? (stats.byStatus.assigned ?? 0) + (stats.byStatus.in_review ?? 0) + (stats.byStatus.needs_info ?? 0)
+                : "…"}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Collected</div>
             <div className="text-2xl font-bold text-emerald-600 mt-2">
-              {invoices.filter((i) => i.status === "collected").length}
+              {stats ? stats.byStatus.collected ?? 0 : "…"}
             </div>
           </div>
         </div>
@@ -368,6 +402,37 @@ export default function AdminDashboard() {
               <option value="other">Other</option>
             </select>
           </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-xs font-medium text-slate-700">Client:</span>
+            <select
+              value={clientFilter}
+              onChange={(e) => setClientFilter(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
+            >
+              <option value="all">All Clients</option>
+              {clientList.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-xs font-medium text-slate-700">From:</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+            />
+            <span className="text-xs font-medium text-slate-700">To:</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+            />
+          </div>
 
           <button
             onClick={() => loadData()}
@@ -386,7 +451,7 @@ export default function AdminDashboard() {
             className="flex-1 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
           />
           <span className="text-[11px] text-slate-400 whitespace-nowrap">
-            {visibleInvoices.length} shown
+            {visibleInvoices.length} shown{stats ? ` of ${stats.total}` : ""}
           </span>
           <button
             onClick={handleExportCsv}
@@ -629,6 +694,17 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+          {nextCursor && (
+            <div className="flex justify-center mt-4">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition disabled:opacity-50"
+              >
+                {loadingMore ? "Loading…" : "Load more"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Assignment Modal */}

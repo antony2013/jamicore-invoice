@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, invoices, invoiceMessages, invoiceReports, invoiceStatusLog } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { safeClientStaff } from "@/lib/safe-columns";
+import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { isClientEditable, isClientWithdrawable } from "@/lib/client-edit-rules";
 
 /**
@@ -12,6 +13,7 @@ import { isClientEditable, isClientWithdrawable } from "@/lib/client-edit-rules"
  * - Team staff: ONLY their own uploads. One member can never see, edit or
  *   withdraw another member's rows — enforced here, not just in the UI.
  * Each invoice carries its full status timeline (audit trail).
+ * Keyset pagination: limit (default 50, max 100), cursor -> nextCursor.
  */
 export async function GET(request: Request) {
   try {
@@ -23,25 +25,46 @@ export async function GET(request: Request) {
       );
     }
 
+    const { searchParams } = new URL(request.url);
+    const limitRaw = searchParams.get("limit");
+    const limit = Math.min(Math.max(parseInt(limitRaw || "50", 10) || 50, 1), 100);
+    const cursorRaw = searchParams.get("cursor");
+    const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
+    if (cursorRaw && !cursor) {
+      return NextResponse.json({ error: "Invalid cursor." }, { status: 400 });
+    }
+
     const scope =
       client.role === "client_staff"
         ? and(eq(invoices.clientId, client.clientId), eq(invoices.uploadedByStaffId, client.sub))
         : eq(invoices.clientId, client.clientId);
 
+    const whereClause = cursor
+      ? and(
+          scope,
+          sql`(${invoices.createdAt}, ${invoices.id}) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`
+        )
+      : scope;
+
     const rows = await db.query.invoices.findMany({
-      where: scope,
+      where: whereClause,
       with: { outlet: true, uploadedBy: safeClientStaff },
-      orderBy: [desc(invoices.createdAt)],
-      limit: 100,
+      orderBy: [desc(invoices.createdAt), desc(invoices.id)],
+      limit: limit + 1,
     });
+
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    const nextCursor =
+      rows.length > limit && last ? encodeCursor(last.createdAt, last.id) : null;
 
     // Which rows were manually assigned (admin hand involved)? One query.
     const manualRows =
-      rows.length > 0
+      page.length > 0
         ? await db.query.assignments.findMany({
             where: inArray(
               assignments.invoiceId,
-              rows.map((r) => r.id)
+              page.map((r) => r.id)
             ),
             columns: { invoiceId: true },
           })
@@ -49,7 +72,7 @@ export async function GET(request: Request) {
     const manualSet = new Set(manualRows.map((r) => r.invoiceId));
 
     // Latest report per invoice + unread client-side messages — two queries.
-    const ids = rows.map((r) => r.id);
+    const ids = page.map((r) => r.id);
     const reportRows =
       ids.length > 0
         ? await db.query.invoiceReports.findMany({
@@ -80,7 +103,7 @@ export async function GET(request: Request) {
     }
 
     const withLogs = await Promise.all(
-      rows.map(async (inv) => {
+      page.map(async (inv) => {
         const logs = await db.query.invoiceStatusLog.findMany({
           where: eq(invoiceStatusLog.invoiceId, inv.id),
           orderBy: [desc(invoiceStatusLog.timestamp)],
@@ -125,7 +148,7 @@ export async function GET(request: Request) {
       })
     );
 
-    return NextResponse.json({ success: true, invoices: withLogs });
+    return NextResponse.json({ success: true, invoices: withLogs, nextCursor });
   } catch (error: unknown) {
     console.error("Error in GET /api/client-invoices:", error);
     return NextResponse.json({ error: "Failed to fetch invoice history" }, { status: 500 });

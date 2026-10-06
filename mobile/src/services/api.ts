@@ -348,43 +348,58 @@ export async function getMyOutlets(): Promise<Outlet[]> {
 
 /**
  * 6. My invoice history with status timelines (client's own rows only).
+ * Keyset pages: limit (default 50, max 100), cursor -> nextCursor.
  */
-export async function getMyInvoices() {
+export type HistoryRow = {
+  id: string;
+  status: string;
+  priority: string;
+  outlet: { id: string; name: string } | null;
+  category?: string | null;
+  categoryDetail?: string | null;
+  clientNote?: string | null;
+  pageNotes?: string[] | null;
+  uploadedByName?: string | null;
+  deletableUntil?: string | null;
+  editable?: boolean;
+  withdrawable?: boolean;
+  ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
+  createdAt: string;
+  updatedAt: string;
+  statusLogs: Array<{ status: string; note?: string | null; timestamp: string }>;
+  /** Office Excel report (null until staff shares one) */
+  report?: { fileName: string; createdAt: string } | null;
+  /** Unread staff messages on this invoice's thread */
+  unreadMessages?: number;
+};
+
+export async function getMyInvoices(
+  limit?: number,
+  cursor?: string | null
+): Promise<{ invoices: HistoryRow[]; nextCursor: string | null }> {
   if (!clientAuthToken) {
     throw new Error("Client is not authenticated. Please log in first.");
   }
 
-  const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${clientAuthToken}`,
-    },
-  });
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set("limit", String(limit));
+  if (cursor) params.set("cursor", cursor);
+  const qs = params.toString();
+  const response = await apiFetch(
+    `${currentApiBaseUrl}/api/client-invoices${qs ? `?${qs}` : ""}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${clientAuthToken}`,
+      },
+    }
+  );
 
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || "Failed to fetch history.");
   }
-  return data.invoices as Array<{
-    id: string;
-    status: string;
-    priority: string;
-    outlet: { id: string; name: string } | null;
-    category?: string | null;
-    categoryDetail?: string | null;
-    clientNote?: string | null;
-    pageNotes?: string[] | null;
-    uploadedByName?: string | null;
-    deletableUntil?: string | null;
-    ocrData: { amount?: number | string | null; invoiceNo?: string | null; vendor?: string | null; date?: string | null; confidence?: number | null } | null;
-    createdAt: string;
-    updatedAt: string;
-    statusLogs: Array<{ status: string; note?: string | null; timestamp: string }>;
-    /** Office Excel report (null until staff shares one) */
-    report?: { fileName: string; createdAt: string } | null;
-    /** Unread staff messages on this invoice's thread */
-    unreadMessages?: number;
-  }>;
+  return { invoices: data.invoices as HistoryRow[], nextCursor: data.nextCursor ?? null };
 }
 
 export type InvoiceMessage = {

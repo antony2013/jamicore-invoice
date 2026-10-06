@@ -1,87 +1,72 @@
 import { NextResponse } from "next/server";
-import { and, eq, desc } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices, clients, staff } from "@/db/schema";
+import { invoices } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { safeClient, safeStaff } from "@/lib/safe-columns";
 import { touchPresence } from "@/lib/presence";
+import { decodeCursor, encodeCursor } from "@/lib/cursor";
+import {
+  buildInvoiceConditions,
+  combineConditions,
+  parseInvoiceFilters,
+} from "@/lib/invoice-filters";
 
+/**
+ * Office invoice list (admin: all, staff: own) with server-side search and
+ * keyset pagination. Params: status, assigned_to (me|unassigned|uuid, admin
+ * only), outlet, client, category, priority, q, from, to, limit (default 50,
+ * max 100), cursor -> nextCursor (null at end). Order: created_at DESC, id
+ * DESC. Response shape keeps { success, invoices } and adds nextCursor.
+ */
 export async function GET(request: Request) {
   try {
     const me = await requireOffice();
     if (me instanceof NextResponse) return me;
-
-    const role = me.role;
-    const staffId = me.id;
-    touchPresence(staffId);
+    touchPresence(me.id);
 
     const { searchParams } = new URL(request.url);
-    const statusParam = searchParams.get("status");
-    const assignedToParam = searchParams.get("assigned_to");
-    const outletParam = searchParams.get("outlet");
-    const clientParam = searchParams.get("client");
-    const categoryParam = searchParams.get("category");
+    const parsed = parseInvoiceFilters(searchParams);
+    if (parsed instanceof NextResponse) return parsed;
 
-    const UUID_RE = /^[0-9a-f-]{36}$/i;
-    const VALID_STATUSES = [
-      "uploaded", "ocr_pending", "ocr_done", "ocr_failed", "assigned",
-      "in_review", "needs_info", "verified", "collected", "disputed",
-    ];
-    if (statusParam && !VALID_STATUSES.includes(statusParam)) {
-      return NextResponse.json({ error: "Invalid status filter." }, { status: 400 });
-    }
-    for (const [label, v] of [["outlet", outletParam], ["client", clientParam], ["assigned_to", assignedToParam]] as const) {
-      if (v && v !== "me" && !UUID_RE.test(v)) {
-        return NextResponse.json({ error: `Invalid ${label} filter.` }, { status: 400 });
-      }
+    const limitRaw = searchParams.get("limit");
+    const limit = Math.min(Math.max(parseInt(limitRaw || "50", 10) || 50, 1), 100);
+
+    const cursorRaw = searchParams.get("cursor");
+    const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
+    if (cursorRaw && !cursor) {
+      return NextResponse.json({ error: "Invalid cursor." }, { status: 400 });
     }
 
-    let whereClause = undefined;
-    const conditions = [];
-
-    if (statusParam) {
-      conditions.push(eq(invoices.status, statusParam as any));
+    const conditions = await buildInvoiceConditions(parsed, me);
+    if (cursor) {
+      conditions.push(
+        sql`(${invoices.createdAt}, ${invoices.id}) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`
+      );
     }
 
-    // Strict separation: staff can only ever list their OWN invoices.
-    // Any assigned_to value they pass is ignored in favor of their id.
-    if (role !== "admin") {
-      conditions.push(eq(invoices.assignedTo, staffId));
-    } else if (assignedToParam === "me") {
-      conditions.push(eq(invoices.assignedTo, staffId));
-    } else if (assignedToParam) {
-      conditions.push(eq(invoices.assignedTo, assignedToParam));
-    }
-
-    if (outletParam) {
-      conditions.push(eq(invoices.outletId, outletParam));
-    }
-
-    if (clientParam) {
-      conditions.push(eq(invoices.clientId, clientParam));
-    }
-
-    if (categoryParam) {
-      conditions.push(eq(invoices.category, categoryParam as any));
-    }
-
-    if (conditions.length > 0) {
-      whereClause = and(...conditions);
-    }
-
-    const invoiceList = await db.query.invoices.findMany({
-      where: whereClause,
+    const rows = await db.query.invoices.findMany({
+      where: combineConditions(conditions),
       with: {
         client: safeClient,
         assignedStaff: safeStaff,
         outlet: true,
       },
-      orderBy: [desc(invoices.createdAt)],
+      orderBy: [desc(invoices.createdAt), desc(invoices.id)],
+      limit: limit + 1, // +1 probes for a next page
     });
+
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1] as typeof page[number] | undefined;
+    const nextCursor =
+      rows.length > limit && last
+        ? encodeCursor(last.createdAt as unknown as Date, last.id)
+        : null;
 
     return NextResponse.json({
       success: true,
-      invoices: invoiceList,
+      invoices: page,
+      nextCursor,
     });
   } catch (error: any) {
     console.error("Error in GET /api/invoices:", error);

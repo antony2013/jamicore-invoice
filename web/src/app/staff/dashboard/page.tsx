@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -19,15 +19,34 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
+  const [stats, setStats] = useState<{ byStatus: Record<string, number>; unassigned: number; byPriority: Record<string, number>; total: number } | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  function listParams(cursor?: string | null) {
+    const params = new URLSearchParams();
+    params.set("assigned_to", "me");
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (search.trim()) params.set("q", search.trim());
+    params.set("limit", "50");
+    if (cursor) params.set("cursor", cursor);
+    return params.toString();
+  }
 
   async function loadAssignedInvoices() {
     setLoading(true);
     try {
-      const res = await fetch("/api/invoices?assigned_to=me");
-      const data = await res.json();
+      const [listRes, statsRes] = await Promise.all([
+        fetch(`/api/invoices?${listParams()}`),
+        fetch(`/api/invoices/stats?assigned_to=me${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ""}`),
+      ]);
+      const data = await listRes.json();
+      const statsData = await statsRes.json();
       if (data.success) {
         setInvoices(data.invoices);
+        setNextCursor(data.nextCursor ?? null);
       }
+      if (statsData.success) setStats(statsData.stats);
     } catch (err) {
       console.error("Failed to load assigned invoices:", err);
     } finally {
@@ -35,41 +54,42 @@ export default function StaffDashboard() {
     }
   }
 
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(`/api/invoices?${listParams(nextCursor)}`);
+      const data = await res.json();
+      if (data.success) {
+        setInvoices((prev) => [...prev, ...data.invoices]);
+        setNextCursor(data.nextCursor ?? null);
+      }
+    } catch (err) {
+      console.error("Failed to load more invoices:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   useEffect(() => {
     loadAssignedInvoices();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
 
-  const visibleInvoices = invoices.filter((inv) => {
-    if (statusFilter !== "all") {
-      if (statusFilter === "in_progress") {
-        if (!["in_review", "needs_info"].includes(inv.status)) return false;
-      } else if (statusFilter === "finished") {
-        if (!["collected", "disputed"].includes(inv.status)) return false;
-      } else if (inv.status !== statusFilter) {
-        return false;
-      }
+  // Debounced server search (skipped on mount)
+  const searchFirst = useRef(true);
+  useEffect(() => {
+    if (searchFirst.current) {
+      searchFirst.current = false;
+      return;
     }
-    const q = search.trim().toLowerCase();
-    if (q) {
-      const hay = [
-        inv.id,
-        inv.client?.name,
-        inv.client?.phone,
-        inv.client?.email,
-        inv.outlet?.name,
-        inv.ocrData?.vendor,
-        inv.ocrData?.invoiceNo,
-        inv.ocrData?.amount != null ? String(inv.ocrData.amount) : "",
-        inv.category,
-        inv.categoryDetail,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
+    const t = setTimeout(() => loadAssignedInvoices(), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  // Filtering happens server-side; the grid renders the loaded page(s).
+  const visibleInvoices = invoices;
 
   const STATUS_OPTIONS = [
     { value: "all", label: "All" },
@@ -115,30 +135,30 @@ export default function StaffDashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* My Counts */}
+        {/* My Counts (server-computed over ALL my rows, not just the loaded page) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">To Start</div>
             <div className="text-2xl font-bold text-purple-700 mt-1">
-              {invoices.filter((i) => i.status === "assigned").length}
+              {stats ? stats.byStatus.assigned ?? 0 : "…"}
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">In Progress</div>
             <div className="text-2xl font-bold text-amber-600 mt-1">
-              {invoices.filter((i) => ["in_review", "needs_info"].includes(i.status)).length}
+              {stats ? (stats.byStatus.in_review ?? 0) + (stats.byStatus.needs_info ?? 0) : "…"}
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Verified</div>
             <div className="text-2xl font-bold text-blue-700 mt-1">
-              {invoices.filter((i) => i.status === "verified").length}
+              {stats ? stats.byStatus.verified ?? 0 : "…"}
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Finished ✅</div>
             <div className="text-2xl font-bold text-emerald-600 mt-1">
-              {invoices.filter((i) => ["collected", "disputed"].includes(i.status)).length}
+              {stats ? (stats.byStatus.collected ?? 0) + (stats.byStatus.disputed ?? 0) : "…"}
             </div>
           </div>
         </div>
@@ -182,7 +202,7 @@ export default function StaffDashboard() {
             className="flex-1 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
           />
           <span className="text-[11px] text-slate-400 whitespace-nowrap">
-            {visibleInvoices.length} shown
+            {visibleInvoices.length} shown{stats ? ` of ${stats.total}` : ""}
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -275,6 +295,17 @@ export default function StaffDashboard() {
             ))
           )}
         </div>
+        {nextCursor && (
+          <div className="flex justify-center mt-6">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition shadow-sm disabled:opacity-50"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );
