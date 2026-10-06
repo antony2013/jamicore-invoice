@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { invoices, assignments, invoiceStatusLog, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { isValidTransition, InvoiceStatus } from "@/lib/status-flow";
+import { transitionInvoice } from "@/lib/invoice-transitions";
+import { handleRouteError } from "@/lib/http-errors";
 
 const assignSchema = z.object({
   staffId: z.string().uuid("Invalid staff ID"),
@@ -73,38 +75,23 @@ export async function POST(
       return NextResponse.json({ error: "Select an ACTIVE staff member (admin accounts cannot take invoices)." }, { status: 400 });
     }
 
-    // Execute assignment in transaction (re-assign keeps the current status)
+    // Execute assignment in transaction (re-assign keeps the current status).
+    // Race-safe: the row must still be in the status AND assigned to the
+    // person we read — two parallel assigns collide into exactly one winner.
     const updatedInvoice = await db.transaction(async (tx) => {
-      // 1. Update invoice
-      const [inv] = await tx
-        .update(invoices)
-        .set({
-          status: isReassign ? currentInvoice.status : "assigned",
-          assignedTo: staffId,
-          ...(priority ? { priority } : {}),
-          updatedAt: new Date(),
-        })
-        .where(eq(invoices.id, id))
-        .returning();
-
-      // 2. Insert into assignments table
-      await tx.insert(assignments).values({
+      return transitionInvoice(tx, {
         invoiceId: id,
-        staffId: staffId,
-        assignedBy: adminId,
-      });
-
-      // 3. Insert audit log
-      await tx.insert(invoiceStatusLog).values({
-        invoiceId: id,
-        status: isReassign ? (currentInvoice.status as any) : "assigned",
-        changedBy: adminId,
+        expectedStatus: currentInvoice.status,
+        nextStatus: isReassign ? currentInvoice.status : "assigned",
+        actor: { type: "staff", id: adminId },
         note: note || (isReassign
           ? `Re-assigned to ${targetStaff.name} (${targetStaff.email})`
           : `Assigned to ${targetStaff.name} (${targetStaff.email})`),
+        extraSet: priority ? { priority } : {},
+        assignedTo: staffId,
+        expectedAssignedTo: currentInvoice.assignedTo ?? null,
+        assignment: { staffId, assignedBy: adminId },
       });
-
-      return inv;
     });
 
     return NextResponse.json({
@@ -113,7 +100,6 @@ export async function POST(
       invoice: updatedInvoice,
     });
   } catch (error: any) {
-    console.error("Error in /api/invoices/[id]/assign:", error);
-    return NextResponse.json({ error: "Internal server error during assignment" }, { status: 500 });
+    return handleRouteError(error, "/api/invoices/[id]/assign");
   }
 }

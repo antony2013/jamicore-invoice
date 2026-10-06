@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { invoices, invoiceStatusLog, assignments, invoiceReports, outlets, staff } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 import { isValidTransition, isTerminalStatus, InvoiceStatus } from "@/lib/status-flow";
+import { concurrentEditError, transitionInvoice, updatedAtMatches } from "@/lib/invoice-transitions";
+import { handleRouteError } from "@/lib/http-errors";
 import { categorySchema, validateCategory } from "@/lib/categories";
 import { deleteObjectFromS3 } from "@/lib/s3";
 
@@ -151,6 +153,7 @@ export async function PATCH(
     }
 
     // Validate status transition against the single centralized transition matrix
+    // (enforced again inside transitionInvoice — the helper is authoritative).
     if (nextStatus && nextStatus !== currentInvoice.status) {
       const allowed = isValidTransition(currentInvoice.status as InvoiceStatus, nextStatus as InvoiceStatus);
       if (!allowed) {
@@ -177,13 +180,40 @@ export async function PATCH(
     }
 
     const updated = await db.transaction(async (tx) => {
+      // Status change → the single race-safe helper (conditional update +
+      // log row inside this transaction).
+      if (nextStatus && nextStatus !== currentInvoice.status) {
+        const dataSet: Record<string, unknown> = {};
+        if (priority) dataSet.priority = priority;
+        if (outletId !== undefined) dataSet.outletId = outletId;
+        if (result.data.category !== undefined) {
+          dataSet.category = nextCategory;
+          dataSet.categoryDetail =
+            nextCategory === "other" ? (nextDetail as string).trim() : null;
+        } else if (result.data.categoryDetail !== undefined && currentInvoice.category === "other") {
+          dataSet.categoryDetail = result.data.categoryDetail?.trim() || null;
+        }
+        if (ocrData) {
+          dataSet.ocrData = {
+            ...currentInvoice.ocrData,
+            ...ocrData,
+          };
+        }
+        return transitionInvoice(tx, {
+          invoiceId: id,
+          expectedStatus: currentInvoice.status,
+          nextStatus,
+          actor: { type: "staff", id: staffId },
+          note: note || `Status updated from ${currentInvoice.status} to ${nextStatus}`,
+          extraSet: dataSet,
+        });
+      }
+
+      // Data-only edit → optimistic lock on status + updatedAt so two
+      // editors cannot silently overwrite each other.
       const updatePayload: any = {
         updatedAt: new Date(),
       };
-
-      if (nextStatus) {
-        updatePayload.status = nextStatus;
-      }
 
       if (priority) {
         updatePayload.priority = priority;
@@ -211,19 +241,22 @@ export async function PATCH(
       const [res] = await tx
         .update(invoices)
         .set(updatePayload)
-        .where(eq(invoices.id, id))
+        .where(
+          and(
+            eq(invoices.id, id),
+            eq(invoices.status, currentInvoice.status as any),
+            updatedAtMatches(currentInvoice.updatedAt)
+          )
+        )
         .returning();
 
-      // Always write audit log for status change; data-only edits log only
-      // when an explicit note is provided (avoids timeline spam on every save).
-      if (nextStatus && nextStatus !== currentInvoice.status) {
-        await tx.insert(invoiceStatusLog).values({
-          invoiceId: id,
-          status: nextStatus,
-          changedBy: staffId,
-          note: note || `Status updated from ${currentInvoice.status} to ${nextStatus}`,
-        });
-      } else if (note) {
+      if (!res) {
+        throw concurrentEditError();
+      }
+
+      // Data-only edits log only when an explicit note is provided
+      // (avoids timeline spam on every save).
+      if (note) {
         await tx.insert(invoiceStatusLog).values({
           invoiceId: id,
           status: currentInvoice.status,
@@ -240,8 +273,7 @@ export async function PATCH(
       invoice: updated,
     });
   } catch (error: any) {
-    console.error("Error in PATCH /api/invoices/[id]:", error);
-    return NextResponse.json({ error: "Failed to update invoice" }, { status: 500 });
+    return handleRouteError(error, "PATCH /api/invoices/[id]");
   }
 }
 

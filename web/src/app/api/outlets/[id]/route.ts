@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, clientStaff, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
-import { auth } from "@/lib/auth";
+import { clientStaff, invoices, outlets, staff } from "@/db/schema";
+import { requireAdmin } from "@/lib/session";
 import { isValidTransition } from "@/lib/status-flow";
+import { transitionInvoice } from "@/lib/invoice-transitions";
+import { handleRouteError } from "@/lib/http-errors";
 
 const updateOutletSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -24,10 +26,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const { id } = await params;
     const body = await request.json();
@@ -86,39 +86,36 @@ export async function PATCH(
 
     // Backlog sweep: unassigned invoices already tagged with this outlet
     // route to the new default immediately (admin is the assigner).
+    // ONE transaction for the whole sweep (all-or-nothing); each row goes
+    // through transitionInvoice so a concurrent move aborts with 409.
     let swept = 0;
     if (assignedStaffId) {
       const backlog = await db.query.invoices.findMany({
         where: and(eq(invoices.outletId, id), isNull(invoices.assignedTo)),
+        columns: { id: true, status: true },
       });
-      const adminId = (session.user as any).id;
-      for (const inv of backlog) {
-        if (!isValidTransition(inv.status as any, "assigned")) continue;
-        await db.transaction(async (tx) => {
-          await tx
-            .update(invoices)
-            .set({ status: "assigned", assignedTo: result.data.assignedStaffId, updatedAt: new Date() })
-            .where(eq(invoices.id, inv.id));
-          await tx.insert(assignments).values({
+      const adminId = me.id;
+      await db.transaction(async (tx) => {
+        for (const inv of backlog) {
+          if (!isValidTransition(inv.status as any, "assigned")) continue;
+          await transitionInvoice(tx, {
             invoiceId: inv.id,
-            staffId: assignedStaffId,
-            assignedBy: adminId,
-          });
-          await tx.insert(invoiceStatusLog).values({
-            invoiceId: inv.id,
-            status: "assigned",
-            changedBy: adminId,
+            expectedStatus: inv.status,
+            nextStatus: "assigned",
+            actor: { type: "staff", id: adminId },
             note: "Bulk-assigned via outlet default staff",
+            assignedTo: result.data.assignedStaffId,
+            expectedAssignedTo: null,
+            assignment: { staffId: assignedStaffId, assignedBy: adminId },
           });
-        });
-        swept++;
-      }
+          swept++;
+        }
+      });
     }
 
     return NextResponse.json({ success: true, outlet: updated, swept });
   } catch (error: any) {
-    console.error("Error updating outlet:", error);
-    return NextResponse.json({ error: "Failed to update outlet" }, { status: 500 });
+    return handleRouteError(error, "PATCH /api/outlets/[id]");
   }
 }
 
@@ -127,10 +124,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user || (session.user as any).role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
+    const me = await requireAdmin();
+    if (me instanceof NextResponse) return me;
 
     const { id } = await params;
     const inUse = await db.query.invoices.findFirst({ where: eq(invoices.outletId, id) });

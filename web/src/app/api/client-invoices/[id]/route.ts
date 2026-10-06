@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { deleteObjectFromS3 } from "@/lib/s3";
 import { categorySchema, validateCategory } from "@/lib/categories";
 import { hasManualAssignment, isClientEditable, DELETE_WINDOW_MS } from "@/lib/client-edit-rules";
+import { concurrentEditError, updatedAtMatches } from "@/lib/invoice-transitions";
+import { ConflictError, handleRouteError, NotFoundError } from "@/lib/http-errors";
 
 /**
  * Client self-service on their OWN invoice.
@@ -116,11 +118,23 @@ export async function PATCH(
     }
 
     const [updated] = await db.transaction(async (tx) => {
+      // Optimistic lock: the office may have touched the row after our
+      // read — status or updatedAt drift aborts with 409, not a silent
+      // overwrite. (Client edits never change status themselves.)
       const [row] = await tx
         .update(invoices)
         .set(patch)
-        .where(eq(invoices.id, id))
+        .where(
+          and(
+            eq(invoices.id, id),
+            eq(invoices.status, current.status as any),
+            updatedAtMatches(current.updatedAt)
+          )
+        )
         .returning();
+      if (!row) {
+        throw concurrentEditError();
+      }
       await tx.insert(invoiceStatusLog).values({
         invoiceId: id,
         status: row.status,
@@ -132,8 +146,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, invoice: updated });
   } catch (error: unknown) {
-    console.error("Error in PATCH /api/client-invoices/[id]:", error);
-    return NextResponse.json({ error: "Failed to update invoice" }, { status: 500 });
+    return handleRouteError(error, "PATCH /api/client-invoices/[id]");
   }
 }
 
@@ -187,14 +200,14 @@ export async function DELETE(
         columns: { id: true, status: true },
       });
       if (!fresh) {
-        throw new Error("Invoice no longer exists.");
+        throw new NotFoundError("Invoice no longer exists.");
       }
       const freshManual = await tx.query.assignments.findFirst({
         where: eq(assignments.invoiceId, id),
         columns: { id: true },
       });
       if (!isClientEditable(fresh.status, !!freshManual)) {
-        throw new Error(
+        throw new ConflictError(
           `Invoice moved to '${fresh.status}' while withdrawing — the office now owns it. Contact them to remove it.`
         );
       }
@@ -209,7 +222,8 @@ export async function DELETE(
         : "Invoice withdrawn (file cleanup pending).",
     });
   } catch (error: unknown) {
-    console.error("Error in DELETE /api/client-invoices/[id]:", error);
-    return NextResponse.json({ error: "Failed to withdraw invoice" }, { status: 500 });
+    // Transaction-thrown user messages (e.g. office touched the row mid-
+    // withdraw) keep their 409 via handleRouteError — never a bare 500.
+    return handleRouteError(error, "DELETE /api/client-invoices/[id]");
   }
 }

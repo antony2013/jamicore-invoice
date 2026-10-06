@@ -7,6 +7,8 @@ import { assignments, clients, clientStaff, invoices, invoiceReports, invoiceSta
 import { requireAdmin } from "@/lib/session";
 import { deleteObjectFromS3 } from "@/lib/s3";
 import { isValidTransition } from "@/lib/status-flow";
+import { transitionInvoice } from "@/lib/invoice-transitions";
+import { handleRouteError } from "@/lib/http-errors";
 
 const phoneSchema = z
   .string()
@@ -105,32 +107,30 @@ export async function PATCH(
     // Backlog sweep: every unassigned uploaded (or legacy OCR-processed) invoice of this
     // client routes to the new default staff immediately (admin is the
     // assigner). Future uploads auto-route at confirm time.
+    // ONE transaction for the whole sweep (all-or-nothing); each row goes
+    // through transitionInvoice so a concurrent move aborts with 409.
     let swept = 0;
     if (assignedStaffId) {
       const backlog = await db.query.invoices.findMany({
         where: and(eq(invoices.clientId, id), isNull(invoices.assignedTo)),
+        columns: { id: true, status: true },
       });
-      for (const inv of backlog) {
-        if (!isValidTransition(inv.status as any, "assigned")) continue;
-        await db.transaction(async (tx) => {
-          await tx
-            .update(invoices)
-            .set({ status: "assigned", assignedTo: assignedStaffId, updatedAt: new Date() })
-            .where(eq(invoices.id, inv.id));
-          await tx.insert(assignments).values({
+      await db.transaction(async (tx) => {
+        for (const inv of backlog) {
+          if (!isValidTransition(inv.status as any, "assigned")) continue;
+          await transitionInvoice(tx, {
             invoiceId: inv.id,
-            staffId: assignedStaffId,
-            assignedBy: me.id,
-          });
-          await tx.insert(invoiceStatusLog).values({
-            invoiceId: inv.id,
-            status: "assigned",
-            changedBy: me.id,
+            expectedStatus: inv.status,
+            nextStatus: "assigned",
+            actor: { type: "staff", id: me.id },
             note: `Bulk-assigned via client default staff`,
+            assignedTo: assignedStaffId,
+            expectedAssignedTo: null,
+            assignment: { staffId: assignedStaffId, assignedBy: me.id },
           });
-        });
-        swept++;
-      }
+          swept++;
+        }
+      });
     }
 
     return NextResponse.json({
@@ -150,8 +150,7 @@ export async function PATCH(
       swept,
     });
   } catch (error: any) {
-    console.error("Error updating client:", error);
-    return NextResponse.json({ error: "Failed to update client" }, { status: 500 });
+    return handleRouteError(error, "PATCH /api/clients/[id]");
   }
 }
 
