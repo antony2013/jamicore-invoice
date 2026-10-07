@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw, History, User } from "lucide-react";
+import AppShell from "@/components/AppShell";
 
 export default function StaffHistoryPage() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -26,31 +27,22 @@ export default function StaffHistoryPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <History className="w-5 h-5 text-slate-700" />
-            <div>
-              <h1 className="text-lg font-bold text-slate-900">My Activity</h1>
-              <p className="text-[11px] text-slate-500">Status changes you performed, newest first</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link href="/staff/dashboard" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900">
-              <ArrowLeft className="w-3.5 h-3.5" /> My Invoices
-            </Link>
-            <button
-              onClick={load}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-            </button>
-          </div>
+    <AppShell
+      role="staff"
+      title="My Activity"
+      subtitle="Status changes you performed, newest first"
+      actions={
+        <div className="flex items-center gap-2">
+          <Link href="/staff/dashboard" className="dc-btn">
+            My Invoices
+          </Link>
+          <button onClick={load} className="dc-btn" type="button">
+            <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </button>
         </div>
-      </header>
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+      }
+    >
+        <div className="dc-card p-6">
           {loading && logs.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-8">Loading history...</p>
           ) : logs.length === 0 ? (
@@ -88,7 +80,6 @@ export default function StaffHistoryPage() {
             </div>
           )}
         </div>
-      </main>
-    </div>
+      </AppShell>
   );
 }

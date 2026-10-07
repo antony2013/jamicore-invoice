@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw, ScrollText } from "lucide-react";
+import AppShell from "@/components/AppShell";
 
 type Entry = {
   id: string;
@@ -72,23 +73,17 @@ export default function AdminAuditPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ScrollText className="w-5 h-5 text-slate-700" />
-            <h1 className="text-lg font-bold text-slate-900">Audit Log</h1>
-            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-500">
-              append-only
-            </span>
-          </div>
-          <Link href="/admin/dashboard" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900">
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to Queue
-          </Link>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex flex-wrap items-center gap-3">
+    <AppShell
+      role="admin"
+      title="Audit Log"
+      subtitle="Append-only audit entries for admin review."
+      actions={
+        <Link href="/admin/dashboard" className="dc-btn">
+          Back to Queue
+        </Link>
+      }
+    >
+        <div className="dc-card p-4 mb-6 flex flex-wrap items-center gap-3">
           <input
             value={entity}
             onChange={(e) => setEntity(e.target.value)}
@@ -188,7 +183,6 @@ export default function AdminAuditPage() {
             </button>
           </div>
         )}
-      </main>
-    </div>
+      </AppShell>
   );
 }

@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node .next/standalone/server.js",
     "lint": "next lint",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
@@ -18,7 +18,8 @@
     "db:studio": "drizzle-kit studio",
     "s3:cleanup": "tsx src/db/cleanup-orphans.ts",
     "db:rotate": "tsx src/db/rotate-credentials.ts",
-    "db:purge": "tsx src/db/purge-deleted.ts"
+    "db:purge": "tsx src/db/purge-deleted.ts",
+    "audit:retention": "tsx src/db/audit-retention.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",

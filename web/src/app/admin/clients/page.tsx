@@ -3,6 +3,7 @@
 import { useEffect, useState, Fragment } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw, Users, UserPlus } from "lucide-react";
+import AppShell from "@/components/AppShell";
 
 export default function AdminClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
@@ -359,36 +360,21 @@ export default function AdminClientsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Users className="w-5 h-5 text-slate-700" />
-            <h1 className="text-lg font-bold text-slate-900">Clients</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link href="/admin/dashboard" className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900">
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to Queue
-            </Link>
-            <Link href="/admin/staff" className="text-xs font-semibold text-blue-600 hover:text-blue-800">
-              Manage Staff
-            </Link>
-            <button
-              onClick={() => setShowForm((v) => !v)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition"
-            >
-              <UserPlus className="w-3.5 h-3.5" /> Add Client
-            </button>
-            <button
-              onClick={load}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-            </button>
-          </div>
+    <AppShell
+      role="admin"
+      title="Clients"
+      subtitle="Client accounts, outlets, default staff routing, and removal."
+      actions={
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowForm((v) => !v)} className="dc-btn" type="button">
+            <UserPlus className="mr-1 inline h-3.5 w-3.5" /> Add Client
+          </button>
+          <button onClick={load} className="dc-btn" type="button">
+            <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </button>
         </div>
-      </header>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      }
+    >
         {success && (
           <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
             {success}
@@ -753,7 +739,6 @@ export default function AdminClientsPage() {
             </tbody>
           </table>
         </div>
-      </main>
-    </div>
+      </AppShell>
   );
 }

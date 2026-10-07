@@ -1,14 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #f9fafb;
-  --foreground: #111827;
+  --background: #F3F5F7;
+  --foreground: #101828;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  font-family: var(--font-sans);
+}
+
+.dc-root {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  min-height: 100vh;
+  background: #F3F5F7;
+}
+.dc-sidebar {
+  background: #101828;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.dc-logo {
+  color: #fff;
+  font-weight: 600;
+  font-size: 18px;
+  padding: 0 14px;
+}
+.dc-nav { display: flex; flex-direction: column; gap: 4px; }
+.dc-nav a {
+  display: block;
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: #CBD5E1;
+  text-decoration: none;
+  font-size: 14px;
+  min-height: 20px;
+}
+.dc-nav a:hover { background: #1D2939; color: #fff; }
+.dc-nav a.active { background: #1D4ED8; color: #fff; }
+.dc-footer { margin-top: auto; color: #98A2B3; font-size: 13px; padding: 0 14px; }
+.dc-main { padding: 28px 32px; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.dc-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.dc-kpi { background: #fff; border: 1px solid #E4E7EC; border-radius: 12px; padding: 16px 18px; }
+.dc-kpi b { display: block; font-size: 28px; font-weight: 600; margin-top: 6px; }
+.dc-kpi span { font-size: 13px; color: #475467; }
+.dc-ctl {
+  height: 44px;
+  border: 1px solid #D0D5DD;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  color: #101828;
+}
+.dc-btn {
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid #D0D5DD;
+  background: #fff;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: #101828;
+  cursor: pointer;
+}
+.dc-btn-pri { background: #1D4ED8; border-color: #1D4ED8; color: #fff; }
+.dc-card { background: #fff; border: 1px solid #E4E7EC; border-radius: 12px; }
+.dc-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dc-mono { font-family: var(--font-mono); font-size: 13px; }
+.dc-row {
+  display: grid;
+  grid-template-columns: 44px 132px minmax(160px, 1fr) 120px 104px 140px 128px 120px;
+  align-items: center;
+  padding: 0 16px;
+  min-height: 56px;
+  border-top: 1px solid #E4E7EC;
+  font-size: 14px;
 }

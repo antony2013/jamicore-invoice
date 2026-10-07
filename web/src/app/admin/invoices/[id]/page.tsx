@@ -15,6 +15,7 @@ import {
   AlertCircle,
   ExternalLink,
 } from "lucide-react";
+import AppShell from "@/components/AppShell";
 
 export default function AdminInvoiceDetailPage({
   params,
@@ -247,24 +248,16 @@ export default function AdminInvoiceDetailPage({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Top bar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link
-            href="/admin/dashboard"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to Queue
-          </Link>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">Invoice ID:</span>
-            <span className="font-mono text-xs font-bold text-slate-900">{invoice.id}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <AppShell
+      role="admin"
+      title={`Invoice ${invoice.id.substring(0, 8)}`}
+      subtitle={`Client: ${invoice.client?.name || "Unknown"} — ID: ${invoice.id}`}
+      actions={
+        <Link href="/admin/dashboard" className="dc-btn">
+          <ArrowLeft className="mr-1 inline h-3.5 w-3.5" /> Back to Queue
+        </Link>
+      }
+    >
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Column: Private Image View */}
           <div className="lg:col-span-6 space-y-4">
@@ -714,7 +707,6 @@ export default function AdminInvoiceDetailPage({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </AppShell>
   );
 }

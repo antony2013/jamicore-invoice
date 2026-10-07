@@ -2,24 +2,32 @@ import type { NextConfig } from "next";
 
 // S3 origin for CSP (presigned PUT/GET + PDF iframes). Derived from
 // S3_ENDPOINT at build time; falls back to the local dev endpoint.
+const isDev = process.env.NODE_ENV !== "production";
+
 function s3Origin(): string {
-  const ep = (process.env.S3_ENDPOINT || "http://192.168.1.13:4566").trim();
+  const ep = (process.env.S3_ENDPOINT ?? "").trim();
+  if (!ep) {
+    if (!isDev) throw new Error("S3_ENDPOINT is required in production for CSP");
+    return "http://localhost:4566";
+  }
   try {
     const u = new URL(ep.startsWith("http") ? ep : `https://${ep}`);
     return u.origin;
   } catch {
-    return "http://192.168.1.13:4566";
+    if (!isDev) throw new Error(`Invalid S3_ENDPOINT for CSP: ${ep}`);
+    return "http://localhost:4566";
   }
 }
 
 const S3 = s3Origin();
 
-// NOTE on script-src: Next.js dev + App Router inline bootstraps require
-// 'unsafe-inline' for scripts; nonces per-request are not feasible with
-// static prerendering here, so this is the documented minimum.
+const scriptSrc = isDev
+  ? "'self' 'unsafe-inline' 'unsafe-eval'"
+  : "'self' 'unsafe-inline'";
+
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  `script-src ${scriptSrc}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: ${S3}`,
   `frame-src ${S3}`,
@@ -31,6 +39,7 @@ const csp = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  output: "standalone",
   // No next/image remotePatterns: the app uses plain <img> (private-bucket
   // signed URLs) and <iframe> for PDF previews — nothing to optimize remotely.
   async headers() {

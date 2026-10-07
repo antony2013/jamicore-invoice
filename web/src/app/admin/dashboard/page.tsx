@@ -10,10 +10,9 @@ import {
   UserCheck,
   Filter,
   ArrowRight,
-  LogOut,
   RefreshCw,
 } from "lucide-react";
-import { signOut } from "next-auth/react";
+import AppShell from "@/components/AppShell";
 
 export default function AdminDashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -243,59 +242,16 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Navbar */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img
-              src="/logo.png"
-              alt="JamiCore"
-              className="h-10 w-auto rounded-lg bg-white border border-slate-200 px-2 py-1 object-contain"
-            />
-            <span className="p-2 bg-slate-900 text-white rounded-lg font-bold text-sm">
-              ADMIN
-            </span>
-            <h1 className="text-lg font-bold text-slate-900">Invoice Operations Center</h1>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <Link
-              href="/admin/clients"
-              className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-            >
-              Clients
-            </Link>
-            <Link
-              href="/admin/staff"
-              className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-            >
-              Staff
-            </Link>
-            <Link
-              href="/admin/history"
-              className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-            >
-              History
-            </Link>
-            <Link
-              href="/admin/audit"
-              className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-            >
-              Audit
-            </Link>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
-            >
-              <LogOut className="w-3.5 h-3.5" /> Log out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <AppShell
+      role="admin"
+      title="Invoices"
+      subtitle="Everything clients have uploaded, in one queue."
+      actions={
+        <button onClick={handleExportCsv} className="dc-btn" type="button">
+          Export CSV
+        </button>
+      }
+    >
         {/* Status Highlights (server-computed over ALL matching rows, not just the loaded page) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -785,7 +741,6 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+      </AppShell>
   );
 }

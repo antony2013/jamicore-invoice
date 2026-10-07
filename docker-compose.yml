@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: jamicore-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: invoice_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - jamicore-postgres:/var/lib/postgresql/data
+
+  s3:
+    image: localstack/localstack:3.8
+    container_name: jamicore-s3
+    restart: unless-stopped
+    environment:
+      SERVICES: s3
+    ports:
+      - "4566:4566"
+    volumes:
+      - jamicore-s3:/var/lib/localstack
+
+  web:
+    build:
+      context: ./web
+    container_name: jamicore-web
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - s3
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./web/.env
+
+volumes:
+  jamicore-postgres:
+  jamicore-s3:

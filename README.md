@@ -49,7 +49,7 @@ everywhere; purge only via `db:purge`.
 
 ```bash
 # 1. Postgres + S3 (LocalStack)
-docker start jamicore-postgres jamicore-s3   # or: docker compose up -d (see below)
+docker start jamicore-postgres jamicore-s3   # or: docker compose up -d
 docker exec jamicore-s3 awslocal s3 mb s3://invoice-uploads
 
 # 2. Web
@@ -61,6 +61,7 @@ npm run dev                               # http://localhost:3000
 
 # 3. Mobile
 cd mobile && npx expo start --tunnel
+cd mobile && npm run typecheck               # typecheck only
 ```
 
 Docker volumes are the dev database — back it up before risky ops:
@@ -94,6 +95,7 @@ npm run db:migrate
 |---|---|
 | `npm run s3:cleanup [-- --apply]` | Delete S3 objects >24h with no DB row |
 | `npm run db:purge [-- --older-than-days=N --apply]` | Hard-purge soft-deleted invoices (DB first, S3 after) |
+| `npm run audit:retention [-- --older-than-days=N --archive=file --delete]` | Export old audit rows to JSONL; with `--delete`, prune them after archiving |
 | `npm run db:rotate [-- --apply --scope=staff\|clients\|all]` | Rotate all credentials after a leak |
 | `npm test` | vitest (needs `DATABASE_URL_TEST` scratch DB) |
 
@@ -169,7 +171,9 @@ uptime monitor and Coolify healthcheck at it.
 ```
 
 ### TODO: audit_log retention / partitioning
-`audit_log` is append-only and grows forever. Plan (not implemented):
-monthly RANGE partitioning on `at` + a retention job (e.g. detach/drop
-partitions older than N months, or archive to cold storage). Until then,
-watch table size (`pg_total_relation_size('audit_log')`) as part of ops.
+`audit_log` is append-only and grows forever. Audit retention script exists:
+`npm run audit:retention ...` exports old rows to JSONL and can prune only
+after the archive file is written. For large installs, still plan monthly
+RANGE partitioning on `at` plus moving detached partitions to cold storage.
+Until then, watch table size (`pg_total_relation_size('audit_log')`) as part
+of ops.

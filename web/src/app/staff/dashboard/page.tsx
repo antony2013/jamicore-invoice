@@ -8,11 +8,10 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
-  LogOut,
   RefreshCw,
   User,
 } from "lucide-react";
-import { signOut } from "next-auth/react";
+import AppShell from "@/components/AppShell";
 
 export default function StaffDashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -100,41 +99,16 @@ export default function StaffDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img
-              src="/logo.png"
-              alt="JamiCore"
-              className="h-10 w-auto rounded-lg bg-white border border-slate-200 px-2 py-1 object-contain"
-            />
-            <span className="p-2 bg-blue-600 text-white rounded-lg font-bold text-sm">
-              STAFF
-            </span>
-            <h1 className="text-lg font-bold text-slate-900">My Assigned Invoices</h1>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <Link
-              href="/staff/history"
-              className="text-xs text-slate-600 hover:text-slate-900 font-medium"
-            >
-              My Activity
-            </Link>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
-            >
-              <LogOut className="w-3.5 h-3.5" /> Log out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <AppShell
+      role="staff"
+      title="My Assigned Invoices"
+      subtitle="Review document scans, verify and enter invoice data, and manage collection lifecycle"
+      actions={
+        <button onClick={loadAssignedInvoices} className="dc-btn" type="button">
+          <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+        </button>
+      }
+    >
         {/* My Counts (server-computed over ALL my rows, not just the loaded page) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -306,7 +280,6 @@ export default function StaffDashboard() {
             </button>
           </div>
         )}
-      </main>
-    </div>
+      </AppShell>
   );
 }

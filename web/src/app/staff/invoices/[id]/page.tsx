@@ -16,6 +16,7 @@ import {
   History,
   FileCheck,
 } from "lucide-react";
+import AppShell from "@/components/AppShell";
 
 export default function StaffInvoiceVerifyPage({
   params,
@@ -370,40 +371,16 @@ export default function StaffInvoiceVerifyPage({
   const fieldConf = invoice.ocrData?.fieldConfidence || {};
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Top Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link
-            href="/staff/dashboard"
-            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to My Invoices
-          </Link>
-          <div className="flex items-center gap-3">
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                invoice.status === "collected"
-                  ? "bg-emerald-100 text-emerald-800"
-                  : invoice.status === "verified"
-                  ? "bg-blue-100 text-blue-800"
-                  : invoice.status === "in_review"
-                  ? "bg-indigo-100 text-indigo-800"
-                  : "bg-slate-100 text-slate-800"
-              }`}
-            >
-              Status: {invoice.status}
-            </span>
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
-              {invoice.category === "other" && invoice.categoryDetail
-                ? invoice.categoryDetail
-                : { sales_invoice: "Sales Invoice", purchase_bill: "Purchase Bill", expense_bill: "Expense Bill", asset_bill: "Asset Bill", other: "Other" }[invoice.category as string] || invoice.category}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <AppShell
+      role="staff"
+      title={`Verify ${invoice.invoiceNo || invoice.id.substring(0, 8)}`}
+      subtitle={`${invoice.client?.name || "Unknown client"} — Status: ${invoice.status}`}
+      actions={
+        <Link href="/staff/dashboard" className="dc-btn">
+          <ArrowLeft className="mr-1 inline h-3.5 w-3.5" /> Back to My Invoices
+        </Link>
+      }
+    >
         {/* Messages */}
         {success && (
           <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2">
@@ -909,7 +886,6 @@ export default function StaffInvoiceVerifyPage({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </AppShell>
   );
 }

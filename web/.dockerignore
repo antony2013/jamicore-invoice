@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+.env
+.run-next.log
+.run-expo.log
+docs
+**/*.log
