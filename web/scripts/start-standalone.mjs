@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-process.env.HOSTNAME ??= "0.0.0.0";
+process.env.HOSTNAME = "0.0.0.0";
 process.env.PORT ??= "3000";
 
 const child = spawn(process.execPath, [".next/standalone/server.js"], { stdio: "inherit" });
