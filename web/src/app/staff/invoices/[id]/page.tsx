@@ -750,11 +750,27 @@ export default function StaffInvoiceVerifyPage({
               </div>
             )}
 
-            {/* Excel Report: office work product the client downloads */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
-                📊 Excel Report for Client
-              </h3>
+            {/* Staff Report Upload: office work product the client downloads */}
+            <div className="dc-card p-5">
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Staff Report Upload
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Upload or replace this invoice’s Excel report. Only the current report is kept.
+                  </p>
+                </div>
+                {report?.downloadUrl && (
+                  <button
+                    onClick={handleDownloadReport}
+                    disabled={reportBusy}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium whitespace-nowrap disabled:opacity-50"
+                  >
+                    View
+                  </button>
+                )}
+              </div>
               {report ? (
                 <div className="flex items-center justify-between gap-2 mb-3 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
                   <div className="text-xs">
@@ -797,7 +813,7 @@ export default function StaffInvoiceVerifyPage({
                     disabled={reportBusy || !reportFile}
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
                   >
-                    Upload .xlsx
+                    Upload report
                   </button>
                 </div>
               </div>

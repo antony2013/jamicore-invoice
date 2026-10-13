@@ -29,25 +29,45 @@ export default function AdminClientsPage() {
   const [removingBusy, setRemovingBusy] = useState(false);
   // Outlets per client
   const [expandedClient, setExpandedClient] = useState<string | null>(null);
-  const [outletsByClient, setOutletsByClient] = useState<Record<string, any[]>>({});
-  const [outletName, setOutletName] = useState("");
+  const [outletsByClient, setOutletsByClient] = useState<Record<string, any[]>>({});  const [outletName, setOutletName] = useState("");
   const [outletAddress, setOutletAddress] = useState("");
   const [outletPhone, setOutletPhone] = useState("");
   const [outletError, setOutletError] = useState<string | null>(null);
+  // Overview (design pattern, existing data only)
+  const [allOutlets, setAllOutlets] = useState<any[]>([]);
+  const [reportCount, setReportCount] = useState<number | null>(null);
+  const [reportCapped, setReportCapped] = useState(false);
+  const [activity, setActivity] = useState<any[]>([]);
+  const [openThreads, setOpenThreads] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const [clientRes, staffRes] = await Promise.all([
+      const [clientRes, staffRes, outletRes, reportRes, activityRes, statsRes] = await Promise.all([
         fetch("/api/clients"),
         fetch("/api/staff"),
+        fetch("/api/outlets"),
+        fetch("/api/audit?action=report.&limit=100"),
+        fetch("/api/history?limit=8"),
+        fetch("/api/invoices/stats"),
       ]);
       const data = await clientRes.json();
       const staffData = await staffRes.json();
+      const outletData = await outletRes.json();
+      const reportData = await reportRes.json();
+      const activityData = await activityRes.json();
+      const statsData = await statsRes.json();
       if (data.success) setClients(data.clients);
       if (staffData.success) {
         setStaffList(staffData.staff.filter((s: any) => s.role === "staff"));
       }
+      if (outletData.success) setAllOutlets(outletData.outlets);
+      if (reportData.success) {
+        setReportCount(reportData.entries.length);
+        setReportCapped(Boolean(reportData.nextCursor));
+      }
+      if (activityData.success) setActivity(activityData.logs);
+      if (statsData.success) setOpenThreads(statsData.stats.byStatus.needs_info ?? 0);
     } catch (err) {
       console.error("Failed to load clients:", err);
     } finally {
@@ -359,6 +379,22 @@ export default function AdminClientsPage() {
     setRemoveError(null);
   }
 
+  const outletCountByClient: Record<string, number> = {};
+  for (const o of allOutlets) {
+    if (o.clientId) outletCountByClient[o.clientId] = (outletCountByClient[o.clientId] ?? 0) + 1;
+  }
+
+  function timeAgo(value: unknown): string {
+    const t = value ? new Date(value as string).getTime() : 0;
+    if (!t) return "";
+    const m = Math.max(0, Math.floor((Date.now() - t) / 60000));
+    if (m < 1) return "just now";
+    if (m < 60) return `${m} min ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} hr ago`;
+    return new Date(t).toLocaleDateString();
+  }
+
   return (
     <AppShell
       role="admin"
@@ -375,6 +411,113 @@ export default function AdminClientsPage() {
         </div>
       }
     >
+        {/* Overview cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total clients</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{loading && clients.length === 0 ? "…" : clients.length}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Registered accounts</div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total outlets</div>
+            <div className="text-2xl font-bold text-emerald-700 mt-1">{loading && clients.length === 0 ? "…" : allOutlets.length}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Across all clients</div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Reports</div>
+            <div className="text-2xl font-bold text-purple-700 mt-1">
+              {reportCount === null ? "…" : `${reportCount}${reportCapped ? "+" : ""}`}
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1">Uploaded report records</div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Messages</div>
+            <div className="text-2xl font-bold text-amber-600 mt-1">{openThreads === null ? "…" : openThreads}</div>
+            <div className="text-[11px] text-slate-400 mt-1">Threads awaiting reply</div>
+          </div>
+        </div>
+
+        {/* Client accounts */}
+        <div id="client-accounts" className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-slate-900">Client accounts</h2>
+          <a href="#manage-clients" className="dc-btn">View clients</a>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
+          {clients.map((c) => (
+            <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <Link
+                  href={`/admin/clients/${c.id}`}
+                  className="text-sm font-bold text-blue-700 hover:underline"
+                  title="Open client workspace"
+                >
+                  {c.name}
+                </Link>
+                <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                  Joined {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "—"}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-600">
+                <span>Outlets: <strong>{outletCountByClient[c.id] ?? 0}</strong></span>
+                <span>Staff: <strong>{c.assignedStaffName || "Manual"}</strong></span>
+                <span>Invoices: <strong>{c.totalInvoices}</strong></span>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500 font-mono">
+                User ID: {c.username || "—"}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                {[c.phone, c.email].filter(Boolean).join(" · ") || "—"}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Link
+                  href={`/admin/clients/${c.id}/reports`}
+                  className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-medium"
+                >
+                  Reports
+                </Link>
+                {c.archivedAt && (
+                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                    archived
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+          {clients.length === 0 && !loading && (
+            <p className="text-xs text-slate-400">No clients yet.</p>
+          )}
+        </div>
+
+        {/* Recent activity */}
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-slate-900">Recent activity</h2>
+          <Link href="/admin/audit" className="dc-btn">View audit logs</Link>
+        </div>
+        <div className="space-y-2 mb-8">
+          {activity.length === 0 && (
+            <p className="text-xs text-slate-400">{loading ? "Loading activity…" : "No recent activity."}</p>
+          )}
+          {activity.map((log) => (
+            <div key={log.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs">
+              <div className="font-bold text-slate-800 capitalize">
+                {String(log.status).replace(/_/g, " ")}
+              </div>
+              <div className="text-slate-500 mt-0.5">
+                {log.actor ? `${log.actor.name} (${log.actor.role})` : "Automated system"}
+                {log.invoice ? ` · ${log.invoice.clientName} · ` : " · "}
+                {log.invoice ? (
+                  <Link href={`/admin/invoices/${log.invoice.id}`} className="text-blue-600 hover:underline font-mono">
+                    {String(log.invoice.id).substring(0, 8)}…
+                  </Link>
+                ) : null}
+                {log.timestamp ? ` · ${timeAgo(log.timestamp)}` : ""}
+              </div>
+              {log.note && <div className="text-slate-600 mt-0.5">{log.note}</div>}
+            </div>
+          ))}
+        </div>
+
+        <div id="manage-clients">
         {success && (
           <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
             {success}
@@ -491,7 +634,13 @@ export default function AdminClientsPage() {
                   <Fragment key={c.id}>
                     <tr className="hover:bg-slate-50/80">
                       <td className="px-6 py-4 font-medium text-slate-800">
-                        {c.name}{" "}
+                        <Link
+                          href={`/admin/clients/${c.id}`}
+                          className="text-blue-600 hover:underline font-semibold"
+                          title="Open client workspace"
+                        >
+                          {c.name}
+                        </Link>{" "}
                         {c.archivedAt && (
                           <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
                             archived
@@ -561,6 +710,13 @@ export default function AdminClientsPage() {
                           Reset password
                         </button>
                       )}
+                        <Link
+                          href={`/admin/clients/${c.id}/reports`}
+                          className="px-2.5 py-1 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded text-xs font-medium"
+                          title="Open this client's invoice reports view"
+                        >
+                          Reports
+                        </Link>
                         <button
                           onClick={() => handleRemoveStep1(c)}
                           disabled={removingBusy}
@@ -738,6 +894,7 @@ export default function AdminClientsPage() {
               )}
             </tbody>
           </table>
+        </div>
         </div>
       </AppShell>
   );

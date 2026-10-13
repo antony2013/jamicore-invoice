@@ -21,7 +21,10 @@ export default function AdminDashboard() {
   const [outletFilter, setOutletFilter] = useState<string>("all");
   const [outletList, setOutletList] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [staffFilter, setStaffFilter] = useState<string>("all");
+  const [staffFilter, setStaffFilter] = useState<string>(() => {
+    if (typeof window === "undefined") return "all";
+    return new URLSearchParams(window.location.search).get("assigned_to") || "all";
+  });
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
@@ -536,6 +539,11 @@ export default function AdminDashboard() {
                           </Link>
                           <div className="text-[10px] text-slate-400 truncate max-w-[160px]">
                             {inv.s3Key}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {inv.createdAt
+                              ? `${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                              : ""}
                           </div>
                         </td>
                         <td className="px-6 py-4">

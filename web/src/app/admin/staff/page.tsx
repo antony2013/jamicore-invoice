@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, UserPlus, ShieldCheck } from "lucide-react";
+import { RefreshCw, UserPlus } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
 export default function AdminStaffPage() {
@@ -26,6 +26,8 @@ export default function AdminStaffPage() {
   const [lifecycleInfo, setLifecycleInfo] = useState<{ openInvoiceCount: number } | null>(null);
   const [lifecycleTarget, setLifecycleTarget] = useState("");
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [staffSearch, setStaffSearch] = useState("");
+  const [roleTab, setRoleTab] = useState<"all" | "staff" | "admin">("all");
 
   async function load() {
     setLoading(true);
@@ -80,6 +82,27 @@ export default function AdminStaffPage() {
     }
   }
 
+  const staffSummary = (() => {
+    const total = staffList.length;
+    const active = staffList.filter((s) => (s as any).isActive !== false).length;
+    let inProgress = 0;
+    let finished = 0;
+    for (const s of staffList) {
+      const st = stats[s.id];
+      if (!st) continue;
+      inProgress += st.inProgress ?? 0;
+      finished += (st.collected ?? 0) + (st.disputed ?? 0);
+    }
+    return { total, active, inProgress, finished };
+  })();
+
+  const visibleStaff = staffList.filter((s) => {
+    if (roleTab !== "all" && s.role !== roleTab) return false;
+    const q = staffSearch.trim().toLowerCase();
+    if (!q) return true;
+    return `${s.name || ""} ${s.email || ""}`.toLowerCase().includes(q);
+  });
+
   return (
     <AppShell
       role="admin"
@@ -96,6 +119,52 @@ export default function AdminStaffPage() {
         </div>
       }
     >
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total staff</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{loading && staffList.length === 0 ? "…" : staffSummary.total}</div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Active staff</div>
+            <div className="text-2xl font-bold text-emerald-700 mt-1">{loading && staffList.length === 0 ? "…" : staffSummary.active}</div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Invoices in progress</div>
+            <div className="text-2xl font-bold text-amber-600 mt-1">{loading && staffList.length === 0 ? "…" : staffSummary.inProgress}</div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Completed invoices</div>
+            <div className="text-2xl font-bold text-blue-700 mt-1">{loading && staffList.length === 0 ? "…" : staffSummary.finished}</div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col sm:flex-row items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            {([
+              { value: "all", label: "All Accounts" },
+              { value: "staff", label: "Staff" },
+              { value: "admin", label: "Admin" },
+            ] as const).map((o) => (
+              <button
+                key={o.value}
+                onClick={() => setRoleTab(o.value)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  roleTab === o.value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <input
+            value={staffSearch}
+            onChange={(e) => setStaffSearch(e.target.value)}
+            placeholder="Search staff name or email…"
+            className="flex-1 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
+          />
+          <span className="text-[11px] text-slate-400 whitespace-nowrap">
+            {visibleStaff.length} shown of {staffList.length}
+          </span>
+        </div>
         {success && (
           <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
             {success}
@@ -174,33 +243,17 @@ export default function AdminStaffPage() {
             </div>
           </form>
         )}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="px-6 py-3.5">Name</th>
-                <th className="px-6 py-3.5">Email</th>
-                <th className="px-6 py-3.5">Role</th>
-                <th className="px-6 py-3.5">Status</th>
-                <th className="px-6 py-3.5 text-center" title="Assigned, waiting to start">Assigned</th>
-                <th className="px-6 py-3.5 text-center" title="In review / needs info">In Progress</th>
-                <th className="px-6 py-3.5 text-center" title="Verified, ready for collection">Verified</th>
-                <th className="px-6 py-3.5 text-center" title="Collected — finished">Finished ✅</th>
-                <th className="px-6 py-3.5 text-center">Total</th>
-                <th className="px-6 py-3.5 text-center" title="Distinct clients currently assigned">Clients</th>
-                <th className="px-6 py-3.5">Joined</th>
-                <th className="px-6 py-3.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {staffList.length === 0 ? (
-                <tr>
-                  <td colSpan={12} className="px-6 py-12 text-center text-slate-400">
-                    {loading ? "Loading staff..." : "No staff accounts yet."}
-                  </td>
-                </tr>
-              ) : (
-                staffList.map((s) => {
+        <div className="mb-2">
+          <h2 className="text-sm font-bold text-slate-900">Staff List</h2>
+          <p className="text-[11px] text-slate-500">Click View Staff Dashboard to open the individual processing queue.</p>
+        </div>
+        {visibleStaff.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-8">
+            {loading ? "Loading staff..." : staffList.length === 0 ? "No staff accounts yet." : "No staff match the current search/filter."}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {visibleStaff.map((s) => {
                   const st = stats[s.id] || { assigned: 0, inProgress: 0, verified: 0, collected: 0, disputed: 0, total: 0, clients: 0 };
                   const lastSeen = (s as any).lastSeenAt ? new Date((s as any).lastSeenAt).getTime() : 0;
                   const online = Date.now() - lastSeen < 5 * 60 * 1000;
@@ -329,154 +382,175 @@ export default function AdminStaffPage() {
   }
 
   return (
-                <Fragment key={s.id}>
-                  <tr className="hover:bg-slate-50/80">
-                    <td className="px-6 py-4 font-medium text-slate-800">
-                      {s.name}{" "}
-                      {(s as any).isActive === false && (
-                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
-                          inactive
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">{s.email}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${s.role === "admin" ? "bg-slate-900 text-white" : "bg-blue-50 text-blue-700"}`}>
-                        {s.role}
+                <div key={s.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        {(s.name || "?").trim().charAt(0).toUpperCase()}
                       </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold ${online ? "text-emerald-700" : "text-slate-400"}`}>
-                        <span className={`w-2 h-2 rounded-full ${online ? "bg-emerald-500" : "bg-slate-300"}`} />
-                        {online ? "Online" : `Offline · ${ago}`}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center font-bold text-purple-700">{st.assigned}</td>
-                    <td className="px-6 py-4 text-center font-bold text-amber-600">{st.inProgress}</td>
-                    <td className="px-6 py-4 text-center font-bold text-blue-700">{st.verified}</td>
-                    <td className="px-6 py-4 text-center font-bold text-emerald-700">{st.collected}</td>
-                    <td className="px-6 py-4 text-center font-bold text-slate-800">{st.total}</td>
-                    <td className="px-6 py-4 text-center font-bold text-slate-600">{st.clients}</td>
-                    <td className="px-6 py-4">{new Date(s.createdAt).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1 flex-wrap">
-                      {resettingId === s.id ? (
-                        <div className="flex items-center justify-end gap-1">
-                          <input
-                            type="password"
-                            value={resetPassword}
-                            onChange={(e) => setResetPassword(e.target.value)}
-                            placeholder="New password"
-                            className="w-32 px-2 py-1 border border-slate-300 rounded text-xs outline-none"
-                          />
-                          <button
-                            onClick={() => handleResetPassword(s.id)}
-                            disabled={saving}
-                            className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium disabled:opacity-50"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => { setResettingId(null); setResetPassword(""); }}
-                            className="px-2 py-1 border border-slate-200 rounded text-xs"
-                          >
-                            ✕
-                          </button>
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-900 truncate">
+                          {s.name}{" "}
+                          {(s as any).isActive === false && (
+                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                              inactive
+                            </span>
+                          )}
                         </div>
-                      ) : (
+                        <div className="text-[11px] text-slate-500 truncate">{s.email}</div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${s.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
+                            {s.role}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${online ? "text-emerald-700" : "text-slate-400"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${online ? "bg-emerald-500" : "bg-slate-300"}`} />
+                            {online ? "Online" : `Offline${ago && ago !== "Never" ? ` · ${ago}` : ""}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg border border-slate-100 bg-white p-2.5">
+                      <div className="text-[10px] font-semibold text-slate-500">Assigned</div>
+                      <div className="text-xl font-bold text-slate-900">{st.assigned}</div>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 p-2.5">
+                      <div className="text-[10px] font-semibold text-amber-700">In Progress</div>
+                      <div className="text-xl font-bold text-amber-600">{st.inProgress}</div>
+                    </div>
+                    <div className="rounded-lg bg-blue-50 p-2.5">
+                      <div className="text-[10px] font-semibold text-blue-700">Verified</div>
+                      <div className="text-xl font-bold text-blue-700">{st.verified}</div>
+                    </div>
+                    <div className="rounded-lg bg-emerald-50 p-2.5">
+                      <div className="text-[10px] font-semibold text-emerald-700">Finished</div>
+                      <div className="text-xl font-bold text-emerald-700">{st.collected + st.disputed}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Total invoices <strong className="text-slate-800">{st.total}</strong></span>
+                    <span>Clients assigned <strong className="text-slate-800">{st.clients}</strong></span>
+                  </div>
+                  <Link
+                    href={`/admin/dashboard?assigned_to=${encodeURIComponent(s.id)}`}
+                    className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold text-center transition"
+                    title="Open this person's queue in the admin dashboard"
+                  >
+                    View Staff Dashboard »
+                  </Link>
+                  <div className="flex items-center gap-1.5">
+                    {resettingId === s.id ? (
+                      <>
+                        <input
+                          type="password"
+                          value={resetPassword}
+                          onChange={(e) => setResetPassword(e.target.value)}
+                          placeholder="New password"
+                          className="flex-1 min-w-0 px-2 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
+                        />
+                        <button
+                          onClick={() => handleResetPassword(s.id)}
+                          disabled={saving}
+                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => { setResettingId(null); setResetPassword(""); }}
+                          className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : (
+                      <>
                         <button
                           onClick={() => { setResettingId(s.id); setResetPassword(""); setFormError(null); }}
-                          className="px-2.5 py-1 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded text-xs font-medium"
+                          className="flex-1 px-2 py-1.5 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-medium"
                           title="Set a new login password for this staff member"
                         >
                           Reset password
                         </button>
-                      )}
                         <button
                           onClick={() => (lifecycleId === s.id ? (setLifecycleId(null), setLifecycleInfo(null)) : openLifecycle(s))}
-                          className="px-2.5 py-1 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded text-xs font-medium"
+                          className="flex-1 px-2 py-1.5 border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-medium"
                           title="Deactivate/reactivate, change role, or reassign open invoices"
                         >
                           Manage
                         </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </>
+                    )}
+                  </div>
                   {lifecycleId === s.id && (
-                    <tr key={`${s.id}-lifecycle`} className="bg-slate-50/70">
-                      <td colSpan={12} className="px-6 py-4">
-                        <div className="max-w-2xl space-y-3">
-                          <h4 className="text-xs font-bold text-slate-800">
-                            Manage {s.name} ({s.email})
-                          </h4>
-                          <p className="text-xs text-slate-500">
-                            Open invoices with this person:{" "}
-                            <strong>{lifecycleInfo ? lifecycleInfo.openInvoiceCount : "…"}</strong>{" "}
-                            (assigned / in review / info needed). Deactivating strands them unless reassigned first.
-                          </p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${(s as any).isActive === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
-                              {(s as any).isActive === false ? "Inactive" : "Active"}
-                            </span>
-                            <button
-                              onClick={() => handleToggleActive(s)}
-                              disabled={lifecycleBusy}
-                              className="px-2.5 py-1 border border-amber-300 hover:bg-amber-50 text-amber-700 rounded text-xs font-medium disabled:opacity-50"
-                            >
-                              {(s as any).isActive === false ? "Reactivate" : "Deactivate"}
-                            </button>
-                            <select
-                              value={s.role}
-                              onChange={(e) => handleRoleChange(s, e.target.value)}
-                              disabled={lifecycleBusy}
-                              className="px-2 py-1 border border-slate-300 rounded text-xs bg-white outline-none"
-                              title="Change role"
-                            >
-                              <option value="staff">staff</option>
-                              <option value="admin">admin</option>
-                            </select>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs text-slate-600">Move open invoices to:</span>
-                            <select
-                              value={lifecycleTarget}
-                              onChange={(e) => setLifecycleTarget(e.target.value)}
-                              className="px-2 py-1 border border-slate-300 rounded text-xs bg-white outline-none max-w-[220px]"
-                            >
-                              <option value="">Pick staff…</option>
-                              {staffList
-                                .filter((t: any) => t.id !== s.id && t.role === "staff" && (t as any).isActive !== false)
-                                .map((t: any) => (
-                                  <option key={t.id} value={t.id}>
-                                    {t.name} ({t.email})
-                                  </option>
-                                ))}
-                            </select>
-                            <button
-                              onClick={() => handleReassignOpen(s)}
-                              disabled={lifecycleBusy || !lifecycleTarget}
-                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium disabled:opacity-50"
-                            >
-                              Reassign open
-                            </button>
-                            <button
-                              onClick={() => { setLifecycleId(null); setLifecycleInfo(null); }}
-                              className="px-2.5 py-1 border border-slate-200 rounded text-xs bg-white"
-                            >
-                              Close
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-3">
+                      <h4 className="text-xs font-bold text-slate-800">
+                        Manage {s.name} ({s.email})
+                      </h4>
+                      <p className="text-xs text-slate-500">
+                        Open invoices with this person:{" "}
+                        <strong>{lifecycleInfo ? lifecycleInfo.openInvoiceCount : "…"}</strong>{" "}
+                        (assigned / in review / info needed). Deactivating strands them unless reassigned first.
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${(s as any).isActive === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                          {(s as any).isActive === false ? "Inactive" : "Active"}
+                        </span>
+                        <button
+                          onClick={() => handleToggleActive(s)}
+                          disabled={lifecycleBusy}
+                          className="px-2.5 py-1 border border-amber-300 hover:bg-amber-50 text-amber-700 rounded text-xs font-medium disabled:opacity-50"
+                        >
+                          {(s as any).isActive === false ? "Reactivate" : "Deactivate"}
+                        </button>
+                        <select
+                          value={s.role}
+                          onChange={(e) => handleRoleChange(s, e.target.value)}
+                          disabled={lifecycleBusy}
+                          className="px-2 py-1 border border-slate-300 rounded text-xs bg-white outline-none"
+                          title="Change role"
+                        >
+                          <option value="staff">staff</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-slate-600">Move open invoices to:</span>
+                        <select
+                          value={lifecycleTarget}
+                          onChange={(e) => setLifecycleTarget(e.target.value)}
+                          className="px-2 py-1 border border-slate-300 rounded text-xs bg-white outline-none max-w-[180px]"
+                        >
+                          <option value="">Pick staff…</option>
+                          {staffList
+                            .filter((t: any) => t.id !== s.id && t.role === "staff" && (t as any).isActive !== false)
+                            .map((t: any) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name} ({t.email})
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          onClick={() => handleReassignOpen(s)}
+                          disabled={lifecycleBusy || !lifecycleTarget}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium disabled:opacity-50"
+                        >
+                          Reassign open
+                        </button>
+                        <button
+                          onClick={() => { setLifecycleId(null); setLifecycleInfo(null); }}
+                          className="px-2.5 py-1 border border-slate-200 rounded text-xs bg-white"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
                   )}
-                </Fragment>
+                </div>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+          </div>
+        )}
       </AppShell>
   );
 }
