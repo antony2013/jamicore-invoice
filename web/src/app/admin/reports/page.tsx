@@ -167,12 +167,19 @@ export default function AdminReportsPage() {
                     <p className="text-xs text-slate-400">Loading report…</p>
                   ) : rep ? (
                     <div>
-                      <div className="text-sm font-bold text-slate-900">📄 {rep.fileName}</div>
-                      <div className="text-[11px] text-slate-500">
-                        {rep.source === "generated" ? "Auto-generated" : "Staff upload"} ·{" "}
-                        {rep.createdAt ? new Date(rep.createdAt).toLocaleString() : ""}
+                      <div className="flex items-start gap-3">
+                        <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
+                          🗎
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-slate-900 truncate">📄 {rep.fileName}</div>
+                          <div className="text-[11px] text-slate-500">
+                            {inv.client?.name || "Unknown"} ·{" "}
+                            {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 mt-2">
+                      <div className="flex items-center gap-2 mt-3">
                         {rep.downloadUrl && (
                           <>
                             <a href={rep.downloadUrl} target="_blank" rel="noopener" className="dc-btn">

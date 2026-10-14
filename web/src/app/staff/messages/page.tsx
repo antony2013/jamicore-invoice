@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { User } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 
@@ -129,19 +130,37 @@ export default function StaffMessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
+  async function composeFirst() {
+    const inv =
+      invoices.find((i) => i.status === "needs_info") || invoices[0];
+    if (!inv) return;
+    if (expandedId !== inv.id) await toggleExpand(inv);
+    document.getElementById(`thread-${inv.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => document.getElementById(`reply-${inv.id}`)?.focus(), 400);
+  }
+
   return (
     <AppShell
       role="staff"
       title="Messages"
-      subtitle="Client conversation threads on your assigned invoices."
+      subtitle="Invoice Desk · Staff Mailbox"
     >
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <button
+        onClick={composeFirst}
+        disabled={invoices.length === 0}
+        className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
+      >
+        ✎ Compose Email
+      </button>
+      <div className="grid grid-cols-2 gap-2">
         {TAB_OPTIONS.map((o) => (
           <button
             key={o.value}
             onClick={() => setTab(o.value)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              tab === o.value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            className={`px-3 py-2 rounded-lg text-xs font-semibold transition border ${
+              tab === o.value
+                ? "bg-blue-50 border-blue-600 text-blue-700"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
             }`}
           >
             {o.label}
@@ -170,21 +189,37 @@ export default function StaffMessagesPage() {
         )}
         {invoices.map((inv) => {
           const thread = threads[inv.id] || [];
+          const preview = thread.length > 0 ? thread[0].body : null;
+          const clientName = inv.client?.name || "Unknown client";
           return (
-            <Card key={inv.id} className="p-4">
+            <Card key={inv.id} id={`thread-${inv.id}`} className="p-4">
               <button
                 onClick={() => toggleExpand(inv)}
-                className="w-full flex items-center justify-between gap-2 text-left"
+                className="w-full flex items-start gap-3 text-left"
               >
-                <div className="text-xs">
-                  <div className="font-bold text-slate-900">{inv.client?.name || "Unknown client"}</div>
-                  <div className="text-slate-500">
-                    <span className="dc-mono">{inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}</span>
-                    {inv.createdAt
-                      ? ` · ${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                      : ""} · {inv.status}
-                  </div>
-                </div>
+                <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4" />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-900 truncate">{clientName}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                      {inv.updatedAt || inv.createdAt
+                        ? new Date(inv.updatedAt || inv.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                        : ""}
+                    </span>
+                  </span>
+                  <span className="block text-xs text-slate-600 truncate mt-0.5">
+                    {preview
+                      ? preview.length > 90
+                        ? `${preview.substring(0, 90)}…`
+                        : preview
+                      : `Invoice ${inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)} · ${inv.status}`}
+                  </span>
+                  <span className="block text-[11px] text-blue-600 font-mono mt-0.5">
+                    ⌧ {inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}
+                  </span>
+                </span>
                 <span className="text-slate-400">{expandedId === inv.id ? "▾" : "▸"}</span>
               </button>
               {expandedId === inv.id && (
@@ -217,6 +252,7 @@ export default function StaffMessagesPage() {
                   )}
                   <div className="flex items-center gap-2">
                     <input
+                      id={`reply-${inv.id}`}
                       value={drafts[inv.id] || ""}
                       onChange={(e) => setDrafts((prev) => ({ ...prev, [inv.id]: e.target.value }))}
                       placeholder="Reply to client…"
