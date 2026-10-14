@@ -2,10 +2,12 @@
 
 import { useEffect, useState, Fragment } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, RefreshCw, Users, UserPlus } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
 export default function AdminClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -444,8 +446,12 @@ export default function AdminClientsPage() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
           {clients.map((c) => (
-            <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-start justify-between gap-2">
+            <div
+              key={c.id}
+              onClick={() => router.push(`/admin/clients/${c.id}`)}
+              className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:shadow-md transition"
+              title="Open client workspace"
+            >              <div className="flex items-start justify-between gap-2">
                 <Link
                   href={`/admin/clients/${c.id}`}
                   className="text-sm font-bold text-blue-700 hover:underline"
@@ -471,6 +477,7 @@ export default function AdminClientsPage() {
               <div className="mt-3 flex items-center gap-2">
                 <Link
                   href={`/admin/clients/${c.id}/reports`}
+                  onClick={(e) => e.stopPropagation()}
                   className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-medium"
                 >
                   Reports

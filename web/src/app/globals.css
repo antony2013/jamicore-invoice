@@ -5,15 +5,33 @@
 @tailwind utilities;
 
 :root {
-  --background: #F3F5F7;
-  --foreground: #101828;
+  --background: 210 20% 96%;
+  --foreground: 220 43% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 43% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 43% 11%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 220 43% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 220 43% 11%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 221 83% 53%;
+  --radius: 0.5rem;
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", monospace;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
   font-family: var(--font-sans);
 }
 

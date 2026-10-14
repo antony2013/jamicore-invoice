@@ -25,11 +25,13 @@ export default function AppShell({
           { href: "/admin/history", label: "History" },
           { href: "/admin/clients", label: "Clients" },
           { href: "/admin/staff", label: "Staff" },
+          { href: "/admin/reports", label: "Reports" },
           { href: "/admin/audit", label: "Audit log" },
         ]
       : [
           { href: "/staff/dashboard", label: "Dashboard" },
           { href: "/staff/history", label: "History" },
+          { href: "/staff/messages", label: "Messages" },
         ];
 
   return (

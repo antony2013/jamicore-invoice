@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   FileText,
   Clock,
@@ -10,10 +11,14 @@ import {
   ArrowRight,
   RefreshCw,
   User,
+  Bell,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export default function StaffDashboard() {
+  const router = useRouter();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -230,7 +235,7 @@ export default function StaffDashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6">
+        <div id="client-cards" className="bg-white p-4 rounded-xl border border-slate-200 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="text-xs font-bold text-slate-800">Client-Wise Filter</div>
             <select
@@ -258,20 +263,38 @@ export default function StaffDashboard() {
           {clientSummaries.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
               {clientSummaries.map((c) => (
-                <button
+                <Card
                   key={c.id}
-                  onClick={() => setClientFilter(clientFilter === c.id ? "all" : c.id)}
-                  className={`text-left p-3 rounded-lg border transition ${
-                    clientFilter === c.id
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  onClick={() => router.push(`/staff/clients/${encodeURIComponent(c.id)}`)}
+                  className={`p-4 cursor-pointer transition hover:shadow-md ${
+                    clientFilter === c.id ? "border-blue-600 ring-1 ring-blue-600" : ""
                   }`}
                 >
-                  <div className={`text-xs font-bold ${clientFilter === c.id ? "text-white" : "text-slate-800"}`}>{c.name}</div>
-                  <div className={`text-[11px] mt-1 ${clientFilter === c.id ? "text-slate-200" : "text-slate-500"}`}>
-                    Total Pending Actions {c.pending} · To Start {c.toStart} · In Progress {c.inProgress} · Verified {c.verified}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-sm font-bold text-slate-900">{c.name}</div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setClientFilter(clientFilter === c.id ? "all" : c.id);
+                      }}
+                      title="Filter queue to this client"
+                      className="relative p-1 rounded-md text-slate-500 hover:bg-slate-100"
+                    >
+                      <Bell className="w-4 h-4" />
+                      {c.pending > 0 && (
+                        <Badge className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-red-600 text-[10px] text-white flex items-center justify-center">
+                          {c.pending}
+                        </Badge>
+                      )}
+                    </button>
                   </div>
-                </button>
+                  <div className="text-[11px] text-slate-500 mt-2">Total Pending Actions: {c.pending}</div>
+                  <div className="grid grid-cols-2 gap-1 mt-1 text-[11px] text-slate-500">
+                    <span>To Start: {c.toStart}</span>
+                    <span>In Progress: {c.inProgress}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">Verified: {c.verified}</div>
+                </Card>
               ))}
             </div>
           )}
