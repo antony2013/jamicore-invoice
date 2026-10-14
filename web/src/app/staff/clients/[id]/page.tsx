@@ -53,6 +53,14 @@ export default function StaffClientDashboardPage({
   const [search, setSearch] = useState("");
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
+  const [reportCache, setReportCache] = useState<Record<string, any>>({});
+  const [reportBusy, setReportBusy] = useState<string | null>(null);
+  const [expandedMsgId, setExpandedMsgId] = useState<string | null>(null);
+  const [msgThreads, setMsgThreads] = useState<Record<string, any[]>>({});
+  const [msgBusy, setMsgBusy] = useState<string | null>(null);
+  const [msgDrafts, setMsgDrafts] = useState<Record<string, string>>({});
+  const [msgSending, setMsgSending] = useState<string | null>(null);
 
   // Staff scope is enforced server-side (assigned_to=me always); the
   // client filter only narrows within the staffer's own queue.
@@ -126,6 +134,65 @@ export default function StaffClientDashboardPage({
   const sales = invoices.filter((i) => i.category === "sales_invoice");
   const bills = invoices.filter((i) => i.category !== "sales_invoice");
   const showSplit = categoryFilter === "all";
+
+  async function toggleReport(inv: any) {
+    if (expandedReportId === inv.id) {
+      setExpandedReportId(null);
+      return;
+    }
+    setExpandedReportId(inv.id);
+    if (reportCache[inv.id] !== undefined) return;
+    setReportBusy(inv.id);
+    try {
+      const res = await fetch(`/api/invoices/${inv.id}/report`);
+      const data = await res.json();
+      setReportCache((prev) => ({ ...prev, [inv.id]: data.success ? data.report : null }));
+    } catch {
+      setReportCache((prev) => ({ ...prev, [inv.id]: null }));
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
+  async function toggleMessages(inv: any) {
+    if (expandedMsgId === inv.id) {
+      setExpandedMsgId(null);
+      return;
+    }
+    setExpandedMsgId(inv.id);
+    if (msgThreads[inv.id] !== undefined) return;
+    setMsgBusy(inv.id);
+    try {
+      const res = await fetch(`/api/invoices/${inv.id}/messages`);
+      const data = await res.json();
+      setMsgThreads((prev) => ({ ...prev, [inv.id]: data.success ? data.messages : [] }));
+    } catch {
+      setMsgThreads((prev) => ({ ...prev, [inv.id]: [] }));
+    } finally {
+      setMsgBusy(null);
+    }
+  }
+
+  async function sendReply(invId: string) {
+    const body = (msgDrafts[invId] || "").trim();
+    if (!body) return;
+    setMsgSending(invId);
+    try {
+      const res = await fetch(`/api/invoices/${invId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setMsgThreads((prev) => ({ ...prev, [invId]: [...(prev[invId] || []), data.message] }));
+      setMsgDrafts((prev) => ({ ...prev, [invId]: "" }));
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to send message.");
+    } finally {
+      setMsgSending(null);
+    }
+  }
 
   function card(inv: any) {
     return (
@@ -242,6 +309,150 @@ export default function StaffClientDashboardPage({
           </button>
         </div>
       )}
+
+      <h2 className="text-sm font-bold text-slate-900">Reports &amp; Documents</h2>
+      <p className="text-[11px] text-slate-500">Upload, organize and view this client&apos;s reports.</p>
+      {invoices.length > 0 ? (
+        <Link
+          href={`/staff/invoices/${invoices[0].id}`}
+          className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition"
+        >
+          ⬆ Upload Report
+        </Link>
+      ) : (
+        <button disabled className="w-full py-3 px-4 bg-slate-200 text-slate-400 rounded-xl text-sm font-semibold">
+          ⬆ Upload Report
+        </button>
+      )}
+      <p className="text-[11px] text-slate-400">
+        Reports attach to invoices — uploading opens an invoice where you generate or attach its Excel report.
+      </p>
+
+      <h3 className="text-xs font-bold text-slate-800">Client report library</h3>      <div className="space-y-2">
+        {invoices.length === 0 && !loading && (
+          <p className="text-xs text-slate-400">No invoices, so no reports yet.</p>
+        )}
+        {invoices.map((inv) => {
+          const rep = reportCache[inv.id];
+          return (
+            <Card key={`rep-${inv.id}`} className="p-4">
+              <button
+                onClick={() => toggleReport(inv)}
+                className="w-full flex items-center justify-between gap-2 text-left"
+              >
+                <div className="text-xs">
+                  <span className="dc-mono">{inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}</span>
+                  <span className="text-slate-500"> · {inv.status}</span>
+                </div>
+                <span className="text-slate-400">{expandedReportId === inv.id ? "▾" : "▸"}</span>
+              </button>
+              {expandedReportId === inv.id && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  {reportBusy === inv.id ? (
+                    <p className="text-xs text-slate-400">Loading report…</p>
+                  ) : rep ? (
+                    <div className="flex items-start gap-3">
+                      <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
+                        🗎
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {clientName || "Client"} · {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          {rep.downloadUrl && (
+                            <>
+                              <a href={rep.downloadUrl} target="_blank" rel="noopener" className="dc-btn">
+                                👁 View
+                              </a>
+                              <a href={rep.downloadUrl} download={rep.fileName} className="dc-btn">
+                                ⬇ Download
+                              </a>
+                            </>
+                          )}
+                          <Link href={`/staff/invoices/${inv.id}`} className="text-xs text-blue-600 hover:underline">
+                            Open invoice →
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">No report shared yet.</p>
+                  )}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      <h2 className="text-sm font-bold text-slate-900">Messages</h2>
+      <p className="text-[11px] text-slate-500">Client conversation threads for this client only.</p>
+      <div className="space-y-2">
+        {invoices.length === 0 && !loading && (
+          <p className="text-xs text-slate-400">No threads yet.</p>
+        )}
+        {invoices.map((inv) => {
+          const thread = msgThreads[inv.id] || [];
+          return (
+            <Card key={`msg-${inv.id}`} className="p-4">
+              <button
+                onClick={() => toggleMessages(inv)}
+                className="w-full flex items-center justify-between gap-2 text-left"
+              >
+                <div className="text-xs">
+                  <span className="dc-mono">{inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}</span>
+                  <span className="text-slate-500"> · {inv.status}</span>
+                </div>
+                <span className="text-slate-400">{expandedMsgId === inv.id ? "▾" : "▸"}</span>
+              </button>
+              {expandedMsgId === inv.id && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  {msgBusy === inv.id ? (
+                    <p className="text-xs text-slate-400">Loading thread…</p>
+                  ) : thread.length === 0 ? (
+                    <p className="text-xs text-slate-400">No messages yet.</p>
+                  ) : (
+                    <div className="space-y-2 mb-3 max-h-64 overflow-y-auto">
+                      {thread.map((m: any) => (
+                        <div
+                          key={m.id}
+                          className={`p-2.5 rounded-lg text-xs max-w-[90%] ${
+                            m.senderType === "staff"
+                              ? "ml-auto bg-blue-600 text-white"
+                              : "bg-slate-100 text-slate-800"
+                          }`}
+                        >
+                          <div className={`font-bold mb-0.5 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-500"}`}>
+                            {m.senderName || (m.senderType === "staff" ? "Staff" : "Client")}
+                          </div>
+                          <div>{m.body}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={msgDrafts[inv.id] || ""}
+                      onChange={(e) => setMsgDrafts((prev) => ({ ...prev, [inv.id]: e.target.value }))}
+                      placeholder="Reply to client…"
+                      className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
+                    />
+                    <button
+                      onClick={() => sendReply(inv.id)}
+                      disabled={msgSending === inv.id || !(msgDrafts[inv.id] || "").trim()}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {msgSending === inv.id ? "Sending…" : "Send"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
     </AppShell>
   );
 }
