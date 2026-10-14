@@ -27,6 +27,7 @@ export default function StaffMessagesPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [threads, setThreads] = useState<Record<string, ThreadMessage[]>>({});
   const [threadBusy, setThreadBusy] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -54,6 +55,7 @@ export default function StaffMessagesPage() {
       setInvoices(data.invoices);
       setNextCursor(data.nextCursor ?? null);
       setExpandedId(null);
+      setExpandedClient(null);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load messages.");
     } finally {
@@ -139,6 +141,30 @@ export default function StaffMessagesPage() {
     setTimeout(() => document.getElementById(`reply-${inv.id}`)?.focus(), 400);
   }
 
+  // Group threads client-wise: one card per client, invoices inside.
+  const clientGroups = (() => {
+    const byId = new Map<string, { id: string; name: string; invoices: any[] }>();
+    for (const inv of invoices) {
+      const id = inv.clientId || inv.client?.id || "unknown";
+      const name = inv.client?.name || (id === "unknown" ? "Unknown client" : id.substring(0, 8));
+      const g = byId.get(id) ?? { id, name, invoices: [] as any[] };
+      g.invoices.push(inv);
+      byId.set(id, g);
+    }
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  function groupLatest(g: { invoices: any[] }): string {
+    let t = 0;
+    for (const inv of g.invoices) {
+      const v = (inv.updatedAt || inv.createdAt) ? new Date(inv.updatedAt || inv.createdAt).getTime() : 0;
+      if (v > t) t = v;
+    }
+    return t
+      ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "";
+  }
+
   return (
     <AppShell
       role="staff"
@@ -187,41 +213,50 @@ export default function StaffMessagesPage() {
         {loading && invoices.length === 0 && (
           <p className="text-sm text-slate-400 text-center py-8">Loading threads…</p>
         )}
-        {invoices.map((inv) => {
-          const thread = threads[inv.id] || [];
-          const preview = thread.length > 0 ? thread[0].body : null;
-          const clientName = inv.client?.name || "Unknown client";
-          return (
-            <Card key={inv.id} id={`thread-${inv.id}`} className="p-4">
+        {clientGroups.map((g) => (
+          <Card key={g.id} className="p-4">
               <button
-                onClick={() => toggleExpand(inv)}
-                className="w-full flex items-start gap-3 text-left"
+                onClick={() => setExpandedClient(expandedClient === g.id ? null : g.id)}
+                className="w-full flex items-center gap-3 text-left"
               >
                 <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center flex-shrink-0">
                   <User className="w-4 h-4" />
                 </span>
                 <span className="flex-1 min-w-0">
                   <span className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-900 truncate">{clientName}</span>
-                    <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                      {inv.updatedAt || inv.createdAt
-                        ? new Date(inv.updatedAt || inv.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-                        : ""}
-                    </span>
+                    <span className="text-xs font-bold text-slate-900 truncate">{g.name}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">{groupLatest(g)}</span>
                   </span>
-                  <span className="block text-xs text-slate-600 truncate mt-0.5">
-                    {preview
-                      ? preview.length > 90
-                        ? `${preview.substring(0, 90)}…`
-                        : preview
-                      : `Invoice ${inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)} · ${inv.status}`}
-                  </span>
-                  <span className="block text-[11px] text-blue-600 font-mono mt-0.5">
-                    ⌧ {inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}
+                  <span className="block text-[11px] text-slate-500 mt-0.5">
+                    {g.invoices.length} thread{g.invoices.length === 1 ? "" : "s"}
                   </span>
                 </span>
-                <span className="text-slate-400">{expandedId === inv.id ? "▾" : "▸"}</span>
+                <span className="text-slate-400">{expandedClient === g.id ? "▾" : "▸"}</span>
               </button>
+              {expandedClient === g.id && (
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                  {g.invoices.map((inv) => {
+                    const thread = threads[inv.id] || [];
+                    const preview = thread.length > 0 ? thread[0].body : null;
+                    return (
+                      <div key={inv.id} id={`thread-${inv.id}`} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                        <button
+                          onClick={() => toggleExpand(inv)}
+                          className="w-full flex items-center justify-between gap-2 text-left"
+                        >
+                          <div className="text-xs min-w-0">
+                            <span className="dc-mono">{inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}</span>
+                            <span className="text-slate-500"> · {inv.status}</span>
+                            <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                              {preview
+                                ? preview.length > 90
+                                  ? `${preview.substring(0, 90)}…`
+                                  : preview
+                                : "Tap to open thread"}
+                            </div>
+                          </div>
+                          <span className="text-slate-400 flex-shrink-0">{expandedId === inv.id ? "▾" : "▸"}</span>
+                        </button>
               {expandedId === inv.id && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   {threadBusy === inv.id ? (
@@ -271,9 +306,13 @@ export default function StaffMessagesPage() {
                   </Link>
                 </div>
               )}
-            </Card>
-          );
-        })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+          </Card>
+        ))}
       </div>
 
       {nextCursor && (
