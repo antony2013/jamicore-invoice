@@ -156,14 +156,16 @@ describe("reports API", () => {
 });
 
 describe("threads API", () => {
-  it("staff sees own threads with real unread counts", async () => {
+  it("inbox holds client-latest threads only; answered threads live in sent", async () => {
     const a = await seedStaff();
     const b = await seedStaff();
     const client = await seedClient();
-    const mine = await seedInvoice(client.id, { status: "needs_info", assignedTo: a.id });
+    const awaiting = await seedInvoice(client.id, { status: "needs_info", assignedTo: a.id });
+    const answered = await seedInvoice(client.id, { status: "in_review", assignedTo: a.id });
     const theirs = await seedInvoice(client.id, { status: "needs_info", assignedTo: b.id });
-    await seedMessage(mine.id, "client", "please fix this", false);
-    await seedMessage(mine.id, "staff", "on it", true);
+    await seedMessage(awaiting.id, "client", "please fix this", false);
+    await seedMessage(answered.id, "client", "hello?", false);
+    await seedMessage(answered.id, "staff", "on it", true);
     await seedMessage(theirs.id, "client", "hello?", false);
     mockAuth.mockResolvedValue(officeSession({ id: a.id, role: "staff" }));
 
@@ -171,23 +173,17 @@ describe("threads API", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.success).toBe(true);
+    // only the client-latest thread; the answered one is sent-only
     expect(data.threads).toHaveLength(1);
-    expect(data.threads[0]).toMatchObject({ invoiceId: mine.id, unread: 1 });
-    expect(data.threads[0].lastBody).toBe("on it");
-    expect(data.totalUnread).toBe(1);
-  });
+    expect(data.threads[0]).toMatchObject({ invoiceId: awaiting.id, unread: 1 });
+    expect(data.threads[0].lastBody).toBe("please fix this");
+    expect(data.totalUnread).toBe(2);
 
-  it("sent folder returns staff-sent threads", async () => {
-    const a = await seedStaff();
-    const client = await seedClient();
-    const mine = await seedInvoice(client.id, { status: "in_review", assignedTo: a.id });
-    await seedMessage(mine.id, "staff", "checking now", true);
-    mockAuth.mockResolvedValue(officeSession({ id: a.id, role: "staff" }));
-
-    const res: Response = await (listThreads as any)(req("http://t/api/threads?folder=sent"));
-    const data = await res.json();
-    expect(data.threads).toHaveLength(1);
-    expect(data.threads[0].lastSenderType).toBe("staff");
+    const sent: Response = await (listThreads as any)(req("http://t/api/threads?folder=sent"));
+    const sentData = await sent.json();
+    expect(sentData.threads).toHaveLength(1);
+    expect(sentData.threads[0]).toMatchObject({ invoiceId: answered.id });
+    expect(sentData.threads[0].lastSenderType).toBe("staff");
   });
 
   it("rejects an invalid folder", async () => {

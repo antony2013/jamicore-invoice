@@ -11,8 +11,9 @@ import { safeClient } from "@/lib/safe-columns";
  * Office mailbox (read-only aggregates — opening a thread still goes
  * through the per-invoice thread route, which marks it read).
  * - admin: all invoices; staff: own assigned invoices only.
- * - folder=inbox: latest message per invoice (any sender).
- * - folder=sent: latest staff-sent message per invoice.
+ * - folder=inbox: threads whose LATEST message is client-sent
+ *   (needs staff attention), plus any thread with unread client mail.
+ * - folder=sent: threads whose LATEST message is staff-sent.
  * - unread: client-sent messages not yet read by staff, per invoice.
  * Params: folder (inbox|sent, default inbox), client, q, limit
  * (default 50, max 100). Ordered by latest activity DESC.
@@ -103,6 +104,9 @@ export async function GET(request: Request) {
     for (const r of recent) {
       if (seen.has(r.invoiceId)) continue;
       seen.add(r.invoiceId);
+      // Inbox holds only threads awaiting staff attention (client wrote
+      // last); staff-answered threads live in Sent only.
+      if (folder === "inbox" && r.senderType !== "client") continue;
       if (threads.length >= limit) break;
       const client = clientByInvoice.get(r.invoiceId) ?? { id: "", name: "Unknown" };
       threads.push({
