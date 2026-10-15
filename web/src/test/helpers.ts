@@ -37,6 +37,7 @@ const TABLES = [
   "rate_limits",
   "invoice_messages",
   "invoice_reports",
+  "message_drafts",
   "invoice_status_log",
   "assignments",
   "invoices",

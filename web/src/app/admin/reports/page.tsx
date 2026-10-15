@@ -5,24 +5,34 @@ import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 
-type ReportInfo = {
+type ReportEntry = {
+  id: string;
   fileName: string;
   source: string;
   createdAt: string;
-  downloadUrl?: string | null;
-} | null;
+  uploadedBy: string | null;
+  invoice: {
+    id: string;
+    status: string;
+    category: string;
+    createdAt: string;
+    invoiceNo: string | null;
+    amount: string | null;
+  } | null;
+  client: { id: string; name: string } | null;
+};
 
 export default function AdminReportsPage() {
   const [clients, setClients] = useState<any[]>([]);
   const [clientFilter, setClientFilter] = useState("all");
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [reports, setReports] = useState<ReportEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [reports, setReports] = useState<Record<string, ReportInfo>>({});
-  const [reportBusy, setReportBusy] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [fetchingUrl, setFetchingUrl] = useState<string | null>(null);
 
   function query(cursor?: string | null): string {
     const p = new URLSearchParams();
@@ -36,17 +46,17 @@ export default function AdminReportsPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [clientRes, invRes] = await Promise.all([
+      const [clientRes, repRes] = await Promise.all([
         fetch("/api/clients"),
-        fetch(`/api/invoices?${query()}`),
+        fetch(`/api/reports?${query()}`),
       ]);
       const clientData = await clientRes.json();
-      const invData = await invRes.json();
+      const repData = await repRes.json();
       if (clientData.success) setClients(clientData.clients);
-      if (!invData.success) throw new Error(invData.error || "Failed to load invoices");
-      setInvoices(invData.invoices);
-      setNextCursor(invData.nextCursor ?? null);
-      setExpandedId(null);
+      if (!repData.success) throw new Error(repData.error || "Failed to load reports");
+      setReports(repData.reports);
+      setNextCursor(repData.nextCursor ?? null);
+      setConfirmId(null);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load report library.");
     } finally {
@@ -58,34 +68,57 @@ export default function AdminReportsPage() {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const res = await fetch(`/api/invoices?${query(nextCursor)}`);
+      const res = await fetch(`/api/reports?${query(nextCursor)}`);
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Failed to load more");
-      setInvoices((prev) => [...prev, ...data.invoices]);
+      setReports((prev) => [...prev, ...data.reports]);
       setNextCursor(data.nextCursor ?? null);
     } catch (err: any) {
-      setLoadError(err.message || "Failed to load more invoices.");
+      setLoadError(err.message || "Failed to load more reports.");
     } finally {
       setLoadingMore(false);
     }
   }
 
-  async function toggleExpand(inv: any) {
-    if (expandedId === inv.id) {
-      setExpandedId(null);
+  async function openReport(rep: ReportEntry, download: boolean) {
+    if (!rep.invoice) return;
+    setFetchingUrl(rep.id);
+    try {
+      const res = await fetch(`/api/invoices/${rep.invoice.id}/report`);
+      const data = await res.json();
+      if (!res.ok || !data.report?.downloadUrl) throw new Error(data.error || "No file available");
+      if (download) {
+        const a = document.createElement("a");
+        a.href = data.report.downloadUrl;
+        a.download = rep.fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else {
+        window.open(data.report.downloadUrl, "_blank", "noopener");
+      }
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to open report.");
+    } finally {
+      setFetchingUrl(null);
+    }
+  }
+
+  async function handleDelete(rep: ReportEntry) {    if (confirmId !== rep.id) {
+      setConfirmId(rep.id);
       return;
     }
-    setExpandedId(inv.id);
-    if (reports[inv.id] !== undefined) return;
-    setReportBusy(inv.id);
+    setDeletingId(rep.id);
     try {
-      const res = await fetch(`/api/invoices/${inv.id}/report`);
+      const res = await fetch(`/api/reports/${rep.id}`, { method: "DELETE" });
       const data = await res.json();
-      setReports((prev) => ({ ...prev, [inv.id]: data.success ? data.report : null }));
-    } catch {
-      setReports((prev) => ({ ...prev, [inv.id]: null }));
+      if (!res.ok) throw new Error(data.error || "Failed to delete report");
+      setReports((prev) => prev.filter((r) => r.id !== rep.id));
+      setConfirmId(null);
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to delete report.");
     } finally {
-      setReportBusy(null);
+      setDeletingId(null);
     }
   }
 
@@ -136,73 +169,69 @@ export default function AdminReportsPage() {
       )}
 
       <div className="space-y-2">
-        {invoices.length === 0 && !loading && (
-          <p className="text-sm text-slate-400 text-center py-8">No invoices found.</p>
+        {reports.length === 0 && !loading && (
+          <p className="text-sm text-slate-400 text-center py-8">No reports shared yet.</p>
         )}
-        {loading && invoices.length === 0 && (
+        {loading && reports.length === 0 && (
           <p className="text-sm text-slate-400 text-center py-8">Loading library…</p>
         )}
-        {invoices.map((inv) => {
-          const rep = reports[inv.id];
-          return (
-            <Card key={inv.id} className="p-4">
-              <button
-                onClick={() => toggleExpand(inv)}
-                className="w-full flex items-center justify-between gap-2 text-left"
-              >
-                <div className="text-xs">
-                  <span className="dc-mono">{inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}</span>
-                  <span className="text-slate-500"> · {inv.client?.name || "Unknown"}</span>
-                  <div className="text-[11px] text-slate-400">
-                    {inv.createdAt
-                      ? `${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                      : ""} · {inv.status}
-                  </div>
+        {reports.map((rep) => (
+          <Card key={rep.id} className="p-4">
+            <div className="flex items-start gap-3">
+              <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
+                🗎
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
+                <div className="text-[11px] text-slate-500">
+                  {rep.client?.name || "Unknown"} ·{" "}
+                  {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""} ·{" "}
+                  {rep.source === "generated" ? "Auto-generated" : "Staff upload"}
                 </div>
-                <span className="text-slate-400">{expandedId === inv.id ? "▾" : "▸"}</span>
-              </button>
-              {expandedId === inv.id && (
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  {reportBusy === inv.id ? (
-                    <p className="text-xs text-slate-400">Loading report…</p>
-                  ) : rep ? (
-                    <div>
-                      <div className="flex items-start gap-3">
-                        <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
-                          🗎
-                        </span>
-                        <div className="min-w-0">
-                          <div className="text-sm font-bold text-slate-900 truncate">📄 {rep.fileName}</div>
-                          <div className="text-[11px] text-slate-500">
-                            {inv.client?.name || "Unknown"} ·{" "}
-                            {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 mt-3">
-                        {rep.downloadUrl && (
-                          <>
-                            <a href={rep.downloadUrl} target="_blank" rel="noopener" className="dc-btn">
-                              👁 View
-                            </a>
-                            <a href={rep.downloadUrl} download={rep.fileName} className="dc-btn">
-                              ⬇ Download
-                            </a>
-                          </>
-                        )}
-                        <Link href={`/admin/invoices/${inv.id}`} className="text-xs text-blue-600 hover:underline">
-                          Open invoice →
-                        </Link>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400">No report shared yet.</p>
+                {rep.invoice && (
+                  <div className="text-[11px] text-slate-500">
+                    <span className="dc-mono">
+                      {rep.invoice.invoiceNo || String(rep.invoice.id).substring(0, 8)}
+                    </span>{" "}
+                    · {rep.invoice.status}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <button
+                    onClick={() => openReport(rep, false)}
+                    disabled={fetchingUrl === rep.id}
+                    className="dc-btn disabled:opacity-50"
+                  >
+                    {fetchingUrl === rep.id ? "Opening…" : "👁 View"}
+                  </button>
+                  <button
+                    onClick={() => openReport(rep, true)}
+                    disabled={fetchingUrl === rep.id}
+                    className="dc-btn disabled:opacity-50"
+                  >
+                    ⬇ Download
+                  </button>
+                  <button
+                    onClick={() => handleDelete(rep)}
+                    disabled={deletingId === rep.id}
+                    className={`px-4 py-0 h-11 rounded-lg border text-sm font-medium transition disabled:opacity-50 ${
+                      confirmId === rep.id
+                        ? "bg-red-600 border-red-600 text-white hover:bg-red-700"
+                        : "border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    {deletingId === rep.id ? "Deleting…" : confirmId === rep.id ? "Confirm delete" : "Delete"}
+                  </button>
+                  {rep.invoice && (
+                    <Link href={`/admin/invoices/${rep.invoice.id}`} className="text-xs text-blue-600 hover:underline">
+                      Open invoice →
+                    </Link>
                   )}
                 </div>
-              )}
-            </Card>
-          );
-        })}
+              </div>
+            </div>
+          </Card>
+        ))}
       </div>
 
       {nextCursor && (

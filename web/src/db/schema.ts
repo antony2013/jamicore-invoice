@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, uuid, integer, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, unique, uuid, integer, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // Enums
@@ -259,6 +259,23 @@ export const invoiceMessages = pgTable(
   ]
 );
 
+// 8b. Message Drafts — unsent office replies, one per staff member + invoice.
+// Drafts never leave the office; sending posts to the invoice thread.
+export const messageDrafts = pgTable(
+  "message_drafts",
+  {
+  id: uuid("id").defaultRandom().primaryKey(),
+  staffId: uuid("staff_id").references(() => staff.id, { onDelete: "cascade" }).notNull(),
+  invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+  body: text("body").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("message_drafts_staff_idx").on(t.staffId),
+    unique("message_drafts_staff_invoice_uniq").on(t.staffId, t.invoiceId),
+  ]
+);
+
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
@@ -365,6 +382,13 @@ export const invoiceReportsRelations = relations(invoiceReports, ({ one }) => ({
 export const invoiceMessagesRelations = relations(invoiceMessages, ({ one }) => ({
   invoice: one(invoices, {
     fields: [invoiceMessages.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+export const messageDraftsRelations = relations(messageDrafts, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [messageDrafts.invoiceId],
     references: [invoices.id],
   }),
 }));
