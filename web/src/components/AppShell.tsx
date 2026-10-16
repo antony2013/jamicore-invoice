@@ -9,16 +9,18 @@ export default function AppShell({
   title,
   subtitle,
   actions,
+  nav,
   children,
 }: {
   role: "admin" | "staff";
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
+  nav?: Array<{ href: string; label: string }>;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const items =
+  const defaultItems =
     role === "admin"
       ? [
           { href: "/admin/dashboard", label: "Dashboard" },
@@ -30,9 +32,10 @@ export default function AppShell({
         ]
       : [
           { href: "/staff/dashboard", label: "Dashboard" },
+          { href: "/staff/dashboard#client-cards", label: "Client" },
           { href: "/staff/history", label: "History" },
-          { href: "/staff/messages", label: "Messages" },
         ];
+  const items = nav ?? defaultItems;
 
   return (
     <div className="dc-root">

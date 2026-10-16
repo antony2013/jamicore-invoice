@@ -226,6 +226,11 @@ export default function StaffClientDashboardPage({
       role="staff"
       title="Reports Uploaded"
       subtitle={`Client: ${clientName ?? "…"} — your assigned invoices only`}
+      nav={[
+        { href: "/staff/dashboard", label: "Dashboard" },
+        { href: "#messages", label: "Messages" },
+        { href: "#reports", label: "Reports" },
+      ]}
       actions={
         <Link href="/staff/dashboard#client-cards" className="dc-btn">
           Back to Clients
@@ -310,7 +315,7 @@ export default function StaffClientDashboardPage({
         </div>
       )}
 
-      <h2 className="text-sm font-bold text-slate-900">Reports &amp; Documents</h2>
+      <h2 id="reports" className="text-sm font-bold text-slate-900 scroll-mt-4">Reports &amp; Documents</h2>
       <p className="text-[11px] text-slate-500">Upload, organize and view this client&apos;s reports.</p>
       {invoices.length > 0 ? (
         <Link
@@ -387,7 +392,7 @@ export default function StaffClientDashboardPage({
         })}
       </div>
 
-      <h2 className="text-sm font-bold text-slate-900">Messages</h2>
+      <h2 id="messages" className="text-sm font-bold text-slate-900 scroll-mt-4">Messages</h2>
       <p className="text-[11px] text-slate-500">Client conversation threads for this client only.</p>
       <div className="space-y-2">
         {invoices.length === 0 && !loading && (
