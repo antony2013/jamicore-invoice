@@ -146,6 +146,8 @@ export const authOptions: NextAuthConfig = {
       if (token && session.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
+        // Impersonated staff views carry who started them (banner + audit).
+        (session.user as any).impersonatedBy = (token as any).impersonatedBy ?? null;
       }
       return session;
     },

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
 
 export default function AppShell({
   role,
@@ -64,6 +65,7 @@ export default function AppShell({
         </div>
       </aside>
       <main className="dc-main">
+        {role === "staff" && <ImpersonationBanner />}
         <header className="dc-header">
           <div>
             <h1 className="m-0 text-[26px] font-semibold">{title}</h1>

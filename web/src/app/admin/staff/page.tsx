@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { RefreshCw, UserPlus } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
 export default function AdminStaffPage() {
+  const router = useRouter();
   const [staffList, setStaffList] = useState<any[]>([]);
   const [stats, setStats] = useState<Record<string, { assigned: number; inProgress: number; verified: number; collected: number; disputed: number; total: number; clients: number }>>({});
   const [loading, setLoading] = useState(true);
@@ -26,6 +28,22 @@ export default function AdminStaffPage() {
   const [lifecycleInfo, setLifecycleInfo] = useState<{ openInvoiceCount: number } | null>(null);
   const [lifecycleTarget, setLifecycleTarget] = useState("");
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+
+  async function handleViewAs(staffRow: any) {
+    setImpersonatingId(staffRow.id);
+    setFormError(null);
+    try {
+      const res = await fetch(`/api/staff/${staffRow.id}/impersonate`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not open staff view");
+      router.push(data.redirect || "/staff/dashboard");
+    } catch (err: any) {
+      setFormError(err.message);
+    } finally {
+      setImpersonatingId(null);
+    }
+  }
   const [staffSearch, setStaffSearch] = useState("");
   const [roleTab, setRoleTab] = useState<"all" | "staff" | "admin">("all");
 
@@ -168,6 +186,11 @@ export default function AdminStaffPage() {
         {success && (
           <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
             {success}
+          </div>
+        )}
+        {formError && !showForm && (
+          <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
+            {formError}
           </div>
         )}
         {showForm && (
@@ -432,13 +455,14 @@ export default function AdminStaffPage() {
                     <span>Total invoices <strong className="text-slate-800">{st.total}</strong></span>
                     <span>Clients assigned <strong className="text-slate-800">{st.clients}</strong></span>
                   </div>
-                  <Link
-                    href={`/admin/dashboard?assigned_to=${encodeURIComponent(s.id)}`}
-                    className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold text-center transition"
-                    title="Open this person's queue in the admin dashboard"
+                  <button
+                    onClick={() => handleViewAs(s)}
+                    disabled={impersonatingId === s.id}
+                    className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold text-center transition disabled:opacity-50"
+                    title="Open this staff member's own dashboard directly (no staff login needed)"
                   >
-                    View Staff Dashboard »
-                  </Link>
+                    {impersonatingId === s.id ? "Opening…" : "View Staff Dashboard »"}
+                  </button>
                   <div className="flex items-center gap-1.5">
                     {resettingId === s.id ? (
                       <>

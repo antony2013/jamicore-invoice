@@ -14,7 +14,6 @@ export default function AdminClientDetailPage({
   const [outlets, setOutlets] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [reportsCapped, setReportsCapped] = useState(false);
-  const [openThreads, setOpenThreads] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fetchingUrl, setFetchingUrl] = useState<string | null>(null);
@@ -23,16 +22,14 @@ export default function AdminClientDetailPage({
     setLoading(true);
     setLoadError(null);
     try {
-      const [clientRes, outletRes, repRes, statsRes] = await Promise.all([
+      const [clientRes, outletRes, repRes] = await Promise.all([
         fetch("/api/clients"),
         fetch(`/api/outlets?clientId=${encodeURIComponent(id)}`),
         fetch(`/api/reports?client=${encodeURIComponent(id)}&limit=50`),
-        fetch(`/api/invoices/stats?client=${encodeURIComponent(id)}`),
       ]);
       const clientData = await clientRes.json();
       const outletData = await outletRes.json();
       const repData = await repRes.json();
-      const statsData = await statsRes.json();
       if (clientData.success) {
         const found = (clientData.clients as any[]).find((c) => c.id === id);
         if (!found) throw new Error("Client not found.");
@@ -43,9 +40,6 @@ export default function AdminClientDetailPage({
       if (!repData.success) throw new Error(repData.error || "Failed to load reports");
       setReports(repData.reports);
       setReportsCapped(Boolean(repData.nextCursor));
-      if (statsData.success) {
-        setOpenThreads(statsData.stats.byStatus.needs_info ?? 0);
-      }
     } catch (err: any) {
       setLoadError(err.message || "Failed to load client workspace.");
     } finally {
@@ -121,29 +115,6 @@ export default function AdminClientDetailPage({
       ) : null}
 
       <h2 className="text-sm font-bold text-slate-900">Client workspace</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <a href="#outlets" className="dc-card p-4 hover:shadow-md transition">
-          <div className="text-sm font-bold text-slate-900">Outlets &amp; Staff</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">Shops and default staff routing</div>
-        </a>
-        <Link href={`/admin/clients/${id}/reports`} className="dc-card p-4 hover:shadow-md transition">
-          <div className="text-sm font-bold text-slate-900">Reports</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">Invoice reports by category and status</div>
-        </Link>
-        <Link
-          href={`/admin/dashboard?client=${encodeURIComponent(id)}`}
-          className="dc-card p-4 hover:shadow-md transition"
-        >
-          <div className="text-sm font-bold text-slate-900">Messages</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            {openThreads === null ? "Conversation threads" : `${openThreads} thread(s) awaiting reply`}
-          </div>
-        </Link>
-        <a href="#account" className="dc-card p-4 hover:shadow-md transition">
-          <div className="text-sm font-bold text-slate-900">Account details</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">Login, contact, and archive state</div>
-        </a>
-      </div>
 
       <div id="outlets" className="flex items-center justify-between">
         <h2 className="text-sm font-bold text-slate-900">Outlets</h2>
@@ -226,22 +197,6 @@ export default function AdminClientDetailPage({
           <Link href={`/admin/clients/${id}/reports`} className="text-xs text-blue-600 hover:underline">
             View all reports →
           </Link>
-        )}
-      </div>
-
-      <div id="account" className="dc-card p-4">
-        <h2 className="text-sm font-bold text-slate-900 mb-2">Account details</h2>
-        {client ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-          <div><span className="text-slate-400">User ID: </span><span className="font-mono">{client.username || "—"}</span></div>
-          <div><span className="text-slate-400">Phone: </span><span className="font-mono">{client.phone || "—"}</span></div>
-          <div><span className="text-slate-400">Email: </span>{client.email || "—"}</div>
-          <div><span className="text-slate-400">Joined: </span>{client.createdAt ? new Date(client.createdAt).toLocaleDateString() : "—"}</div>
-          <div><span className="text-slate-400">Default staff: </span>{client.assignedStaffName || "Manual"}</div>
-          <div><span className="text-slate-400">Login: </span>{client.archivedAt ? "Blocked (archived)" : "Allowed"}</div>
-        </div>
-        ) : (
-          <p className="text-xs text-slate-400">{loading ? "Loading account…" : "No client data."}</p>
         )}
       </div>
     </AppShell>

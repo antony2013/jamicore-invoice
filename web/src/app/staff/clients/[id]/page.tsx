@@ -61,6 +61,8 @@ export default function StaffClientDashboardPage({
   const [msgBusy, setMsgBusy] = useState<string | null>(null);
   const [msgDrafts, setMsgDrafts] = useState<Record<string, string>>({});
   const [msgSending, setMsgSending] = useState<string | null>(null);
+  const [reportIds, setReportIds] = useState<string[]>([]);
+  const [checkingReports, setCheckingReports] = useState(false);
 
   // Staff scope is enforced server-side (assigned_to=me always); the
   // client filter only narrows within the staffer's own queue.
@@ -92,6 +94,7 @@ export default function StaffClientDashboardPage({
       const firstClient = (invData.invoices as any[]).find((i) => i.client?.name)?.client?.name;
       if (firstClient) setClientName(firstClient);
       if (statsData.success) setStats(statsData.stats);
+      void checkReports(invData.invoices);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load client dashboard.");
     } finally {
@@ -99,8 +102,42 @@ export default function StaffClientDashboardPage({
     }
   }
 
-  async function loadMore() {
-    if (!nextCursor || loadingMore) return;
+  // Which loaded invoices already have a shared report (for the count).
+  async function checkReports(list: any[]) {
+    setCheckingReports(true);
+    try {
+      const settled = await Promise.allSettled(
+        list.map(async (inv) => {
+          const res = await fetch(`/api/invoices/${inv.id}/report`);
+          const data = await res.json();
+          return data.success && data.report ? inv.id : null;
+        })
+      );
+      setReportIds(
+        settled
+          .filter((r): r is PromiseFulfilledResult<string | null> => r.status === "fulfilled")
+          .map((r) => r.value)
+          .filter((v): v is string => Boolean(v))
+      );
+    } finally {
+      setCheckingReports(false);
+    }
+  }
+
+  // Outlet-wise grouping from loaded invoices (staff has no outlet API).
+  const outletGroups = (() => {
+    const byId = new Map<string, { id: string; name: string; count: number }>();
+    for (const inv of invoices) {
+      const id = inv.outletId || inv.outlet?.id || "none";
+      const name = inv.outlet?.name || (id === "none" ? "No outlet" : id.substring(0, 8));
+      const g = byId.get(id) ?? { id, name, count: 0 };
+      g.count += 1;
+      byId.set(id, g);
+    }
+    return Array.from(byId.values()).sort((a, b) => b.count - a.count);
+  })();
+
+  async function loadMore() {    if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
       const res = await fetch(`/api/invoices?${query(nextCursor)}`);
@@ -242,6 +279,49 @@ export default function StaffClientDashboardPage({
         <div className="dc-kpi"><span>In progress</span><b>{stats ? inProgress : "…"}</b></div>
         <div className="dc-kpi"><span>Verified</span><b>{stats ? byStatus.verified ?? 0 : "…"}</b></div>
         <div className="dc-kpi"><span>Finished</span><b>{stats ? finished : "…"}</b></div>
+      </div>
+
+      <h2 className="text-sm font-bold text-slate-900">Client workspace</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <a href="#outlets" className="dc-card p-4 hover:shadow-md transition">
+          <div className="text-sm font-bold text-slate-900">Outlets</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            {outletGroups.length} outlet{outletGroups.length === 1 ? "" : "s"} in your queue
+          </div>
+        </a>
+        <a href="#reports" className="dc-card p-4 hover:shadow-md transition">
+          <div className="text-sm font-bold text-slate-900">Reports</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            {checkingReports ? "Checking…" : `${reportIds.length} file${reportIds.length === 1 ? "" : "s"} shared`}
+          </div>
+        </a>
+        <a href="#messages" className="dc-card p-4 hover:shadow-md transition">
+          <div className="text-sm font-bold text-slate-900">Messages</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">Conversation threads for this client</div>
+        </a>
+      </div>
+
+      <h2 id="outlets" className="text-sm font-bold text-slate-900 scroll-mt-4">Outlets</h2>
+      <div className="space-y-2">
+        {outletGroups.length === 0 && (
+          <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets in your queue."}</p>
+        )}
+        {outletGroups.map((o) => (
+          <div key={o.id} className="dc-card p-4">
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center text-sm flex-shrink-0">
+                🏪
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-slate-900">{o.name}</div>
+                <div className="text-[11px] text-slate-500">{clientName || ""}</div>
+              </div>
+            </div>
+            <div className="text-[11px] text-slate-500 mt-2">
+              {o.count} invoice{o.count === 1 ? "" : "s"} assigned to you
+            </div>
+          </div>
+        ))}
       </div>
 
       <Card className="p-4">
