@@ -46,7 +46,7 @@ export default function AdminInvoiceDetailPage({
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Read-only visibility into the clientÃ¢â€ â€staff thread + Excel report
+  // Read-only visibility into the client↔staff thread + Excel report
   const [messages, setMessages] = useState<any[]>([]);
   const [report, setReport] = useState<any | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
@@ -56,7 +56,7 @@ export default function AdminInvoiceDetailPage({
     { value: "purchase_bill", label: "Purchase Bill" },
     { value: "expense_bill", label: "Expense Bill" },
     { value: "asset_bill", label: "Asset Bill" },
-    { value: "other", label: "OtherÃ¢â‚¬Â¦" },
+    { value: "other", label: "Other…" },
   ];
 
   async function fetchImage() {
@@ -252,7 +252,7 @@ export default function AdminInvoiceDetailPage({
     <AppShell
       role="admin"
       title={`Invoice ${shortInvoiceId(invoice)}`}
-      subtitle={`Client: ${invoice.client?.name || "Unknown"} Ã¢â‚¬â€ ID: ${invoice.id}`}
+      subtitle={`Client: ${invoice.client?.name || "Unknown"} — ID: ${invoice.id}`}
       actions={
         <Link href="/admin/dashboard" className="dc-btn">
           <ArrowLeft className="mr-1 inline h-3.5 w-3.5" /> Back to Queue
@@ -304,7 +304,7 @@ export default function AdminInvoiceDetailPage({
                   disabled={reloadingImage}
                   className="text-[11px] font-semibold text-blue-600 hover:underline disabled:opacity-50"
                 >
-                  {reloadingImage ? "ReloadingÃ¢â‚¬Â¦" : "Reload preview"}
+                  {reloadingImage ? "Reloading…" : "Reload preview"}
                 </button>
               </div>
             </div>
@@ -351,16 +351,16 @@ export default function AdminInvoiceDetailPage({
                   <div className="mt-1 text-[11px]">
                     {invoice.uploadedBy ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 font-semibold">
-                        Ã°Å¸â€œÂ¤ {invoice.uploadedBy.name} (team)
+                        📤 {invoice.uploadedBy.name} (team)
                       </span>
                     ) : (
-                      <span className="text-slate-400">Ã°Å¸â€œÂ¤ Owner upload</span>
+                      <span className="text-slate-400">📤 Owner upload</span>
                     )}
                   </div>
                   <div className="mt-1">
                     {invoice.outlet ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
-                        Ã¢â€”Â {invoice.outlet.name}
+                        ◍ {invoice.outlet.name}
                       </span>
                     ) : (
                       <span className="text-slate-400 italic text-[11px]">No outlet</span>
@@ -372,7 +372,7 @@ export default function AdminInvoiceDetailPage({
                   <div className="font-semibold text-slate-800">
                     {invoice.assignedStaff?.name || "Unassigned"}
                   </div>
-                  <div className="text-slate-500">{invoice.assignedStaff?.email || "Ã¢â‚¬â€"}</div>
+                  <div className="text-slate-500">{invoice.assignedStaff?.email || "—"}</div>
                 </div>
               </div>
 
@@ -435,7 +435,7 @@ export default function AdminInvoiceDetailPage({
                       <Hash className="w-3.5 h-3.5" /> Invoice #
                     </div>
                     <div className="text-base font-bold text-slate-900">
-                      {invoice.ocrData?.invoiceNo || "Ã¢â‚¬â€"}
+                      {invoice.ocrData?.invoiceNo || "—"}
                     </div>
                   </div>
 
@@ -444,7 +444,7 @@ export default function AdminInvoiceDetailPage({
                       <Building className="w-3.5 h-3.5" /> Vendor
                     </div>
                     <div className="text-sm font-semibold text-slate-900 truncate">
-                      {invoice.ocrData?.vendor || "Ã¢â‚¬â€"}
+                      {invoice.ocrData?.vendor || "—"}
                     </div>
                   </div>
 
@@ -453,7 +453,7 @@ export default function AdminInvoiceDetailPage({
                       <Calendar className="w-3.5 h-3.5" /> Date
                     </div>
                     <div className="text-sm font-semibold text-slate-900">
-                      {invoice.ocrData?.date || "Ã¢â‚¬â€"}
+                      {invoice.ocrData?.date || "—"}
                     </div>
                   </div>
                 </div>
@@ -523,7 +523,7 @@ export default function AdminInvoiceDetailPage({
                 disabled={savingOutlet}
                 className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium disabled:opacity-50"
               >
-                {savingOutlet ? "SavingÃ¢â‚¬Â¦" : "Save Outlet & Category"}
+                {savingOutlet ? "Saving…" : "Save Outlet & Category"}
               </button>
               {outletMsg && <p className="text-xs text-slate-600">{outletMsg}</p>}
             </div>
@@ -547,7 +547,7 @@ export default function AdminInvoiceDetailPage({
                     >
                       {staffList.filter((st) => st.role === "staff").map((st) => (
                         <option key={st.id} value={st.id}>
-                          {st.name} ({st.email}) Ã¢â‚¬â€ {st.role}
+                          {st.name} ({st.email}) — {st.role}
                         </option>
                       ))}
                     </select>
@@ -569,7 +569,7 @@ export default function AdminInvoiceDetailPage({
                     disabled={assigning}
                     className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
                   >
-                    {assigning ? "AssigningÃ¢â‚¬Â¦" : invoice.status === "assigned" ? "Confirm Re-assignment" : "Confirm Assignment"}
+                    {assigning ? "Assigning…" : invoice.status === "assigned" ? "Confirm Re-assignment" : "Confirm Assignment"}
                   </button>
                 </form>
               </div>
@@ -609,7 +609,7 @@ export default function AdminInvoiceDetailPage({
             {/* Excel report shared with the client (staff owns it) */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                Ã°Å¸â€œÅ  Excel Report
+                📊 Excel Report
               </h3>
               {report ? (
                 <div className="flex items-center justify-between gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
@@ -629,14 +629,14 @@ export default function AdminInvoiceDetailPage({
                   )}
                 </div>
               ) : (
-                <p className="text-xs text-slate-400">No report shared yet Ã¢â‚¬â€ the assigned staff adds it.</p>
+                <p className="text-xs text-slate-400">No report shared yet — the assigned staff adds it.</p>
               )}
             </div>
 
-            {/* ClientÃ¢â€ â€staff thread (read-only Ã¢â‚¬â€ staff replies from their view) */}
+            {/* Client↔staff thread (read-only — staff replies from their view) */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
-                Ã°Å¸â€™Â¬ Client Conversation
+                💬 Client Conversation
               </h3>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {messages.length === 0 ? (
@@ -653,7 +653,7 @@ export default function AdminInvoiceDetailPage({
                     >
                       <div className={`font-bold mb-0.5 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-500"}`}>
                         {m.senderName}
-                        {m.kind === "request_report" && " Ã‚Â· Ã°Å¸â€œâ€ž requested the report"}
+                        {m.kind === "request_report" && " · 📄 requested the report"}
                       </div>
                       <div>{m.body}</div>
                       <div className={`mt-1 text-[10px] ${m.senderType === "staff" ? "text-blue-200" : "text-slate-400"}`}>
@@ -698,7 +698,7 @@ export default function AdminInvoiceDetailPage({
                   }`}
                 >
                   {deleting
-                    ? "DeletingÃ¢â‚¬Â¦"
+                    ? "Deleting…"
                     : deleteArmed
                       ? "Confirm delete with reason"
                       : "Delete Invoice"}

@@ -243,9 +243,9 @@ export default function StaffClientDashboardPage({
           <div className="text-xs text-slate-600">
             <span className="dc-mono">{shortInvoiceId(inv)}</span>
             {inv.createdAt
-              ? <span> Ã‚Â· {`${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span>
+              ? <span> · {`${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span>
               : null}
-            <span> Ã‚Â· {CATEGORY_LABELS[inv.category] || inv.category || "Ã¢â‚¬â€"}</span>
+            <span> · {CATEGORY_LABELS[inv.category] || inv.category || "—"}</span>
           </div>
           <span className={`dc-chip flex-shrink-0 ${statusChip(inv.status)}`}>{inv.status}</span>
         </div>
@@ -263,10 +263,10 @@ export default function StaffClientDashboardPage({
     <AppShell
       role="staff"
       title="Reports Uploaded"
-      subtitle={`Client: ${clientName ?? "Ã¢â‚¬Â¦"} Ã¢â‚¬â€ your assigned invoices only`}
+      subtitle={`Client: ${clientName ?? "…"} — your assigned invoices only`}
       nav={[
         { href: "/staff/dashboard", label: "Dashboard" },
-        { href: "#messages", label: "Messages" },
+        { href: `/staff/messages?client=${id}`, label: "Messages" },
         { href: "#reports", label: "Reports" },
       ]}
       actions={
@@ -276,10 +276,10 @@ export default function StaffClientDashboardPage({
       }
     >
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="dc-kpi"><span>Total uploaded</span><b>{stats ? stats.total : "Ã¢â‚¬Â¦"}</b></div>
-        <div className="dc-kpi"><span>In progress</span><b>{stats ? inProgress : "Ã¢â‚¬Â¦"}</b></div>
-        <div className="dc-kpi"><span>Verified</span><b>{stats ? byStatus.verified ?? 0 : "Ã¢â‚¬Â¦"}</b></div>
-        <div className="dc-kpi"><span>Finished</span><b>{stats ? finished : "Ã¢â‚¬Â¦"}</b></div>
+        <div className="dc-kpi"><span>Total uploaded</span><b>{stats ? stats.total : "…"}</b></div>
+        <div className="dc-kpi"><span>In progress</span><b>{stats ? inProgress : "…"}</b></div>
+        <div className="dc-kpi"><span>Verified</span><b>{stats ? byStatus.verified ?? 0 : "…"}</b></div>
+        <div className="dc-kpi"><span>Finished</span><b>{stats ? finished : "…"}</b></div>
       </div>
 
       <h2 className="text-sm font-bold text-slate-900">Client workspace</h2>
@@ -293,10 +293,10 @@ export default function StaffClientDashboardPage({
         <a href="#reports" className="dc-card p-4 hover:shadow-md transition">
           <div className="text-sm font-bold text-slate-900">Reports</div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            {checkingReports ? "CheckingÃ¢â‚¬Â¦" : `${reportIds.length} file${reportIds.length === 1 ? "" : "s"} shared`}
+            {checkingReports ? "Checking…" : `${reportIds.length} file${reportIds.length === 1 ? "" : "s"} shared`}
           </div>
         </a>
-        <a href="#messages" className="dc-card p-4 hover:shadow-md transition">
+        <a href={`/staff/messages?client=${id}`} className="dc-card p-4 hover:shadow-md transition">
           <div className="text-sm font-bold text-slate-900">Messages</div>
           <div className="text-[11px] text-slate-500 mt-0.5">Conversation threads for this client</div>
         </a>
@@ -305,13 +305,13 @@ export default function StaffClientDashboardPage({
       <h2 id="outlets" className="text-sm font-bold text-slate-900 scroll-mt-4">Outlets</h2>
       <div className="space-y-2">
         {outletGroups.length === 0 && (
-          <p className="text-xs text-slate-400">{loading ? "Loading outletsÃ¢â‚¬Â¦" : "No outlets in your queue."}</p>
+          <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets in your queue."}</p>
         )}
         {outletGroups.map((o) => (
           <div key={o.id} className="dc-card p-4">
             <div className="flex items-center gap-3">
               <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center text-sm flex-shrink-0">
-                Ã°Å¸ÂÂª
+                🏪
               </span>
               <div className="min-w-0">
                 <div className="text-sm font-bold text-slate-900">{o.name}</div>
@@ -356,7 +356,7 @@ export default function StaffClientDashboardPage({
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search invoice ID or document typeÃ¢â‚¬Â¦"
+          placeholder="Search invoice ID or document type…"
           className="mt-3 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
         />
       </Card>
@@ -370,11 +370,11 @@ export default function StaffClientDashboardPage({
       {showSplit ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
-            <h2 className="text-sm font-bold text-slate-800 mb-2">Invoices Ã‚Â· {sales.length}</h2>
+            <h2 className="text-sm font-bold text-slate-800 mb-2">Invoices · {sales.length}</h2>
             <div className="space-y-3">{sales.map(card)}</div>
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-800 mb-2">Bills Ã‚Â· {bills.length}</h2>
+            <h2 className="text-sm font-bold text-slate-800 mb-2">Bills · {bills.length}</h2>
             <div className="space-y-3">{bills.map(card)}</div>
           </div>
         </div>
@@ -386,12 +386,12 @@ export default function StaffClientDashboardPage({
         <p className="text-sm text-slate-400 text-center py-8">No invoices match these filters.</p>
       )}
       {loading && invoices.length === 0 && (
-        <p className="text-sm text-slate-400 text-center py-8">Loading invoicesÃ¢â‚¬Â¦</p>
+        <p className="text-sm text-slate-400 text-center py-8">Loading invoices…</p>
       )}
       {nextCursor && (
         <div className="flex justify-center">
           <button onClick={loadMore} disabled={loadingMore} className="dc-btn">
-            {loadingMore ? "LoadingÃ¢â‚¬Â¦" : "Load more"}
+            {loadingMore ? "Loading…" : "Load more"}
           </button>
         </div>
       )}
@@ -403,15 +403,15 @@ export default function StaffClientDashboardPage({
           href={`/staff/invoices/${invoices[0].id}`}
           className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition"
         >
-          Ã¢Â¬â€  Upload Report
+          ⬆ Upload Report
         </Link>
       ) : (
         <button disabled className="w-full py-3 px-4 bg-slate-200 text-slate-400 rounded-xl text-sm font-semibold">
-          Ã¢Â¬â€  Upload Report
+          ⬆ Upload Report
         </button>
       )}
       <p className="text-[11px] text-slate-400">
-        Reports attach to invoices Ã¢â‚¬â€ uploading opens an invoice where you generate or attach its Excel report.
+        Reports attach to invoices — uploading opens an invoice where you generate or attach its Excel report.
       </p>
 
       <h3 className="text-xs font-bold text-slate-800">Client report library</h3>      <div className="space-y-2">
@@ -428,40 +428,40 @@ export default function StaffClientDashboardPage({
               >
                 <div className="text-xs">
                   <span className="dc-mono">{shortInvoiceId(inv)}</span>
-                  <span className="text-slate-500"> Ã‚Â· {inv.status}</span>
+                  <span className="text-slate-500"> · {inv.status}</span>
                 </div>
-                <span className="text-slate-400">{expandedReportId === inv.id ? "Ã¢â€“Â¾" : "Ã¢â€“Â¸"}</span>
+                <span className="text-slate-400">{expandedReportId === inv.id ? "▾" : "▸"}</span>
               </button>
               {expandedReportId === inv.id && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   {reportBusy === inv.id ? (
-                    <p className="text-xs text-slate-400">Loading reportÃ¢â‚¬Â¦</p>
+                    <p className="text-xs text-slate-400">Loading report…</p>
                   ) : rep ? (
                     <div className="flex items-start gap-3">
                       <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
-                        Ã°Å¸â€”Å½
+                        🗎
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
                         <div className="text-[11px] text-slate-500">
-                          {clientName || "Client"} Ã‚Â· {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""}
+                          {clientName || "Client"} · {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""}
                         </div>
                         {rep.notes && (
-                          <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">Ã°Å¸â€œÂ {rep.notes}</div>
+                          <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">📝 {rep.notes}</div>
                         )}
                         <div className="flex items-center gap-2 mt-2">
                           {rep.downloadUrl && (
                             <>
                               <a href={rep.downloadUrl} target="_blank" rel="noopener" className="dc-btn">
-                                Ã°Å¸â€˜Â View
+                                👁 View
                               </a>
                               <a href={rep.downloadUrl} download={rep.fileName} className="dc-btn">
-                                Ã¢Â¬â€¡ Download
+                                ⬇ Download
                               </a>
                             </>
                           )}
                           <Link href={`/staff/invoices/${inv.id}`} className="text-xs text-blue-600 hover:underline">
-                            Open invoice Ã¢â€ â€™
+                            Open invoice →
                           </Link>
                         </div>
                       </div>
@@ -492,14 +492,14 @@ export default function StaffClientDashboardPage({
               >
                 <div className="text-xs">
                   <span className="dc-mono">{shortInvoiceId(inv)}</span>
-                  <span className="text-slate-500"> Ã‚Â· {inv.status}</span>
+                  <span className="text-slate-500"> · {inv.status}</span>
                 </div>
-                <span className="text-slate-400">{expandedMsgId === inv.id ? "Ã¢â€“Â¾" : "Ã¢â€“Â¸"}</span>
+                <span className="text-slate-400">{expandedMsgId === inv.id ? "▾" : "▸"}</span>
               </button>
               {expandedMsgId === inv.id && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   {msgBusy === inv.id ? (
-                    <p className="text-xs text-slate-400">Loading threadÃ¢â‚¬Â¦</p>
+                    <p className="text-xs text-slate-400">Loading thread…</p>
                   ) : thread.length === 0 ? (
                     <p className="text-xs text-slate-400">No messages yet.</p>
                   ) : (
@@ -525,7 +525,7 @@ export default function StaffClientDashboardPage({
                     <input
                       value={msgDrafts[inv.id] || ""}
                       onChange={(e) => setMsgDrafts((prev) => ({ ...prev, [inv.id]: e.target.value }))}
-                      placeholder="Reply to clientÃ¢â‚¬Â¦"
+                      placeholder="Reply to client…"
                       className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
                     />
                     <button
@@ -533,7 +533,7 @@ export default function StaffClientDashboardPage({
                       disabled={msgSending === inv.id || !(msgDrafts[inv.id] || "").trim()}
                       className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
                     >
-                      {msgSending === inv.id ? "SendingÃ¢â‚¬Â¦" : "Send"}
+                      {msgSending === inv.id ? "Sending…" : "Send"}
                     </button>
                   </div>
                 </div>

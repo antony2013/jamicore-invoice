@@ -48,7 +48,7 @@ export default function StaffHistoryPage() {
             <p className="text-sm text-slate-400 text-center py-8">Loading history...</p>
           ) : logs.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-8">
-              No activity yet Ã¢â‚¬â€ verify an invoice to see your actions here.
+              No activity yet — verify an invoice to see your actions here.
             </p>
           ) : (
             <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
