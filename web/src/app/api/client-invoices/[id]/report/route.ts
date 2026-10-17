@@ -40,6 +40,9 @@ export async function GET(
         id: report.id,
         fileName: report.fileName,
         createdAt: report.createdAt,
+        // Optional staff note + invoice status shown on the mobile report screen
+        notes: report.notes ?? null,
+        invoiceStatus: found.invoice.status,
         downloadUrl,
       },
     });

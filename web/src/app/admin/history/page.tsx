@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -64,7 +65,7 @@ export default function AdminHistoryPage() {
                         href={`/admin/invoices/${log.invoice.id}`}
                         className="text-[11px] text-blue-600 hover:underline font-mono"
                       >
-                        {log.invoice.id.substring(0, 8)}… ({log.invoice.clientName})
+                        {shortInvoiceId(log.invoice)} ({log.invoice.clientName})
                       </Link>
                     )}
                   </div>

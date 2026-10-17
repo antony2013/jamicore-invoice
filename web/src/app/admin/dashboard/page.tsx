@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -185,7 +186,7 @@ export default function AdminDashboard() {
     setSuccessMessage(
       failed.length === 0
         ? `${ok} invoice(s) assigned.`
-        : `${ok} assigned, ${failed.length} failed (${failed.slice(0, 3).join("; ")}${failed.length > 3 ? "…" : ""})`
+        : `${ok} assigned, ${failed.length} failed (${failed.slice(0, 3).join("; ")}${failed.length > 3 ? "Ã¢â‚¬Â¦" : ""})`
     );
     setSelectedIds([]);
     loadData();
@@ -260,13 +261,13 @@ export default function AdminDashboard() {
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Unassigned Queue</div>
             <div className="text-2xl font-bold text-slate-900 mt-2">
-              {stats ? stats.unassigned : "…"}
+              {stats ? stats.unassigned : "Ã¢â‚¬Â¦"}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">New Uploads</div>
             <div className="text-2xl font-bold text-blue-600 mt-2">
-              {stats ? stats.byStatus.uploaded ?? 0 : "…"}
+              {stats ? stats.byStatus.uploaded ?? 0 : "Ã¢â‚¬Â¦"}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -274,13 +275,13 @@ export default function AdminDashboard() {
             <div className="text-2xl font-bold text-amber-600 mt-2">
               {stats
                 ? (stats.byStatus.assigned ?? 0) + (stats.byStatus.in_review ?? 0) + (stats.byStatus.needs_info ?? 0)
-                : "…"}
+                : "Ã¢â‚¬Â¦"}
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Collected</div>
             <div className="text-2xl font-bold text-emerald-600 mt-2">
-              {stats ? stats.byStatus.collected ?? 0 : "…"}
+              {stats ? stats.byStatus.collected ?? 0 : "Ã¢â‚¬Â¦"}
             </div>
           </div>
         </div>
@@ -318,7 +319,7 @@ export default function AdminDashboard() {
               <option value="all">All Outlets</option>
               {outletList.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.clientName} — {o.name}
+                  {o.clientName} Ã¢â‚¬â€ {o.name}
                 </option>
               ))}
             </select>
@@ -412,7 +413,7 @@ export default function AdminDashboard() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search client, phone, vendor, invoice no, ID…"
+            placeholder="Search client, phone, vendor, invoice no, IDÃ¢â‚¬Â¦"
             className="flex-1 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
           />
           <span className="text-[11px] text-slate-400 whitespace-nowrap">
@@ -437,7 +438,7 @@ export default function AdminDashboard() {
               onChange={(e) => setBulkStaffId(e.target.value)}
               className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white outline-none"
             >
-              <option value="">Select staff…</option>
+              <option value="">Select staffÃ¢â‚¬Â¦</option>
               {staffList.filter((st) => st.role === "staff").map((st) => (
                 <option key={st.id} value={st.id}>
                   {st.name} ({st.role})
@@ -458,7 +459,7 @@ export default function AdminDashboard() {
               disabled={assigning || !bulkStaffId}
               className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
             >
-              {assigning ? "Assigning…" : `Assign ${selectedIds.length}`}
+              {assigning ? "AssigningÃ¢â‚¬Â¦" : `Assign ${selectedIds.length}`}
             </button>
             <button
               onClick={() => setSelectedIds([])}
@@ -535,7 +536,7 @@ export default function AdminDashboard() {
                             href={`/admin/invoices/${inv.id}`}
                             className="text-blue-600 hover:underline font-semibold"
                           >
-                            {inv.id.substring(0, 8)}...
+                            {shortInvoiceId(inv)}...
                           </Link>
                           <div className="text-[10px] text-slate-400 truncate max-w-[160px]">
                             {inv.s3Key}
@@ -590,7 +591,7 @@ export default function AdminDashboard() {
                           {inv.ocrData ? (
                             <div>
                               <div className="font-semibold text-slate-900">
-                                ${inv.ocrData.amount || "—"}
+                                ${inv.ocrData.amount || "Ã¢â‚¬â€"}
                               </div>
                               <div className="text-[10px] text-slate-500">
                                 {inv.ocrData.vendor || "No vendor"} &bull; Conf: {inv.ocrData.confidence || "0"}%
@@ -671,7 +672,7 @@ export default function AdminDashboard() {
                 disabled={loadingMore}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition disabled:opacity-50"
               >
-                {loadingMore ? "Loading…" : "Load more"}
+                {loadingMore ? "LoadingÃ¢â‚¬Â¦" : "Load more"}
               </button>
             </div>
           )}
@@ -682,7 +683,7 @@ export default function AdminDashboard() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
               <h3 className="text-base font-bold text-slate-900 mb-2">
-                Assign Invoice {selectedInvoice.id.substring(0, 8)}...
+                Assign Invoice {shortInvoiceId(selectedInvoice)}...
               </h3>
               <p className="text-xs text-slate-500 mb-4">
                 Current Status: <strong className="text-slate-800">{selectedInvoice.status}</strong>.

@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState, Fragment } from "react";
 import Link from "next/link";
@@ -293,7 +294,7 @@ export default function AdminClientsPage() {
       setSuccess(
         staffId
           ? `All invoices of this client will route to ${staffList.find((s) => s.id === staffId)?.name}.`
-          : "Default staff cleared — invoices need manual assignment."
+          : "Default staff cleared Ã¢â‚¬â€ invoices need manual assignment."
       );
     } catch (err: any) {
       setFormError(err.message);
@@ -320,7 +321,7 @@ export default function AdminClientsPage() {
     }
   }
 
-  // Step 2: typed user ID matches → delete (zero-invoice clients only;
+  // Step 2: typed user ID matches Ã¢â€ â€™ delete (zero-invoice clients only;
   // the server 409s anything with history and tells you to archive).
   async function handleRemoveStep2() {
     if (!removing) return;
@@ -363,8 +364,8 @@ export default function AdminClientsPage() {
       setRemoveCounts(null);
       setSuccess(
         to
-          ? `Client "${client.name}" archived — login blocked, existing tokens revoked. History is preserved.`
-          : `Client "${client.name}" unarchived — login restored.`
+          ? `Client "${client.name}" archived Ã¢â‚¬â€ login blocked, existing tokens revoked. History is preserved.`
+          : `Client "${client.name}" unarchived Ã¢â‚¬â€ login restored.`
       );
       load();
     } catch (err: any) {
@@ -417,24 +418,24 @@ export default function AdminClientsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total clients</div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">{loading && clients.length === 0 ? "…" : clients.length}</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{loading && clients.length === 0 ? "Ã¢â‚¬Â¦" : clients.length}</div>
             <div className="text-[11px] text-slate-400 mt-1">Registered accounts</div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total outlets</div>
-            <div className="text-2xl font-bold text-emerald-700 mt-1">{loading && clients.length === 0 ? "…" : allOutlets.length}</div>
+            <div className="text-2xl font-bold text-emerald-700 mt-1">{loading && clients.length === 0 ? "Ã¢â‚¬Â¦" : allOutlets.length}</div>
             <div className="text-[11px] text-slate-400 mt-1">Across all clients</div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Reports</div>
             <div className="text-2xl font-bold text-purple-700 mt-1">
-              {reportCount === null ? "…" : `${reportCount}${reportCapped ? "+" : ""}`}
+              {reportCount === null ? "Ã¢â‚¬Â¦" : `${reportCount}${reportCapped ? "+" : ""}`}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">Uploaded report records</div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Messages</div>
-            <div className="text-2xl font-bold text-amber-600 mt-1">{openThreads === null ? "…" : openThreads}</div>
+            <div className="text-2xl font-bold text-amber-600 mt-1">{openThreads === null ? "Ã¢â‚¬Â¦" : openThreads}</div>
             <div className="text-[11px] text-slate-400 mt-1">Threads awaiting reply</div>
           </div>
         </div>
@@ -460,7 +461,7 @@ export default function AdminClientsPage() {
                   {c.name}
                 </Link>
                 <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                  Joined {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "—"}
+                  Joined {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "Ã¢â‚¬â€"}
                 </div>
               </div>
               <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-600">
@@ -469,10 +470,10 @@ export default function AdminClientsPage() {
                 <span>Invoices: <strong>{c.totalInvoices}</strong></span>
               </div>
               <div className="mt-2 text-[11px] text-slate-500 font-mono">
-                User ID: {c.username || "—"}
+                User ID: {c.username || "Ã¢â‚¬â€"}
               </div>
               <div className="text-[11px] text-slate-500">
-                {[c.phone, c.email].filter(Boolean).join(" · ") || "—"}
+                {[c.phone, c.email].filter(Boolean).join(" Ã‚Â· ") || "Ã¢â‚¬â€"}
               </div>
               <div className="mt-3 flex items-center gap-2">
                 <Link
@@ -502,7 +503,7 @@ export default function AdminClientsPage() {
         </div>
         <div className="space-y-2 mb-8">
           {activity.length === 0 && (
-            <p className="text-xs text-slate-400">{loading ? "Loading activity…" : "No recent activity."}</p>
+            <p className="text-xs text-slate-400">{loading ? "Loading activityÃ¢â‚¬Â¦" : "No recent activity."}</p>
           )}
           {activity.map((log) => (
             <div key={log.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs">
@@ -511,13 +512,13 @@ export default function AdminClientsPage() {
               </div>
               <div className="text-slate-500 mt-0.5">
                 {log.actor ? `${log.actor.name} (${log.actor.role})` : "Automated system"}
-                {log.invoice ? ` · ${log.invoice.clientName} · ` : " · "}
+                {log.invoice ? ` Ã‚Â· ${log.invoice.clientName} Ã‚Â· ` : " Ã‚Â· "}
                 {log.invoice ? (
                   <Link href={`/admin/invoices/${log.invoice.id}`} className="text-blue-600 hover:underline font-mono">
-                    {String(log.invoice.id).substring(0, 8)}…
+                    {shortInvoiceId(log.invoice)}
                   </Link>
                 ) : null}
-                {log.timestamp ? ` · ${timeAgo(log.timestamp)}` : ""}
+                {log.timestamp ? ` Ã‚Â· ${timeAgo(log.timestamp)}` : ""}
               </div>
               {log.note && <div className="text-slate-600 mt-0.5">{log.note}</div>}
             </div>
@@ -569,7 +570,7 @@ export default function AdminClientsPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={8}
-                  placeholder="••••••••"
+                  placeholder="Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -609,7 +610,7 @@ export default function AdminClientsPage() {
                 disabled={saving}
                 className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
               >
-                {saving ? "Creating…" : "Create Client"}
+                {saving ? "CreatingÃ¢â‚¬Â¦" : "Create Client"}
               </button>
             </div>
           </form>
@@ -654,16 +655,16 @@ export default function AdminClientsPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 font-mono">{c.username || <span className="text-amber-600">no login — reset below</span>}</td>
-                      <td className="px-6 py-4 font-mono">{c.phone || "—"}</td>
-                      <td className="px-6 py-4">{c.email || "—"}</td>
+                      <td className="px-6 py-4 font-mono">{c.username || <span className="text-amber-600">no login Ã¢â‚¬â€ reset below</span>}</td>
+                      <td className="px-6 py-4 font-mono">{c.phone || "Ã¢â‚¬â€"}</td>
+                      <td className="px-6 py-4">{c.email || "Ã¢â‚¬â€"}</td>
                       <td className="px-6 py-4">
                         <button
                           onClick={() => toggleOutlets(c.id)}
                           className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-xs font-semibold"
                           title="Manage this client's outlets/shops"
                         >
-                          {(outletsByClient[c.id]?.length ?? "…")} outlets {expandedClient === c.id ? "▾" : "▸"}
+                          {(outletsByClient[c.id]?.length ?? "Ã¢â‚¬Â¦")} outlets {expandedClient === c.id ? "Ã¢â€“Â¾" : "Ã¢â€“Â¸"}
                         </button>
                       </td>
                       <td className="px-6 py-4">
@@ -673,7 +674,7 @@ export default function AdminClientsPage() {
                           className="px-2 py-1 border border-slate-300 rounded text-xs bg-slate-50 outline-none max-w-[150px]"
                           title="Every invoice of this client routes to this staff member"
                         >
-                          <option value="">Manual…</option>
+                          <option value="">ManualÃ¢â‚¬Â¦</option>
                           {staffList.filter((s) => s.role === "staff").map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name}
@@ -705,7 +706,7 @@ export default function AdminClientsPage() {
                             onClick={() => { setResettingId(null); setResetPassword(""); }}
                             className="px-2 py-1 border border-slate-200 rounded text-xs"
                           >
-                            ✕
+                            Ã¢Å“â€¢
                           </button>
                         </div>
                       ) : (
@@ -748,7 +749,7 @@ export default function AdminClientsPage() {
                       <td colSpan={9} className="px-6 py-4">
                         <div className="max-w-2xl">
                           <h4 className="text-xs font-bold text-red-800 mb-1">
-                            Remove “{c.name}” (@{c.username || c.name}) permanently?
+                            Remove Ã¢â‚¬Å“{c.name}Ã¢â‚¬Â (@{c.username || c.name}) permanently?
                           </h4>
                           {removeError && (
                             <div className="mb-2 p-2 rounded-lg bg-white border border-red-300 text-red-700 text-xs">
@@ -758,7 +759,7 @@ export default function AdminClientsPage() {
                           {(removeCounts?.invoices ?? 0) > 0 ? (
                             <>
                               <p className="text-xs text-red-700 mb-2">
-                                This client has {removeCounts?.invoices} invoice(s) — history is
+                                This client has {removeCounts?.invoices} invoice(s) Ã¢â‚¬â€ history is
                                 preserved even for withdrawn ones, so hard delete is blocked.{" "}
                                 Archive instead: login is blocked, tokens die, everything stays.
                               </p>
@@ -768,7 +769,7 @@ export default function AdminClientsPage() {
                                   disabled={removingBusy}
                                   className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold disabled:opacity-50"
                                 >
-                                  {removingBusy ? "Working…" : "Archive instead"}
+                                  {removingBusy ? "WorkingÃ¢â‚¬Â¦" : "Archive instead"}
                                 </button>
                                 <button
                                   onClick={cancelRemove}
@@ -781,8 +782,8 @@ export default function AdminClientsPage() {
                           ) : (
                             <>
                               <p className="text-xs text-red-700 mb-2">
-                                Zero invoices — this destroys {removeCounts?.outlets ?? "…"} outlet(s)
-                                and {removeCounts?.members ?? "…"} team member(s). This cannot be undone.
+                                Zero invoices Ã¢â‚¬â€ this destroys {removeCounts?.outlets ?? "Ã¢â‚¬Â¦"} outlet(s)
+                                and {removeCounts?.members ?? "Ã¢â‚¬Â¦"} team member(s). This cannot be undone.
                               </p>
                           <div className="flex items-center gap-2">
                             <input
@@ -798,7 +799,7 @@ export default function AdminClientsPage() {
                               disabled={removingBusy || !removeConfirm.trim() || removeConfirm.trim() !== (c.username || c.name)}
                               className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold disabled:opacity-40"
                             >
-                              {removingBusy ? "Removing…" : "Confirm delete"}
+                              {removingBusy ? "RemovingÃ¢â‚¬Â¦" : "Confirm delete"}
                             </button>
                             <button
                               onClick={cancelRemove}
@@ -826,7 +827,7 @@ export default function AdminClientsPage() {
                             </div>
                           )}
                           {(outletsByClient[c.id] || []).length === 0 ? (
-                            <p className="text-xs text-slate-400 mb-3">No outlets yet — add the first shop below.</p>
+                            <p className="text-xs text-slate-400 mb-3">No outlets yet Ã¢â‚¬â€ add the first shop below.</p>
                           ) : (
                             <div className="space-y-2 mb-3">
                               {(outletsByClient[c.id] || []).map((o) => (
@@ -834,7 +835,7 @@ export default function AdminClientsPage() {
                                   <div className="flex-1">
                                     <div className="text-xs font-bold text-slate-800">{o.name}</div>
                                     <div className="text-[11px] text-slate-500">
-                                      {[o.address, o.phone].filter(Boolean).join(" • ") || "—"}
+                                      {[o.address, o.phone].filter(Boolean).join(" Ã¢â‚¬Â¢ ") || "Ã¢â‚¬â€"}
                                     </div>
                                     <div className="text-[10px] text-slate-400">
                                       Added by {o.createdByName || "office"}
@@ -846,7 +847,7 @@ export default function AdminClientsPage() {
                                     className="px-2 py-1 border border-slate-300 rounded text-xs bg-purple-50 outline-none max-w-[130px]"
                                     title="Default staff for this outlet (overrides client default on tagged uploads)"
                                   >
-                                    <option value="">Staff…</option>
+                                    <option value="">StaffÃ¢â‚¬Â¦</option>
                                     {staffList.filter((s) => s.role === "staff").map((s) => (
                                       <option key={s.id} value={s.id}>
                                         {s.name}
@@ -889,7 +890,7 @@ export default function AdminClientsPage() {
                               disabled={saving}
                               className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
                             >
-                              {saving ? "Adding…" : "Add Outlet"}
+                              {saving ? "AddingÃ¢â‚¬Â¦" : "Add Outlet"}
                             </button>
                           </form>
                         </div>

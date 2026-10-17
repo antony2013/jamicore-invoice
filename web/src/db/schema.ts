@@ -227,6 +227,8 @@ export const invoiceReports = pgTable(
   // S3 key of the .xlsx file (reports/<invoiceId>/<file>)
   s3Key: text("s3_key").notNull().unique(),
   fileName: text("file_name").notNull(),
+  // Note typed by office staff while uploading (shown to the client app)
+  notes: text("notes"),
   // "generated" = built by the server from invoice data; "uploaded" = staff file
   source: text("source").notNull().default("uploaded"),
   uploadedBy: uuid("uploaded_by").references(() => staff.id),

@@ -82,6 +82,7 @@ export async function GET(request: Request) {
       reports: page.map((r: any) => ({
         id: r.id,
         fileName: r.fileName,
+        notes: r.notes ?? null,
         source: r.source,
         createdAt: r.createdAt,
         uploadedBy: r.uploadedBy,

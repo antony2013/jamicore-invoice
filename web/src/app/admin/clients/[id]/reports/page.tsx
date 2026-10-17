@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
@@ -136,11 +137,11 @@ export default function AdminClientReportsPage({
       >
         <div className="flex items-start justify-between gap-2 mb-1">
           <div className="text-xs text-slate-600">
-            <span className="dc-mono">{inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}</span>
+            <span className="dc-mono">{shortInvoiceId(inv)}</span>
             {inv.createdAt
-              ? <span> · {`${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span>
+              ? <span> Ã‚Â· {`${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}</span>
               : null}
-            <span> · {CATEGORY_LABELS[inv.category] || inv.category || "—"}</span>
+            <span> Ã‚Â· {CATEGORY_LABELS[inv.category] || inv.category || "Ã¢â‚¬â€"}</span>
           </div>
           <span className={`dc-chip flex-shrink-0 ${statusChip(inv.status)}`}>{inv.status}</span>
         </div>
@@ -171,10 +172,10 @@ export default function AdminClientReportsPage({
       }
     >
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="dc-kpi"><span>Total uploaded</span><b>{stats ? stats.total : "…"}</b></div>
-        <div className="dc-kpi"><span>In progress</span><b>{stats ? inProgress : "…"}</b></div>
-        <div className="dc-kpi"><span>Verified</span><b>{stats ? byStatus.verified ?? 0 : "…"}</b></div>
-        <div className="dc-kpi"><span>Finished</span><b>{stats ? finished : "…"}</b></div>
+        <div className="dc-kpi"><span>Total uploaded</span><b>{stats ? stats.total : "Ã¢â‚¬Â¦"}</b></div>
+        <div className="dc-kpi"><span>In progress</span><b>{stats ? inProgress : "Ã¢â‚¬Â¦"}</b></div>
+        <div className="dc-kpi"><span>Verified</span><b>{stats ? byStatus.verified ?? 0 : "Ã¢â‚¬Â¦"}</b></div>
+        <div className="dc-kpi"><span>Finished</span><b>{stats ? finished : "Ã¢â‚¬Â¦"}</b></div>
       </div>
 
       <div className="dc-card p-4">
@@ -208,7 +209,7 @@ export default function AdminClientReportsPage({
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search invoice ID or document type…"
+          placeholder="Search invoice ID or document typeÃ¢â‚¬Â¦"
           className="mt-3 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
         />
       </div>
@@ -222,11 +223,11 @@ export default function AdminClientReportsPage({
       {showSplit ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
-            <h2 className="text-sm font-bold text-slate-800 mb-2">Invoices · {sales.length}</h2>
+            <h2 className="text-sm font-bold text-slate-800 mb-2">Invoices Ã‚Â· {sales.length}</h2>
             <div className="space-y-3">{sales.map(card)}</div>
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-800 mb-2">Bills · {bills.length}</h2>
+            <h2 className="text-sm font-bold text-slate-800 mb-2">Bills Ã‚Â· {bills.length}</h2>
             <div className="space-y-3">{bills.map(card)}</div>
           </div>
         </div>
@@ -238,12 +239,12 @@ export default function AdminClientReportsPage({
         <p className="text-sm text-slate-400 text-center py-8">No invoices match these filters.</p>
       )}
       {loading && invoices.length === 0 && (
-        <p className="text-sm text-slate-400 text-center py-8">Loading invoices…</p>
+        <p className="text-sm text-slate-400 text-center py-8">Loading invoicesÃ¢â‚¬Â¦</p>
       )}
       {nextCursor && (
         <div className="flex justify-center">
           <button onClick={loadMore} disabled={loadingMore} className="dc-btn">
-            {loadingMore ? "Loading…" : "Load more"}
+            {loadingMore ? "LoadingÃ¢â‚¬Â¦" : "Load more"}
           </button>
         </div>
       )}

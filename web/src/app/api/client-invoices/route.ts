@@ -79,14 +79,14 @@ export async function GET(request: Request) {
       ids.length > 0
         ? await db.query.invoiceReports.findMany({
             where: inArray(invoiceReports.invoiceId, ids),
-            columns: { invoiceId: true, fileName: true, createdAt: true },
+            columns: { invoiceId: true, fileName: true, createdAt: true, notes: true },
             orderBy: [desc(invoiceReports.createdAt)],
           })
         : [];
-    const reportByInvoice = new Map<string, { fileName: string; createdAt: Date }>();
+    const reportByInvoice = new Map<string, { fileName: string; createdAt: Date; notes: string | null }>();
     for (const rep of reportRows) {
       if (!reportByInvoice.has(rep.invoiceId)) {
-        reportByInvoice.set(rep.invoiceId, { fileName: rep.fileName, createdAt: rep.createdAt });
+        reportByInvoice.set(rep.invoiceId, { fileName: rep.fileName, createdAt: rep.createdAt, notes: rep.notes ?? null });
       }
     }
     const unreadRows =

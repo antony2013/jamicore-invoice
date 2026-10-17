@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
@@ -105,7 +106,7 @@ export default function AdminClientDetailPage({
         </div>
       )}
       {loading && !client ? (
-        <p className="text-sm text-slate-400 text-center py-8">Loading client…</p>
+        <p className="text-sm text-slate-400 text-center py-8">Loading clientÃ¢â‚¬Â¦</p>
       ) : null}
       {client ? (
         <div className="grid grid-cols-2 gap-4">
@@ -122,13 +123,13 @@ export default function AdminClientDetailPage({
       </div>
       <div className="space-y-2">
         {outlets.length === 0 && (
-          <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets yet."}</p>
+          <p className="text-xs text-slate-400">{loading ? "Loading outletsÃ¢â‚¬Â¦" : "No outlets yet."}</p>
         )}
         {outlets.map((o) => (
           <div key={o.id} className="dc-card p-4">
             <div className="flex items-center gap-3">
               <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center text-sm flex-shrink-0">
-                🏪
+                Ã°Å¸ÂÂª
               </span>
               <div className="min-w-0">
                 <div className="text-sm font-bold text-slate-900">{o.name}</div>
@@ -136,7 +137,7 @@ export default function AdminClientDetailPage({
               </div>
             </div>
             <div className="flex items-center gap-1.5 mt-3 text-[11px] text-slate-500">
-              <span>👤</span>
+              <span>Ã°Å¸â€˜Â¤</span>
               <span>Assigned staff</span>
             </div>
             <div className="text-xs font-semibold text-slate-800">
@@ -144,7 +145,7 @@ export default function AdminClientDetailPage({
             </div>
             {([o.address, o.phone].filter(Boolean).length > 0) && (
               <div className="text-[11px] text-slate-500 mt-1">
-                {[o.address, o.phone].filter(Boolean).join(" · ")}
+                {[o.address, o.phone].filter(Boolean).join(" Ã‚Â· ")}
               </div>
             )}
           </div>
@@ -154,19 +155,19 @@ export default function AdminClientDetailPage({
       <h2 className="text-sm font-bold text-slate-900">Client reports</h2>
       <div className="space-y-2">
         {reports.length === 0 && (
-          <p className="text-xs text-slate-400">{loading ? "Loading reports…" : "No reports shared yet."}</p>
+          <p className="text-xs text-slate-400">{loading ? "Loading reportsÃ¢â‚¬Â¦" : "No reports shared yet."}</p>
         )}
         {reports.map((rep: any) => (
           <div key={rep.id} className="dc-card p-4">
             <div className="flex items-start gap-3">
               <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
-                🗎
+                Ã°Å¸â€”Å½
               </span>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
                 <div className="text-[11px] text-slate-500">
                   {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""}
-                  {rep.invoice ? ` · ${rep.invoice.invoiceNo || String(rep.invoice.id).substring(0, 8)}` : ""}
+                  {rep.invoice ? ` Ã‚Â· ${shortInvoiceId(rep.invoice)}` : ""}
                 </div>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <button
@@ -174,18 +175,18 @@ export default function AdminClientDetailPage({
                     disabled={fetchingUrl === rep.id}
                     className="dc-btn disabled:opacity-50"
                   >
-                    {fetchingUrl === rep.id ? "Opening…" : "👁 View"}
+                    {fetchingUrl === rep.id ? "OpeningÃ¢â‚¬Â¦" : "Ã°Å¸â€˜Â View"}
                   </button>
                   <button
                     onClick={() => openReport(rep, true)}
                     disabled={fetchingUrl === rep.id}
                     className="dc-btn disabled:opacity-50"
                   >
-                    ⬇ Download
+                    Ã¢Â¬â€¡ Download
                   </button>
                   {rep.invoice && (
                     <Link href={`/admin/invoices/${rep.invoice.id}`} className="text-xs text-blue-600 hover:underline">
-                      Open invoice →
+                      Open invoice Ã¢â€ â€™
                     </Link>
                   )}
                 </div>
@@ -195,7 +196,7 @@ export default function AdminClientDetailPage({
         ))}
         {reportsCapped && (
           <Link href={`/admin/clients/${id}/reports`} className="text-xs text-blue-600 hover:underline">
-            View all reports →
+            View all reports Ã¢â€ â€™
           </Link>
         )}
       </div>

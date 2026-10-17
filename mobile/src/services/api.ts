@@ -368,7 +368,7 @@ export type HistoryRow = {
   updatedAt: string;
   statusLogs: Array<{ status: string; note?: string | null; timestamp: string }>;
   /** Office Excel report (null until staff shares one) */
-  report?: { fileName: string; createdAt: string } | null;
+  report?: { fileName: string; createdAt: string; notes?: string | null } | null;
   /** Unread staff messages on this invoice's thread */
   unreadMessages?: number;
 };
@@ -415,7 +415,17 @@ export type InvoiceMessage = {
 /**
  * 14. Office Excel report for one of my invoices (download URL, 5-min TTL).
  */
-export async function getMyInvoiceReportUrl(id: string): Promise<{ fileName: string; createdAt: string; downloadUrl: string } | null> {
+export async function getMyInvoiceReportUrl(
+  id: string
+): Promise<{
+  fileName: string;
+  createdAt: string;
+  /** Optional staff note attached at upload time */
+  notes?: string | null;
+  /** Invoice status title shown beside the report */
+  invoiceStatus?: string | null;
+  downloadUrl: string;
+} | null> {
   const token = requireAuth();
   const response = await apiFetch(`${currentApiBaseUrl}/api/client-invoices/${id}/report`, {
     method: "GET",

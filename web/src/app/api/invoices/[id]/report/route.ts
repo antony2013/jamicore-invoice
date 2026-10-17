@@ -45,7 +45,8 @@ async function replaceReport(
   s3Key: string,
   fileName: string,
   source: string,
-  staffId: string
+  staffId: string,
+  notes: string | null
 ) {
   const prev = await tx.query.invoiceReports.findFirst({
     where: eq(invoiceReports.invoiceId, invoiceId),
@@ -53,7 +54,7 @@ async function replaceReport(
   });
   const [created] = await tx
     .insert(invoiceReports)
-    .values({ invoiceId, s3Key, fileName, source, uploadedBy: staffId })
+    .values({ invoiceId, s3Key, fileName, source, uploadedBy: staffId, notes })
     .returning();
   // Remove the replaced ROW here (same tx); the old S3 object is deleted
   // by the caller AFTER commit (2.3: S3-after-commit rule).
@@ -92,6 +93,8 @@ const postSchema = z.object({
   contentLength: z.number().int().positive().max(MAX_REPORT_BYTES).optional(),
   s3Key: z.string().max(300).optional(),
   fileName: z.string().trim().min(1).max(120).optional(),
+  // Optional staff note shown with the report card + client app
+  notes: z.string().trim().max(2000).optional(),
 });
 
 export async function POST(
@@ -115,7 +118,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    const { action, contentLength, s3Key, fileName } = result.data;
+    const { action, contentLength, s3Key, fileName, notes } = result.data;
 
     if (action === "upload-url") {
       const key = `reports/${id}/${randomUUID()}.xlsx`;
@@ -144,14 +147,15 @@ export async function POST(
         );
       }
       const safeName = fileName.toLowerCase().endsWith(".xlsx") ? fileName : `${fileName}.xlsx`;
+      const note = notes?.trim() ? notes.trim() : null;
       const { created, prevKey } = await db.transaction(async (tx) => {
-        const out = await replaceReport(tx, id, s3Key, safeName, "uploaded", staffId);
+        const out = await replaceReport(tx, id, s3Key, safeName, "uploaded", staffId, note);
         await writeAudit(tx, {
           actor: { type: "staff", id: staffId },
           action: "report.upload",
           entityType: "invoice",
           entityId: id,
-          after: { fileName: out.created.fileName },
+          after: { fileName: out.created.fileName, notes: note },
           ip: getClientIp(request),
         });
         return out;
@@ -201,7 +205,7 @@ export async function POST(
     await putObjectToS3(key, bytes, REPORT_CONTENT_TYPE);
     const stamp = new Date().toISOString().slice(0, 10);
     const { created, prevKey } = await db.transaction(async (tx) => {
-      const out = await replaceReport(tx, id, key, `invoice-report-${stamp}.xlsx`, "generated", staffId);
+      const out = await replaceReport(tx, id, key, `invoice-report-${stamp}.xlsx`, "generated", staffId, null);
       await writeAudit(tx, {
         actor: { type: "staff", id: staffId },
         action: "report.generate",

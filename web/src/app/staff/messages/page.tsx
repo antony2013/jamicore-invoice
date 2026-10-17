@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -298,7 +299,7 @@ export default function StaffMessagesPage() {
     <AppShell
       role="staff"
       title="Messages"
-      subtitle="Invoice Desk · Staff Mailbox"
+      subtitle="Invoice Desk Ã‚Â· Staff Mailbox"
       actions={
         totalUnread > 0 ? (
           <Badge className="bg-blue-600 text-white">{totalUnread} unread</Badge>
@@ -309,7 +310,7 @@ export default function StaffMessagesPage() {
         onClick={openComposer}
         className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition"
       >
-        ✎ Compose Email
+        Ã¢Å“Å½ Compose Email
       </button>
 
       {composing && (
@@ -320,17 +321,17 @@ export default function StaffMessagesPage() {
             onChange={(e) => setComposeInvoiceId(e.target.value)}
             className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white outline-none mb-2"
           >
-            <option value="">Choose invoice…</option>
+            <option value="">Choose invoiceÃ¢â‚¬Â¦</option>
             {composeInvoices.map((i: any) => (
               <option key={i.id} value={i.id}>
-                {i.ocrData?.invoiceNo || String(i.id).substring(0, 8)} · {i.client?.name || ""} · {i.status}
+                {shortInvoiceId(i)} Ã‚Â· {i.client?.name || ""} Ã‚Â· {i.status}
               </option>
             ))}
           </select>
           <textarea
             value={composeBody}
             onChange={(e) => setComposeBody(e.target.value)}
-            placeholder="Write your message…"
+            placeholder="Write your messageÃ¢â‚¬Â¦"
             rows={3}
             maxLength={2000}
             className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
@@ -341,14 +342,14 @@ export default function StaffMessagesPage() {
               disabled={composeBusy || !composeInvoiceId || !composeBody.trim()}
               className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium disabled:opacity-50"
             >
-              {composeBusy ? "Saving…" : "Save draft"}
+              {composeBusy ? "SavingÃ¢â‚¬Â¦" : "Save draft"}
             </button>
             <button
               onClick={sendCompose}
               disabled={composeBusy || !composeInvoiceId || !composeBody.trim()}
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
             >
-              {composeBusy ? "Sending…" : "Send"}
+              {composeBusy ? "SendingÃ¢â‚¬Â¦" : "Send"}
             </button>
             <button onClick={() => setComposing(false)} className="text-xs text-slate-500 underline">
               Cancel
@@ -375,7 +376,7 @@ export default function StaffMessagesPage() {
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search emails, clients, invoice IDs…"
+        placeholder="Search emails, clients, invoice IDsÃ¢â‚¬Â¦"
         className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
       />
 
@@ -396,8 +397,8 @@ export default function StaffMessagesPage() {
                 <div className="text-xs min-w-0">
                   <div className="font-bold text-slate-900">{d.client?.name || "Unknown client"}</div>
                   <div className="text-slate-500">
-                    <span className="dc-mono">{d.invoice?.invoiceNo || (d.invoice ? String(d.invoice.id).substring(0, 8) : "")}</span>
-                    {d.invoice ? ` · ${d.invoice.status}` : ""}
+                    <span className="dc-mono">{d.invoice ? shortInvoiceId(d.invoice) : ""}</span>
+                    {d.invoice ? ` Ã‚Â· ${d.invoice.status}` : ""}
                   </div>
                 </div>
                 <span className="text-[10px] text-slate-400 whitespace-nowrap">
@@ -443,7 +444,7 @@ export default function StaffMessagesPage() {
             <p className="text-sm text-slate-400 text-center py-8">No threads found.</p>
           )}
           {loading && clientGroups.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-8">Loading threads…</p>
+            <p className="text-sm text-slate-400 text-center py-8">Loading threadsÃ¢â‚¬Â¦</p>
           )}
           {clientGroups.map((g) => (
             <Card key={g.id} className="p-4">
@@ -465,10 +466,10 @@ export default function StaffMessagesPage() {
                   </span>
                   <span className="block text-[11px] text-slate-500 mt-0.5">
                     {g.threads.length} thread{g.threads.length === 1 ? "" : "s"}
-                    {g.unread > 0 ? ` · ${g.unread} unread` : ""}
+                    {g.unread > 0 ? ` Ã‚Â· ${g.unread} unread` : ""}
                   </span>
                 </span>
-                <span className="text-slate-400">{expandedClient === g.id ? "▾" : "▸"}</span>
+                <span className="text-slate-400">{expandedClient === g.id ? "Ã¢â€“Â¾" : "Ã¢â€“Â¸"}</span>
               </button>
               {expandedClient === g.id && (
                 <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
@@ -481,12 +482,12 @@ export default function StaffMessagesPage() {
                           className="w-full flex items-center justify-between gap-2 text-left"
                         >
                           <div className="text-xs min-w-0">
-                            <span className="dc-mono">{t.invoiceNo || String(t.invoiceId).substring(0, 8)}</span>
-                            <span className="text-slate-500"> · {t.status}</span>
+                            <span className="dc-mono">{t.invoiceNo || shortInvoiceId({ id: t.invoiceId })}</span>
+                            <span className="text-slate-500"> Ã‚Â· {t.status}</span>
                             <div className="text-[11px] text-slate-500 truncate mt-0.5">
                               {t.lastBody
                                 ? t.lastBody.length > 90
-                                  ? `${t.lastBody.substring(0, 90)}…`
+                                  ? `${t.lastBody.substring(0, 90)}Ã¢â‚¬Â¦`
                                   : t.lastBody
                                 : "Tap to open thread"}
                             </div>
@@ -495,13 +496,13 @@ export default function StaffMessagesPage() {
                             {t.unread > 0 && (
                               <Badge className="bg-blue-600 text-white">{t.unread}</Badge>
                             )}
-                            <span className="text-slate-400">{expandedId === t.invoiceId ? "▾" : "▸"}</span>
+                            <span className="text-slate-400">{expandedId === t.invoiceId ? "Ã¢â€“Â¾" : "Ã¢â€“Â¸"}</span>
                           </span>
                         </button>
                         {expandedId === t.invoiceId && (
                           <div className="mt-3 pt-3 border-t border-slate-100">
                             {threadBusy === t.invoiceId ? (
-                              <p className="text-xs text-slate-400">Loading thread…</p>
+                              <p className="text-xs text-slate-400">Loading threadÃ¢â‚¬Â¦</p>
                             ) : thread.length === 0 ? (
                               <p className="text-xs text-slate-400">No messages yet.</p>
                             ) : (
@@ -531,7 +532,7 @@ export default function StaffMessagesPage() {
                                 id={`reply-${t.invoiceId}`}
                                 value={replies[t.invoiceId] || ""}
                                 onChange={(e) => setReplies((prev) => ({ ...prev, [t.invoiceId]: e.target.value }))}
-                                placeholder="Reply to client…"
+                                placeholder="Reply to clientÃ¢â‚¬Â¦"
                                 className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
                               />
                               <button
@@ -539,11 +540,11 @@ export default function StaffMessagesPage() {
                                 disabled={sending === t.invoiceId || !(replies[t.invoiceId] || "").trim()}
                                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
                               >
-                                {sending === t.invoiceId ? "Sending…" : "Send"}
+                                {sending === t.invoiceId ? "SendingÃ¢â‚¬Â¦" : "Send"}
                               </button>
                             </div>
                             <Link href={`/staff/invoices/${t.invoiceId}`} className="text-xs text-blue-600 hover:underline mt-2 inline-block">
-                              Open invoice →
+                              Open invoice Ã¢â€ â€™
                             </Link>
                           </div>
                         )}

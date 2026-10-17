@@ -72,7 +72,7 @@ type HistoryInvoice = {
   updatedAt: string;
   statusLogs: Array<{ status: string; note?: string | null; timestamp: string }>;
   /** Office Excel report (null until staff shares one) */
-  report?: { fileName: string; createdAt: string } | null;
+  report?: { fileName: string; createdAt: string; notes?: string | null } | null;
   /** Unread staff messages on this invoice's thread */
   unreadMessages?: number;
 };
@@ -1632,6 +1632,14 @@ export default function App() {
                       {selected.report ? (
                         <>
                           <Text style={styles.detailNoteText}>{selected.report.fileName}</Text>
+                          {selected.report.notes ? (
+                            <Text style={styles.historyMeta}>
+                              Office note: {selected.report.notes}
+                            </Text>
+                          ) : null}
+                          {selected.status ? (
+                            <Text style={styles.historyMeta}>Status: {selected.status}</Text>
+                          ) : null}
                           <Text style={styles.historyMeta}>
                             Shared {new Date(selected.report.createdAt).toLocaleString()}
                           </Text>

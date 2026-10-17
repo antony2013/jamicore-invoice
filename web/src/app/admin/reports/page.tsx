@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -8,6 +9,7 @@ import { Card } from "@/components/ui/card";
 type ReportEntry = {
   id: string;
   fileName: string;
+  notes: string | null;
   source: string;
   createdAt: string;
   uploadedBy: string | null;
@@ -142,10 +144,10 @@ export default function AdminReportsPage() {
         href="/admin/dashboard"
         className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition"
       >
-        ⬆ Upload Report
+        Ã¢Â¬â€  Upload Report
       </Link>
       <p className="text-[11px] text-slate-400">
-        Reports attach to invoices — pick an invoice in the queue, then generate or upload its Excel report there.
+        Reports attach to invoices Ã¢â‚¬â€ pick an invoice in the queue, then generate or upload its Excel report there.
       </p>
 
       <h2 className="text-sm font-bold text-slate-900">Client report library</h2>
@@ -173,28 +175,31 @@ export default function AdminReportsPage() {
           <p className="text-sm text-slate-400 text-center py-8">No reports shared yet.</p>
         )}
         {loading && reports.length === 0 && (
-          <p className="text-sm text-slate-400 text-center py-8">Loading library…</p>
+          <p className="text-sm text-slate-400 text-center py-8">Loading libraryÃ¢â‚¬Â¦</p>
         )}
         {reports.map((rep) => (
           <Card key={rep.id} className="p-4">
             <div className="flex items-start gap-3">
               <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
-                🗎
+                Ã°Å¸â€”Å½
               </span>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
                 <div className="text-[11px] text-slate-500">
-                  {rep.client?.name || "Unknown"} ·{" "}
-                  {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""} ·{" "}
+                  {rep.client?.name || "Unknown"} Ã‚Â·{" "}
+                  {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""} Ã‚Â·{" "}
                   {rep.source === "generated" ? "Auto-generated" : "Staff upload"}
                 </div>
                 {rep.invoice && (
                   <div className="text-[11px] text-slate-500">
                     <span className="dc-mono">
-                      {rep.invoice.invoiceNo || String(rep.invoice.id).substring(0, 8)}
+                      {shortInvoiceId(rep.invoice)}
                     </span>{" "}
-                    · {rep.invoice.status}
+                    Ã‚Â· {rep.invoice.status}
                   </div>
+                )}
+                {rep.notes && (
+                  <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">Ã°Å¸â€œÂ {rep.notes}</div>
                 )}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <button
@@ -202,14 +207,14 @@ export default function AdminReportsPage() {
                     disabled={fetchingUrl === rep.id}
                     className="dc-btn disabled:opacity-50"
                   >
-                    {fetchingUrl === rep.id ? "Opening…" : "👁 View"}
+                    {fetchingUrl === rep.id ? "OpeningÃ¢â‚¬Â¦" : "Ã°Å¸â€˜Â View"}
                   </button>
                   <button
                     onClick={() => openReport(rep, true)}
                     disabled={fetchingUrl === rep.id}
                     className="dc-btn disabled:opacity-50"
                   >
-                    ⬇ Download
+                    Ã¢Â¬â€¡ Download
                   </button>
                   <button
                     onClick={() => handleDelete(rep)}
@@ -220,11 +225,11 @@ export default function AdminReportsPage() {
                         : "border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
                     }`}
                   >
-                    {deletingId === rep.id ? "Deleting…" : confirmId === rep.id ? "Confirm delete" : "Delete"}
+                    {deletingId === rep.id ? "DeletingÃ¢â‚¬Â¦" : confirmId === rep.id ? "Confirm delete" : "Delete"}
                   </button>
                   {rep.invoice && (
                     <Link href={`/admin/invoices/${rep.invoice.id}`} className="text-xs text-blue-600 hover:underline">
-                      Open invoice →
+                      Open invoice Ã¢â€ â€™
                     </Link>
                   )}
                 </div>
@@ -237,7 +242,7 @@ export default function AdminReportsPage() {
       {nextCursor && (
         <div className="flex justify-center">
           <button onClick={loadMore} disabled={loadingMore} className="dc-btn">
-            {loadingMore ? "Loading…" : "Load more"}
+            {loadingMore ? "LoadingÃ¢â‚¬Â¦" : "Load more"}
           </button>
         </div>
       )}

@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
@@ -42,14 +43,15 @@ export default function StaffInvoiceVerifyPage({
   const [deleting, setDeleting] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
-  // Client↔staff thread
+  // ClientÃ¢â€ â€staff thread
   const [messages, setMessages] = useState<any[]>([]);
   const [msgBody, setMsgBody] = useState("");
   const [msgSending, setMsgSending] = useState(false);
-  // Excel report (office work product → client downloads it)
+  // Excel report (office work product Ã¢â€ â€™ client downloads it)
   const [report, setReport] = useState<any | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
   const [reportFile, setReportFile] = useState<File | null>(null);
+  const [reportNotes, setReportNotes] = useState("");
 
   const STAFF_DELETABLE = ["assigned", "in_review", "needs_info"];
   const canDelete = !!invoice && STAFF_DELETABLE.includes(invoice.status);
@@ -105,7 +107,7 @@ export default function StaffInvoiceVerifyPage({
       // 2. Fetch fresh short-lived signed GET URL (5 min TTL)
       await fetchImage();
 
-      // 3. Thread + current Excel report (independent — never block the page)
+      // 3. Thread + current Excel report (independent Ã¢â‚¬â€ never block the page)
       try {
         const [msgRes, repRes] = await Promise.all([
           fetch(`/api/invoices/${id}/messages`),
@@ -220,7 +222,7 @@ export default function StaffInvoiceVerifyPage({
 
   // "Needs info" carries the typed question to the client: the message box
   // text (when present) becomes BOTH the thread message AND the status note,
-  // so the client sees exactly what is being asked — no more dead end.
+  // so the client sees exactly what is being asked Ã¢â‚¬â€ no more dead end.
   async function handleNeedsInfo() {
     const question = msgBody.trim() || "Staff requested additional info";
     setMsgSending(true);
@@ -265,7 +267,7 @@ export default function StaffInvoiceVerifyPage({
   }
 
   // Excel report: Generate (server builds from invoice data) or Upload
-  // (staff .xlsx file → presigned PUT → confirm replaces current report).
+  // (staff .xlsx file Ã¢â€ â€™ presigned PUT Ã¢â€ â€™ confirm replaces current report).
   async function handleGenerateReport() {
     setReportBusy(true);
     setError(null);
@@ -278,7 +280,7 @@ export default function StaffInvoiceVerifyPage({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to generate report");
       setReport(data.report);
-      setSuccess("Excel report generated — the client can download it now.");
+      setSuccess("Excel report generated Ã¢â‚¬â€ the client can download it now.");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -327,13 +329,19 @@ export default function StaffInvoiceVerifyPage({
       const confRes = await fetch(`/api/invoices/${id}/report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "confirm", s3Key: urlData.s3Key, fileName: reportFile.name }),
+        body: JSON.stringify({
+          action: "confirm",
+          s3Key: urlData.s3Key,
+          fileName: reportFile.name,
+          notes: reportNotes.trim() || undefined,
+        }),
       });
       const confData = await confRes.json();
       if (!confRes.ok) throw new Error(confData.error || "Failed to attach report");
       setReport(confData.report);
       setReportFile(null);
-      setSuccess("Excel report uploaded — the client can download it now.");
+      setReportNotes("");
+      setSuccess("Excel report uploaded Ã¢â‚¬â€ the client can download it now.");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -373,8 +381,8 @@ export default function StaffInvoiceVerifyPage({
   return (
     <AppShell
       role="staff"
-      title={`Verify ${invoice.invoiceNo || invoice.id.substring(0, 8)}`}
-      subtitle={`${invoice.client?.name || "Unknown client"} — Status: ${invoice.status}`}
+      title={`Verify ${shortInvoiceId(invoice)}`}
+      subtitle={`${invoice.client?.name || "Unknown client"} Ã¢â‚¬â€ Status: ${invoice.status}`}
       actions={
         <Link href="/staff/dashboard" className="dc-btn">
           <ArrowLeft className="mr-1 inline h-3.5 w-3.5" /> Back to My Invoices
@@ -448,7 +456,7 @@ export default function StaffInvoiceVerifyPage({
               <span className="text-slate-400 font-medium">Outlet:</span>
               {invoice.outlet ? (
                 <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
-                  ◍ {invoice.outlet.name}
+                  Ã¢â€”Â {invoice.outlet.name}
                 </span>
               ) : (
                 <span className="text-slate-400 italic">No outlet specified</span>
@@ -456,10 +464,10 @@ export default function StaffInvoiceVerifyPage({
               <span className="text-slate-400 font-medium ml-2">Uploaded by:</span>
               {invoice.uploadedBy ? (
                 <span className="inline-flex items-center px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 text-[11px] font-semibold">
-                  📤 {invoice.uploadedBy.name} (team)
+                  Ã°Å¸â€œÂ¤ {invoice.uploadedBy.name} (team)
                 </span>
               ) : (
-                <span className="text-slate-500">📤 Owner</span>
+                <span className="text-slate-500">Ã°Å¸â€œÂ¤ Owner</span>
               )}
             </div>
             {/* OCR-failed banner: explains blank fields */}
@@ -469,7 +477,7 @@ export default function StaffInvoiceVerifyPage({
                 <div>
                   <h4 className="text-sm font-bold text-amber-900">No extracted data yet</h4>
                   <p className="text-xs text-amber-800">
-                    Automatic extraction failed or is pending — please enter the invoice fields manually below.
+                    Automatic extraction failed or is pending Ã¢â‚¬â€ please enter the invoice fields manually below.
                   </p>
                 </div>
               </div>
@@ -670,7 +678,7 @@ export default function StaffInvoiceVerifyPage({
                         onClick={handleNeedsInfo}
                         disabled={saving || msgSending}
                         className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition"
-                        title="Type the question in the message box below first — it goes to the client with this status"
+                        title="Type the question in the message box below first Ã¢â‚¬â€ it goes to the client with this status"
                       >
                         Needs Info &rarr; needs_info
                       </button>
@@ -742,7 +750,7 @@ export default function StaffInvoiceVerifyPage({
                   }`}
                 >
                   {deleting
-                    ? "Deleting…"
+                    ? "DeletingÃ¢â‚¬Â¦"
                     : deleteArmed
                       ? "Confirm delete with reason"
                       : "Delete Invoice"}
@@ -758,7 +766,7 @@ export default function StaffInvoiceVerifyPage({
                     Staff Report Upload
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Upload or replace this invoice’s Excel report. Only the current report is kept.
+                    Upload or replace this invoiceÃ¢â‚¬â„¢s Excel report. Only the current report is kept.
                   </p>
                 </div>
                 {report?.downloadUrl && (
@@ -776,9 +784,12 @@ export default function StaffInvoiceVerifyPage({
                   <div className="text-xs">
                     <div className="font-bold text-emerald-900">{report.fileName}</div>
                     <div className="text-emerald-700">
-                      {report.source === "generated" ? "Auto-generated" : "Staff upload"} ·{" "}
+                      {report.source === "generated" ? "Auto-generated" : "Staff upload"} Ã‚Â·{" "}
                       {new Date(report.createdAt).toLocaleString()}
                     </div>
+                    {report.notes && (
+                      <div className="mt-1 whitespace-pre-wrap text-emerald-800">Ã°Å¸â€œÂ {report.notes}</div>
+                    )}
                   </div>
                   {report.downloadUrl && (
                     <button
@@ -799,7 +810,7 @@ export default function StaffInvoiceVerifyPage({
                   disabled={reportBusy}
                   className="w-full py-2 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium disabled:opacity-50"
                 >
-                  {reportBusy ? "Working…" : "⚡ Generate from invoice data"}
+                  {reportBusy ? "WorkingÃ¢â‚¬Â¦" : "Ã¢Å¡Â¡ Generate from invoice data"}
                 </button>
                 <div className="flex items-center gap-2">
                   <input
@@ -816,17 +827,25 @@ export default function StaffInvoiceVerifyPage({
                     Upload report
                   </button>
                 </div>
+                <textarea
+                  value={reportNotes}
+                  onChange={(e) => setReportNotes(e.target.value)}
+                  maxLength={2000}
+                  rows={2}
+                  placeholder="Report notes (optional) Ã¢â‚¬â€ shown with the report to the client"
+                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+                />
               </div>
             </div>
 
-            {/* Client↔staff conversation thread */}
+            {/* ClientÃ¢â€ â€staff conversation thread */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-1 flex items-center gap-1.5">
-                💬 Client Conversation
+                Ã°Å¸â€™Â¬ Client Conversation
               </h3>
               <p className="text-[11px] text-slate-400 mb-3">
                 {invoice.status === "in_review"
-                  ? "Type the question here first, then press Needs Info above — it goes to the client."
+                  ? "Type the question here first, then press Needs Info above Ã¢â‚¬â€ it goes to the client."
                   : "Replies from the client appear here. For Needs Info, switch the invoice back to that status first."}
               </p>
               <div className="space-y-2 mb-3 max-h-64 overflow-y-auto">
@@ -844,7 +863,7 @@ export default function StaffInvoiceVerifyPage({
                     >
                       <div className={`font-bold mb-0.5 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-500"}`}>
                         {m.senderName}
-                        {m.kind === "request_report" && " · 📄 requested the report"}
+                        {m.kind === "request_report" && " Ã‚Â· Ã°Å¸â€œâ€ž requested the report"}
                       </div>
                       <div>{m.body}</div>
                       <div className={`mt-1 text-[10px] ${m.senderType === "staff" ? "text-blue-200" : "text-slate-400"}`}>
@@ -858,7 +877,7 @@ export default function StaffInvoiceVerifyPage({
                 <input
                   value={msgBody}
                   onChange={(e) => setMsgBody(e.target.value)}
-                  placeholder="Write to the client… (max 500)"
+                  placeholder="Write to the clientÃ¢â‚¬Â¦ (max 500)"
                   maxLength={500}
                   className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500"
                 />

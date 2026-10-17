@@ -1,4 +1,5 @@
 "use client";
+import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -93,7 +94,7 @@ export default function StaffDashboard() {
           : inv.status === "in_review"
             ? "Invoice requires review"
             : "Client reply needs review",
-      subtitle: `${inv.client?.name || "Unknown client"} · ${inv.ocrData?.invoiceNo || String(inv.id).substring(0, 8)}`,
+      subtitle: `${inv.client?.name || "Unknown client"} Ã‚Â· ${shortInvoiceId(inv)}`,
       when: timeAgo(inv.updatedAt || inv.createdAt),
     }))
     .sort((a, b) => {
@@ -111,7 +112,7 @@ export default function StaffDashboard() {
       actions={
         <div className="flex items-center gap-2">
           <a href="#notifications" className="dc-btn" title="Action-needed items">
-            🔔{actionItems.length > 0 ? ` ${actionItems.length}` : ""}
+            Ã°Å¸â€â€{actionItems.length > 0 ? ` ${actionItems.length}` : ""}
           </a>
           <button onClick={loadAssignedInvoices} className="dc-btn" type="button">
             <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -134,7 +135,7 @@ export default function StaffDashboard() {
           </div>
           {actionItems.length === 0 ? (
             <p className="text-xs text-slate-400">
-              {loading ? "Checking the assigned queue…" : "Nothing needs action right now."}
+              {loading ? "Checking the assigned queueÃ¢â‚¬Â¦" : "Nothing needs action right now."}
             </p>
           ) : (
             <div className="space-y-2">
@@ -146,7 +147,7 @@ export default function StaffDashboard() {
                 >
                   <div className="text-xs">
                     <div className="font-bold text-slate-900">{a.title}</div>
-                    <div className="text-slate-500">{a.subtitle}{a.when ? ` · ${a.when}` : ""}</div>
+                    <div className="text-slate-500">{a.subtitle}{a.when ? ` Ã‚Â· ${a.when}` : ""}</div>
                   </div>
                   <span className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0" />
                 </Link>
@@ -159,25 +160,25 @@ export default function StaffDashboard() {
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">To Start</div>
             <div className="text-2xl font-bold text-purple-700 mt-1">
-              {stats ? stats.byStatus.assigned ?? 0 : "…"}
+              {stats ? stats.byStatus.assigned ?? 0 : "Ã¢â‚¬Â¦"}
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">In Progress</div>
             <div className="text-2xl font-bold text-amber-600 mt-1">
-              {stats ? (stats.byStatus.in_review ?? 0) + (stats.byStatus.needs_info ?? 0) : "…"}
+              {stats ? (stats.byStatus.in_review ?? 0) + (stats.byStatus.needs_info ?? 0) : "Ã¢â‚¬Â¦"}
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Verified</div>
             <div className="text-2xl font-bold text-blue-700 mt-1">
-              {stats ? stats.byStatus.verified ?? 0 : "…"}
+              {stats ? stats.byStatus.verified ?? 0 : "Ã¢â‚¬Â¦"}
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Finished ✅</div>
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Finished Ã¢Å“â€¦</div>
             <div className="text-2xl font-bold text-emerald-600 mt-1">
-              {stats ? (stats.byStatus.collected ?? 0) + (stats.byStatus.disputed ?? 0) : "…"}
+              {stats ? (stats.byStatus.collected ?? 0) + (stats.byStatus.disputed ?? 0) : "Ã¢â‚¬Â¦"}
             </div>
           </div>
         </div>
