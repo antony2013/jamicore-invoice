@@ -262,8 +262,8 @@ export default function StaffClientDashboardPage({
   return (
     <AppShell
       role="staff"
-      title="Reports Uploaded"
-      subtitle={`Client: ${clientName ?? "…"} — your assigned invoices only`}
+      title={clientName ?? "Client"}
+      subtitle="Client account overview"
       nav={[
         { href: "/staff/dashboard", label: "Dashboard" },
         { href: `/staff/messages?client=${id}`, label: "Messages" },
@@ -271,58 +271,88 @@ export default function StaffClientDashboardPage({
       ]}
       actions={
         <Link href="/staff/dashboard#client-cards" className="dc-btn">
-          Back to Clients
+          ← Back to clients
         </Link>
       }
     >
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="dc-kpi"><span>Total uploaded</span><b>{stats ? stats.total : "…"}</b></div>
-        <div className="dc-kpi"><span>In progress</span><b>{stats ? inProgress : "…"}</b></div>
-        <div className="dc-kpi"><span>Verified</span><b>{stats ? byStatus.verified ?? 0 : "…"}</b></div>
-        <div className="dc-kpi"><span>Finished</span><b>{stats ? finished : "…"}</b></div>
+      <div className="dc-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center text-lg flex-shrink-0">
+              🏪
+            </span>
+            <div className="min-w-0">
+              <div className="text-base font-bold text-slate-900 truncate">{clientName ?? "Client"}</div>
+              <div className="text-[11px] text-slate-500">Client account overview · your assigned invoices only</div>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 whitespace-nowrap">
+            Active
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="dc-kpi"><span>Outlets</span><b>{outletGroups.length}</b></div>
+        <div className="dc-kpi"><span>Reports</span><b>{checkingReports ? "…" : reportIds.length}</b></div>
       </div>
 
       <h2 className="text-sm font-bold text-slate-900">Client workspace</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <a href="#outlets" className="dc-card p-4 hover:shadow-md transition">
-          <div className="text-sm font-bold text-slate-900">Outlets</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            {outletGroups.length} outlet{outletGroups.length === 1 ? "" : "s"} in your queue
-          </div>
-        </a>
-        <a href="#reports" className="dc-card p-4 hover:shadow-md transition">
-          <div className="text-sm font-bold text-slate-900">Reports</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            {checkingReports ? "Checking…" : `${reportIds.length} file${reportIds.length === 1 ? "" : "s"} shared`}
-          </div>
-        </a>
-        <a href={`/staff/messages?client=${id}`} className="dc-card p-4 hover:shadow-md transition">
-          <div className="text-sm font-bold text-slate-900">Messages</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">Conversation threads for this client</div>
-        </a>
-      </div>
-
-      <h2 id="outlets" className="text-sm font-bold text-slate-900 scroll-mt-4">Outlets</h2>
-      <div className="space-y-2">
-        {outletGroups.length === 0 && (
-          <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets in your queue."}</p>
-        )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {outletGroups.map((o) => (
           <div key={o.id} className="dc-card p-4">
-            <div className="flex items-center gap-3">
-              <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center text-sm flex-shrink-0">
-                🏪
-              </span>
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-slate-900">{o.name}</div>
-                <div className="text-[11px] text-slate-500">{clientName || ""}</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 flex items-center justify-center text-sm flex-shrink-0">
+                  🏪
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-slate-900 truncate">{o.name}</div>
+                </div>
               </div>
+              <span className="ml-2 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-500 text-white flex-shrink-0">
+                {o.count}
+              </span>
             </div>
-            <div className="text-[11px] text-slate-500 mt-2">
-              {o.count} invoice{o.count === 1 ? "" : "s"} assigned to you
+            <div className="flex items-center gap-2 mt-3 text-[11px] text-slate-500">
+              <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0">
+                🧍
+              </span>
+              Assigned staff: You · {o.count} invoice{o.count === 1 ? "" : "s"}
             </div>
           </div>
         ))}
+        {outletGroups.length === 0 && (
+          <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets in your queue."}</p>
+        )}
+      </div>
+
+      <h2 id="reports" className="text-sm font-bold text-slate-900 scroll-mt-4">Client reports</h2>
+      <div className="space-y-2">
+        {Object.entries(reportCache).filter(([, r]) => r).length === 0 ? (
+          <p className="text-xs text-slate-400">{checkingReports ? "Checking…" : "No reports shared yet."}</p>
+        ) : (
+          Object.entries(reportCache)
+            .filter(([, r]) => r)
+            .map(([invId, rep]) => (
+              <div key={invId} className="dc-card p-3 flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-sm flex-shrink-0">
+                  🗎
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-slate-800 truncate">{rep.fileName}</div>
+                  <div className="text-[10px] text-slate-400">
+                    {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""}
+                  </div>
+                </div>
+                {rep.downloadUrl && (
+                  <a href={rep.downloadUrl} target="_blank" rel="noopener" className="text-[11px] text-blue-600 hover:underline whitespace-nowrap">
+                    View
+                  </a>
+                )}
+              </div>
+            ))
+        )}
       </div>
 
       <Card className="p-4">
@@ -396,7 +426,7 @@ export default function StaffClientDashboardPage({
         </div>
       )}
 
-      <h2 id="reports" className="text-sm font-bold text-slate-900 scroll-mt-4">Reports &amp; Documents</h2>
+      <h2 className="text-sm font-bold text-slate-900 scroll-mt-4">Reports &amp; Documents</h2>
       <p className="text-[11px] text-slate-500">Upload, organize and view this client&apos;s reports.</p>
       {invoices.length > 0 ? (
         <Link
