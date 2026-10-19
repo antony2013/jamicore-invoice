@@ -1,5 +1,4 @@
 "use client";
-import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -134,11 +133,6 @@ export default function AdminReportsPage() {
       role="admin"
       title="Reports & Documents"
       subtitle="Upload, organize and view client reports."
-      actions={
-        <Link href="/admin/dashboard" className="dc-btn">
-          Open Invoice Queue
-        </Link>
-      }
     >
       <Link
         href="/admin/dashboard"
@@ -146,9 +140,6 @@ export default function AdminReportsPage() {
       >
         ⬆ Upload Report
       </Link>
-      <p className="text-[11px] text-slate-400">
-        Reports attach to invoices — pick an invoice in the queue, then generate or upload its Excel report there.
-      </p>
 
       <h2 className="text-sm font-bold text-slate-900">Client report library</h2>
       <select
@@ -187,20 +178,14 @@ export default function AdminReportsPage() {
                 <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
                 <div className="text-[11px] text-slate-500">
                   {rep.client?.name || "Unknown"} ·{" "}
-                  {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : ""} ·{" "}
-                  {rep.source === "generated" ? "Auto-generated" : "Staff upload"}
+                  {rep.createdAt
+                    ? new Date(rep.createdAt).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : ""}
                 </div>
-                {rep.invoice && (
-                  <div className="text-[11px] text-slate-500">
-                    <span className="dc-mono">
-                      {shortInvoiceId(rep.invoice)}
-                    </span>{" "}
-                    · {rep.invoice.status}
-                  </div>
-                )}
-                {rep.notes && (
-                  <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">📝 {rep.notes}</div>
-                )}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <button
                     onClick={() => openReport(rep, false)}
@@ -225,13 +210,8 @@ export default function AdminReportsPage() {
                         : "border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
                     }`}
                   >
-                    {deletingId === rep.id ? "Deleting…" : confirmId === rep.id ? "Confirm delete" : "Delete"}
+                    {deletingId === rep.id ? "Deleting…" : confirmId === rep.id ? "Confirm delete" : "🗑 Delete"}
                   </button>
-                  {rep.invoice && (
-                    <Link href={`/admin/invoices/${rep.invoice.id}`} className="text-xs text-blue-600 hover:underline">
-                      Open invoice →
-                    </Link>
-                  )}
                 </div>
               </div>
             </div>
