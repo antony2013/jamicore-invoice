@@ -136,7 +136,8 @@ cd web
 npm run db:migrate   # applies pending files in numeric order; never edit old ones
 ```
 Current chain: `0000`–`0012` (Phase 1), `0013` (audit_log + soft-delete),
-`0014` (perf indexes), `0015` (message drafts). Review generated SQL before applying.
+`0014` (perf indexes), `0015` (message drafts), `0016` (report notes).
+Review generated SQL before applying.
 
 ### 4. Rollback (restore from dump)
 ```bash
