@@ -59,6 +59,51 @@ export default function StaffMessagesPage() {
   // Draft editing
   const [draftEdits, setDraftEdits] = useState<Record<string, string>>({});
   const [clientFilter, setClientFilter] = useState<string | null>(null);
+  const [replyFiles, setReplyFiles] = useState<Record<string, File | null>>({});
+  const [composeFile, setComposeFile] = useState<File | null>(null);
+
+  const REPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const MAX_REPORT_BYTES = 10 * 1024 * 1024;
+
+  // Attachments in a thread are office reports: upload the .xlsx through the
+  // report pipeline (presign → PUT → confirm) so the client sees it in
+  // Reports, then post a message that points at it.
+  async function uploadReportAttachment(invoiceId: string, file: File, note: string) {
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      throw new Error("Only .xlsx reports can be attached.");
+    }
+    if (file.size > MAX_REPORT_BYTES) {
+      throw new Error("Report must be under 10 MB.");
+    }
+    const startRes = await fetch(`/api/invoices/${invoiceId}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "upload-url", contentLength: file.size }),
+    });
+    const startData = await startRes.json();
+    if (!startRes.ok) throw new Error(startData.error || "Could not start report upload");
+
+    const putRes = await fetch(startData.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": REPORT_MIME },
+      body: file,
+    });
+    if (!putRes.ok) throw new Error("Report upload failed. Try again.");
+
+    const confirmRes = await fetch(`/api/invoices/${invoiceId}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "confirm",
+        s3Key: startData.s3Key,
+        fileName: file.name,
+        notes: note || undefined,
+      }),
+    });
+    const confirmData = await confirmRes.json();
+    if (!confirmRes.ok) throw new Error(confirmData.error || "Could not save report");
+    return confirmData.report as { fileName: string };
+  }
 
   function threadQuery(): string {
     const p = new URLSearchParams();
@@ -114,10 +159,16 @@ export default function StaffMessagesPage() {
   }
 
   async function sendReply(invoiceId: string, draftId?: string) {
-    const body = (replies[invoiceId] || "").trim();
-    if (!body) return;
+    const note = (replies[invoiceId] || "").trim();
+    const file = replyFiles[invoiceId] || null;
+    if (!note && !file) return;
     setSending(invoiceId);
     try {
+      let body = note;
+      if (file) {
+        const report = await uploadReportAttachment(invoiceId, file, note);
+        body = `${note ? `${note}\n\n` : ""}📎 Report sent: ${report.fileName}`.slice(0, 500);
+      }
       const res = await fetch(`/api/invoices/${invoiceId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,10 +178,13 @@ export default function StaffMessagesPage() {
       if (!res.ok) throw new Error(data.error || "Failed to send");
       setMessages((prev) => ({ ...prev, [invoiceId]: [...(prev[invoiceId] || []), data.message] }));
       setReplies((prev) => ({ ...prev, [invoiceId]: "" }));
+      setReplyFiles((prev) => ({ ...prev, [invoiceId]: null }));
       if (draftId) {
         await fetch(`/api/drafts/${draftId}`, { method: "DELETE" });
         setDrafts((prev) => prev.filter((d) => d.id !== draftId));
       }
+      // The thread now awaits the client's reply, so it leaves Inbox.
+      setFolder("sent");
       load();
     } catch (err: any) {
       setLoadError(err.message || "Failed to send message.");
@@ -177,17 +231,24 @@ export default function StaffMessagesPage() {
   }
 
   async function sendCompose() {
-    if (!composeInvoiceId || !composeBody.trim()) return;
+    const note = composeBody.trim();
+    if (!composeInvoiceId || (!note && !composeFile)) return;
     setComposeBusy(true);
     try {
+      let body = note;
+      if (composeFile) {
+        const report = await uploadReportAttachment(composeInvoiceId, composeFile, note);
+        body = `${note ? `${note}\n\n` : ""}📎 Report sent: ${report.fileName}`.slice(0, 500);
+      }
       const res = await fetch(`/api/invoices/${composeInvoiceId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: composeBody.trim() }),
+        body: JSON.stringify({ body }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send");
       setComposeBody("");
+      setComposeFile(null);
       setComposing(false);
       setFolder("sent");
     } catch (err: any) {
@@ -348,6 +409,28 @@ export default function StaffMessagesPage() {
             maxLength={2000}
             className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
           />
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <label className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50">
+              📎 Attach report
+              <input
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  setComposeFile(e.target.files?.[0] ?? null);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {composeFile && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-[11px] text-slate-700">
+                {composeFile.name}
+                <button onClick={() => setComposeFile(null)} className="text-slate-500 hover:text-slate-800" aria-label="Remove attachment">
+                  ×
+                </button>
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 mt-2">
             <button
               onClick={saveComposeDraft}
@@ -358,10 +441,10 @@ export default function StaffMessagesPage() {
             </button>
             <button
               onClick={sendCompose}
-              disabled={composeBusy || !composeInvoiceId || !composeBody.trim()}
+              disabled={composeBusy || !composeInvoiceId || (!composeBody.trim() && !composeFile)}
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50"
             >
-              {composeBusy ? "Sending…" : "Send"}
+              {composeBusy ? "Sending…" : composeFile ? "Send report" : "Send"}
             </button>
             <button onClick={() => setComposing(false)} className="text-xs text-slate-500 underline">
               Cancel
@@ -539,20 +622,55 @@ export default function StaffMessagesPage() {
                                 ))}
                               </div>
                             )}
+                            {replyFiles[t.invoiceId] && (
+                              <div className="mb-2 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-[11px] text-slate-700">
+                                📎 {replyFiles[t.invoiceId]!.name}
+                                <button
+                                  onClick={() => setReplyFiles((prev) => ({ ...prev, [t.invoiceId]: null }))}
+                                  className="text-slate-500 hover:text-slate-800"
+                                  aria-label="Remove attachment"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2">
+                              <label
+                                className="inline-flex items-center justify-center w-9 h-9 border border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 flex-shrink-0"
+                                title="Attach report (.xlsx)"
+                              >
+                                📎
+                                <input
+                                  type="file"
+                                  accept=".xlsx"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const picked = e.target.files?.[0] ?? null;
+                                    setReplyFiles((prev) => ({ ...prev, [t.invoiceId]: picked }));
+                                    e.target.value = "";
+                                  }}
+                                />
+                              </label>
                               <input
                                 id={`reply-${t.invoiceId}`}
                                 value={replies[t.invoiceId] || ""}
                                 onChange={(e) => setReplies((prev) => ({ ...prev, [t.invoiceId]: e.target.value }))}
-                                placeholder="Reply to client…"
+                                placeholder={replyFiles[t.invoiceId] ? "Add a note with the report…" : "Reply to client…"}
                                 className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
                               />
                               <button
                                 onClick={() => sendReply(t.invoiceId)}
-                                disabled={sending === t.invoiceId || !(replies[t.invoiceId] || "").trim()}
+                                disabled={
+                                  sending === t.invoiceId ||
+                                  (!(replies[t.invoiceId] || "").trim() && !replyFiles[t.invoiceId])
+                                }
                                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
                               >
-                                {sending === t.invoiceId ? "Sending…" : "Send"}
+                                {sending === t.invoiceId
+                                  ? "Sending…"
+                                  : replyFiles[t.invoiceId]
+                                    ? "Send report"
+                                    : "Send"}
                               </button>
                             </div>
                             <Link href={`/staff/invoices/${t.invoiceId}`} className="text-xs text-blue-600 hover:underline mt-2 inline-block">

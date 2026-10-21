@@ -51,6 +51,7 @@ everywhere; purge only via `db:purge`.
 # 1. Postgres + S3 (LocalStack)
 docker start jamicore-postgres jamicore-s3   # or: docker compose up -d
 docker exec jamicore-s3 awslocal s3 mb s3://invoice-uploads
+cd web && node scripts/init-local-s3.mjs     # recreate bucket + CORS (PUT/GET/HEAD)
 
 # 2. Web
 cd web && cp .env.example .env   # fill secrets + SEED_* passwords
