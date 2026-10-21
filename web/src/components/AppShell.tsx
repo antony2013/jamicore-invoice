@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
+import NotificationBell from "@/components/NotificationBell";
 
 export default function AppShell({
   role,
@@ -71,7 +72,10 @@ export default function AppShell({
             <h1 className="m-0 text-[26px] font-semibold">{title}</h1>
             {subtitle ? <p className="mt-1 text-sm text-[#475467]">{subtitle}</p> : null}
           </div>
-          {actions}
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+            {actions}
+          </div>
         </header>
         {children}
       </main>

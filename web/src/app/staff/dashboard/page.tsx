@@ -110,14 +110,9 @@ export default function StaffDashboard() {
       title="My Assigned Invoices"
       subtitle="Review document scans, verify and enter invoice data, and manage collection lifecycle"
       actions={
-        <div className="flex items-center gap-2">
-          <a href="#notifications" className="dc-btn" title="Action-needed items">
-            🔔{actionItems.length > 0 ? ` ${actionItems.length}` : ""}
-          </a>
-          <button onClick={loadAssignedInvoices} className="dc-btn" type="button">
-            <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-          </button>
-        </div>
+        <button onClick={loadAssignedInvoices} className="dc-btn" type="button">
+          <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+        </button>
       }
     >
         {/* Notifications: action-needed items from the loaded assigned queue */}
