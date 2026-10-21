@@ -103,7 +103,7 @@ export default function StaffClientDashboardPage({
     }
   }
 
-  // Which loaded invoices already have a shared report (for the count).
+  // Which loaded invoices already have a shared report (for the count + list).
   async function checkReports(list: any[]) {
     setCheckingReports(true);
     try {
@@ -111,15 +111,22 @@ export default function StaffClientDashboardPage({
         list.map(async (inv) => {
           const res = await fetch(`/api/invoices/${inv.id}/report`);
           const data = await res.json();
-          return data.success && data.report ? inv.id : null;
+          return { invId: inv.id, report: data.success && data.report ? data.report : null };
         })
       );
-      setReportIds(
-        settled
-          .filter((r): r is PromiseFulfilledResult<string | null> => r.status === "fulfilled")
-          .map((r) => r.value)
-          .filter((v): v is string => Boolean(v))
-      );
+      const found = settled
+        .filter(
+          (r): r is PromiseFulfilledResult<{ invId: string; report: any }> => r.status === "fulfilled"
+        )
+        .map((r) => r.value);
+      setReportIds(found.filter((f) => f.report).map((f) => f.invId));
+      setReportCache((prev) => {
+        const next = { ...prev };
+        for (const f of found) {
+          if (next[f.invId] === undefined) next[f.invId] = f.report;
+        }
+        return next;
+      });
     } finally {
       setCheckingReports(false);
     }
@@ -265,8 +272,6 @@ export default function StaffClientDashboardPage({
       title={clientName ?? "Client"}
       subtitle="Client account overview"
       nav={[
-        { href: "/staff/dashboard", label: "Dashboard" },
-        { href: "/staff/dashboard#client-cards", label: "Client" },
         { href: `/staff/messages?client=${id}`, label: "Messages" },
         { href: "#reports", label: "Reports" },
       ]}

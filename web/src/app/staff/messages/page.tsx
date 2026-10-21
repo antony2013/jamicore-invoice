@@ -107,7 +107,8 @@ export default function StaffMessagesPage() {
 
   function threadQuery(): string {
     const p = new URLSearchParams();
-    p.set("folder", folder === "sent" ? "sent" : "inbox");
+    // A client-scoped mailbox shows the whole conversation, not a folder.
+    p.set("folder", clientFilter ? "all" : folder === "sent" ? "sent" : "inbox");
     if (search.trim()) p.set("q", search.trim());
     p.set("limit", "50");
     if (clientFilter) p.set("client", clientFilter);
@@ -373,10 +374,25 @@ export default function StaffMessagesPage() {
       role="staff"
       title="Messages"
       subtitle="Invoice Desk · Staff Mailbox"
+      nav={
+        clientFilter
+          ? [
+              { href: `/staff/messages?client=${clientFilter}`, label: "Messages" },
+              { href: `/staff/clients/${clientFilter}#reports`, label: "Reports" },
+            ]
+          : undefined
+      }
       actions={
-        totalUnread > 0 ? (
-          <Badge className="bg-blue-600 text-white">{totalUnread} unread</Badge>
-        ) : undefined
+        <div className="flex items-center gap-3">
+          {clientFilter ? (
+            <Link href="/staff/dashboard" className="dc-btn">
+              ← Back to dashboard
+            </Link>
+          ) : null}
+          {totalUnread > 0 ? (
+            <Badge className="bg-blue-600 text-white">{totalUnread} unread</Badge>
+          ) : null}
+        </div>
       }
     >
       <button
@@ -453,7 +469,7 @@ export default function StaffMessagesPage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className={`grid grid-cols-3 gap-2 ${clientFilter ? "hidden" : ""}`}>
         {TAB_OPTIONS.map((o) => (
           <button
             key={o.value}

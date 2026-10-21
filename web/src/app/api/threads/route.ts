@@ -14,8 +14,9 @@ import { safeClient } from "@/lib/safe-columns";
  * - folder=inbox: threads whose LATEST message is client-sent
  *   (needs staff attention), plus any thread with unread client mail.
  * - folder=sent: threads whose LATEST message is staff-sent.
+ * - folder=all: every thread with messages (client-scoped mailbox view).
  * - unread: client-sent messages not yet read by staff, per invoice.
- * Params: folder (inbox|sent, default inbox), client, q, limit
+ * Params: folder (inbox|sent|all, default inbox), client, q, limit
  * (default 50, max 100). Ordered by latest activity DESC.
  */
 export async function GET(request: Request) {
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const folder = searchParams.get("folder")?.trim() || "inbox";
-    if (folder !== "inbox" && folder !== "sent") {
+    if (folder !== "inbox" && folder !== "sent" && folder !== "all") {
       return NextResponse.json({ error: "Invalid folder." }, { status: 400 });
     }
     const limitRaw = searchParams.get("limit");
