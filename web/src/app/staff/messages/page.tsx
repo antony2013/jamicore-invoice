@@ -107,8 +107,7 @@ export default function StaffMessagesPage() {
 
   function threadQuery(): string {
     const p = new URLSearchParams();
-    // A client-scoped mailbox shows the whole conversation, not a folder.
-    p.set("folder", clientFilter ? "all" : folder === "sent" ? "sent" : "inbox");
+    p.set("folder", folder === "sent" ? "sent" : "inbox");
     if (search.trim()) p.set("q", search.trim());
     p.set("limit", "50");
     if (clientFilter) p.set("client", clientFilter);
@@ -123,11 +122,21 @@ export default function StaffMessagesPage() {
         const res = await fetch("/api/drafts");
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load drafts");
-        setDrafts(data.drafts);
+        setDrafts(
+          clientFilter
+            ? data.drafts.filter((d: Draft) => d.client?.id === clientFilter)
+            : data.drafts
+        );
       } else {
         const res = await fetch(`/api/threads?${threadQuery()}`);
-        const data = await res.json();
+        let data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load threads");
+        // Inside a client's mailbox the conversation must never look empty:
+        // if the client wrote first, the thread still belongs in their inbox.
+        if (clientFilter && folder === "inbox" && (data.threads?.length ?? 0) === 0) {
+          const all = await fetch(`/api/threads?folder=all&client=${clientFilter}&limit=50`);
+          if (all.ok) data = await all.json();
+        }
         setThreads(data.threads);
         setTotalUnread(data.totalUnread ?? 0);
       }
@@ -469,7 +478,7 @@ export default function StaffMessagesPage() {
         </Card>
       )}
 
-      <div className={`grid grid-cols-3 gap-2 ${clientFilter ? "hidden" : ""}`}>
+      <div className="grid grid-cols-3 gap-2">
         {TAB_OPTIONS.map((o) => (
           <button
             key={o.value}
