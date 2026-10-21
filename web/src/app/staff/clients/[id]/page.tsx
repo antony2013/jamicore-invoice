@@ -273,7 +273,7 @@ export default function StaffClientDashboardPage({
       subtitle="Client account overview"
       nav={[
         { href: `/staff/messages?client=${id}`, label: "Messages" },
-        { href: "#reports", label: "Reports" },
+        { href: `/staff/reports?client=${id}`, label: "Reports" },
       ]}
       actions={
         <Link href="/staff/dashboard" className="dc-btn">

@@ -96,11 +96,21 @@ describe("reports API", () => {
     expect(JSON.stringify(data)).not.toMatch(/passwordHash|pinHash/);
   });
 
-  it("staff gets 403 on the report library", async () => {
-    const s = await seedStaff();
-    mockAuth.mockResolvedValue(officeSession({ id: s.id, role: "staff" }));
+  it("staff only sees reports on their own assigned invoices", async () => {
+    const staff = await seedStaff();
+    const other = await seedStaff();
+    const client = await seedClient();
+    const mine = await seedInvoice(client.id, { status: "verified", assignedTo: staff.id });
+    const theirs = await seedInvoice(client.id, { status: "verified", assignedTo: other.id });
+    await seedReport(mine.id, staff.id, "mine.xlsx");
+    await seedReport(theirs.id, other.id, "theirs.xlsx");
+    mockAuth.mockResolvedValue(officeSession({ id: staff.id, role: "staff" }));
+
     const res: Response = await (listReports as any)(req("http://t/api/reports"));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.reports.map((r: { fileName: string }) => r.fileName)).toEqual(["mine.xlsx"]);
   });
 
   it("rejects an invalid client filter", async () => {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceReports, invoices } from "@/db/schema";
-import { requireAdmin } from "@/lib/session";
+import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
 import { notDeleted } from "@/lib/invoice-access";
@@ -11,13 +11,13 @@ import { safeClient } from "@/lib/safe-columns";
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 /**
- * Admin report library (read-only). One current report per invoice
+ * Report library (read-only). Admin: everything; staff: assigned invoices. One current report per invoice
  * (replace semantics) — newest first. Params: client (uuid), limit
  * (default 50, max 100), cursor -> nextCursor (null at end).
  */
 export async function GET(request: Request) {
   try {
-    const me = await requireAdmin();
+    const me = await requireOffice();
     if (me instanceof NextResponse) return me;
     touchPresence(me.id);
 
@@ -36,8 +36,12 @@ export async function GET(request: Request) {
 
     // Reports live on the invoices table's scope: resolve visible invoice
     // IDs first (client filter + soft-delete), then page the reports.
+    const scope: SQL[] = [notDeleted()];
+    // Staff only ever see reports on their own assigned invoices.
+    if (me.role === "staff") scope.push(eq(invoices.assignedTo, me.id));
+    if (client) scope.push(eq(invoices.clientId, client));
     const scopedInvoices = await db.query.invoices.findMany({
-      where: client ? and(notDeleted(), eq(invoices.clientId, client)) : notDeleted(),
+      where: and(...scope),
       columns: { id: true },
     });
     const scopedIds = scopedInvoices.map((i) => i.id);

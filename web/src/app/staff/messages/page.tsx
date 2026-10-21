@@ -387,7 +387,7 @@ export default function StaffMessagesPage() {
         clientFilter
           ? [
               { href: `/staff/messages?client=${clientFilter}`, label: "Messages" },
-              { href: `/staff/clients/${clientFilter}#reports`, label: "Reports" },
+              { href: `/staff/reports?client=${clientFilter}`, label: "Reports" },
             ]
           : undefined
       }
