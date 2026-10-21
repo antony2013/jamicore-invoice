@@ -114,7 +114,11 @@ export default function NotificationBell() {
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" sideOffset={8} className="w-[340px] p-0">
+      <DropdownMenuContent
+        align="end"
+        sideOffset={8}
+        className="w-[340px] max-w-[calc(100vw-1.5rem)] p-0"
+      >
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-slate-900">Notifications</span>

@@ -114,3 +114,74 @@ body {
   border-top: 1px solid #E4E7EC;
   font-size: 14px;
 }
+
+/* Phone / small tablet: sidebar becomes a sticky top bar and the main
+   column gets the full width (previously the 232px rail squeezed it). */
+@media (max-width: 900px) {
+  .dc-root {
+    grid-template-columns: 1fr;
+    align-content: start;
+  }
+  .dc-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    align-self: start;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .dc-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+  .dc-logo {
+    padding: 0 2px 0 0;
+    font-size: 16px;
+    white-space: nowrap;
+  }
+  .dc-nav {
+    flex-direction: row;
+    gap: 4px;
+  }
+  .dc-nav a {
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .dc-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 0 auto;
+    padding: 0;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .dc-footer br {
+    display: none;
+  }
+  .dc-role {
+    display: none;
+  }
+  .dc-main {
+    padding: 18px 14px 32px;
+    gap: 16px;
+  }
+  .dc-header {
+    align-items: flex-start;
+  }
+  .dc-header h1 {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .dc-header p {
+    font-size: 13px;
+  }
+  .dc-header-actions {
+    margin-left: auto;
+  }
+}

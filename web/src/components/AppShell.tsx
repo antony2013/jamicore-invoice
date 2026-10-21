@@ -54,7 +54,7 @@ export default function AppShell({
           })}
         </nav>
         <div className="dc-footer">
-          {role === "admin" ? "Admin" : "Staff"}
+          <span className="dc-role">{role === "admin" ? "Admin" : "Staff"}</span>
           <br />
           <button
             type="button"
@@ -72,7 +72,7 @@ export default function AppShell({
             <h1 className="m-0 text-[26px] font-semibold">{title}</h1>
             {subtitle ? <p className="mt-1 text-sm text-[#475467]">{subtitle}</p> : null}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="dc-header-actions flex items-center gap-3">
             <NotificationBell />
             {actions}
           </div>
