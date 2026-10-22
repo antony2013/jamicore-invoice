@@ -278,6 +278,20 @@ export const messageDrafts = pgTable(
   ]
 );
 
+export const notificationDismissals = pgTable(
+  "notification_dismissals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    staffId: uuid("staff_id").references(() => staff.id, { onDelete: "cascade" }).notNull(),
+    notificationKey: text("notification_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("notification_dismissals_staff_idx").on(t.staffId),
+    unique("notification_dismissals_staff_key_uniq").on(t.staffId, t.notificationKey),
+  ]
+);
+
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),

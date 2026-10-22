@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, CheckCheck, FileText, MessageSquare, Inbox } from "lucide-react";
+import { Bell, CheckCheck, FileText, MessageSquare, Inbox, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,22 +76,54 @@ export default function NotificationBell() {
     return () => clearInterval(timer);
   }, [load]);
 
+  const dismiss = useCallback(
+    async (item: NotificationItem) => {
+      setItems((prev) => prev.filter((entry) => entry.id !== item.id));
+      setUnread((prev) => Math.max(0, prev - 1));
+      try {
+        await fetch("/api/notifications", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "dismiss", key: item.id }),
+        });
+      } catch {
+        // Reload below restores the true state if the request failed.
+      } finally {
+        load();
+      }
+    },
+    [load]
+  );
+
+  async function openItem(item: NotificationItem) {
+    await dismiss(item);
+    router.push(item.href);
+  }
+
   async function markAllRead() {
     setMarking(true);
+    const snapshot = items;
+    setItems([]);
+    setUnread(0);
     try {
-      const res = await fetch("/api/notifications", { method: "POST" });
-      if (res.ok) {
-        setUnread(0);
-        setItems((prev) => prev.filter((item) => item.type === "invoice"));
-      }
+      await Promise.all(
+        snapshot.map((item) =>
+          fetch("/api/notifications", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "dismiss", key: item.id }),
+          })
+        )
+      );
     } catch {
       // Leave state untouched when the request fails.
     } finally {
       setMarking(false);
+      load();
     }
   }
 
-  const hasMessages = items.some((item) => item.type !== "invoice");
+  const hasItems = items.length > 0;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -128,7 +160,7 @@ export default function NotificationBell() {
               </Badge>
             )}
           </div>
-          {hasMessages && (
+          {hasItems && (
             <Button
               variant="ghost"
               size="sm"
@@ -159,28 +191,42 @@ export default function NotificationBell() {
               {items.map((item) => {
                 const Icon = iconByType[item.type] ?? MessageSquare;
                 return (
-                  <DropdownMenuItem
-                    key={item.id}
-                    onSelect={() => router.push(item.href)}
-                    className="mx-1 flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 focus:bg-slate-50"
-                  >
-                    <span
-                      className={`mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${chipByType[item.type] ?? chipByType.message}`}
+                  <div key={item.id} className="group relative mx-1">
+                    <DropdownMenuItem
+                      onSelect={() => openItem(item)}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 pr-8 focus:bg-slate-50"
                     >
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-semibold text-slate-900">
-                        {item.title}
+                      <span
+                        className={`mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${chipByType[item.type] ?? chipByType.message}`}
+                      >
+                        <Icon className="h-4 w-4" />
                       </span>
-                      <span className="mt-0.5 block truncate text-[11px] text-slate-500">
-                        {item.body}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-semibold text-slate-900">
+                          {item.title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-slate-500">
+                          {item.body}
+                        </span>
+                        <span className="mt-1 block text-[10px] text-slate-400">
+                          {timeAgo(item.createdAt)}
+                        </span>
                       </span>
-                      <span className="mt-1 block text-[10px] text-slate-400">
-                        {timeAgo(item.createdAt)}
-                      </span>
-                    </span>
-                  </DropdownMenuItem>
+                    </DropdownMenuItem>
+                    <button
+                      type="button"
+                      aria-label={`Clear notification: ${item.title}`}
+                      title="Clear"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dismiss(item);
+                      }}
+                      className="absolute right-1.5 top-2 flex h-6 w-6 items-center justify-center rounded-full text-slate-300 transition hover:bg-slate-200 hover:text-slate-700 focus-visible:text-slate-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 );
               })}
             </div>

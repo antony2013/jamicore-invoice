@@ -35,6 +35,7 @@ export async function migrateTestDb(): Promise<void> {
 const TABLES = [
   "audit_log",
   "rate_limits",
+  "notification_dismissals",
   "invoice_messages",
   "invoice_reports",
   "message_drafts",

@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, invoiceMessages, invoices } from "@/db/schema";
+import { clients, invoiceMessages, invoices, notificationDismissals } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Header notification feed for the office portal.
  * - admin: every client message + invoices waiting for triage (uploaded)
  * - staff: unread client mail + newly assigned invoices (own queue only)
- * GET  -> { success, unread, items[] }
- * POST -> marks all unread client messages in scope as read by staff
+ * GET  -> { success, unread, items[] } (dismissed per-staff items are hidden)
+ * POST -> marks all unread client messages in scope as read
+ * POST { action: "dismiss", key } -> clears one notification (and reads the
+ *        underlying client message so the counter drops by exactly one)
  */
 export async function GET() {
   try {
@@ -21,10 +25,29 @@ export async function GET() {
     const isAdmin = me.role === "admin";
     const scope = isAdmin ? undefined : eq(invoices.assignedTo, me.id);
 
+    const dismissedRows = await db
+      .select({ key: notificationDismissals.notificationKey })
+      .from(notificationDismissals)
+      .where(eq(notificationDismissals.staffId, me.id));
+
+    const dismissedMessageIds = dismissedRows
+      .map((row) => row.key)
+      .filter((key) => key.startsWith("msg-"))
+      .map((key) => key.slice(4))
+      .filter((id) => UUID_RE.test(id));
+    const dismissedInvoiceIds = dismissedRows
+      .map((row) => row.key)
+      .filter((key) => key.startsWith("inv-"))
+      .map((key) => key.slice(4))
+      .filter((id) => UUID_RE.test(id));
+
     const unreadWhere = and(
       eq(invoiceMessages.senderType, "client"),
       eq(invoiceMessages.isReadByStaff, false),
-      ...(scope ? [scope] : [])
+      ...(scope ? [scope] : []),
+      ...(dismissedMessageIds.length
+        ? [notInArray(invoiceMessages.id, dismissedMessageIds)]
+        : [])
     );
 
     const [unreadRows, unreadCountRows] = await Promise.all([
@@ -44,7 +67,7 @@ export async function GET() {
         .innerJoin(clients, eq(invoices.clientId, clients.id))
         .where(unreadWhere)
         .orderBy(desc(invoiceMessages.createdAt))
-        .limit(6),
+        .limit(12),
       db
         .select({ n: count() })
         .from(invoiceMessages)
@@ -55,7 +78,8 @@ export async function GET() {
     const actionStatuses = isAdmin ? (["uploaded"] as const) : (["assigned"] as const);
     const queueWhere = and(
       inArray(invoices.status, [...actionStatuses]),
-      ...(scope ? [scope] : [])
+      ...(scope ? [scope] : []),
+      ...(dismissedInvoiceIds.length ? [notInArray(invoices.id, dismissedInvoiceIds)] : [])
     );
 
     const [queueRows, queueCountRows] = await Promise.all([
@@ -70,7 +94,7 @@ export async function GET() {
         .innerJoin(clients, eq(invoices.clientId, clients.id))
         .where(queueWhere)
         .orderBy(desc(invoices.createdAt))
-        .limit(4),
+        .limit(8),
       db.select({ n: count() }).from(invoices).where(queueWhere),
     ]);
 
@@ -107,7 +131,7 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const me = await requireOffice();
     if (me instanceof NextResponse) return me;
@@ -115,6 +139,51 @@ export async function POST() {
 
     const isAdmin = me.role === "admin";
     const scope = isAdmin ? undefined : eq(invoices.assignedTo, me.id);
+
+    const payload = (await request.json().catch(() => null)) as
+      | { action?: string; key?: string }
+      | null;
+
+    if (payload?.action === "dismiss") {
+      const key = typeof payload.key === "string" ? payload.key : "";
+      const match = /^(msg|inv)-(.+)$/.exec(key);
+      const targetId = match?.[2] ?? "";
+      if (!match || !UUID_RE.test(targetId)) {
+        return NextResponse.json({ error: "Invalid notification key" }, { status: 400 });
+      }
+
+      if (match[1] === "msg") {
+        const [row] = await db
+          .select({ id: invoiceMessages.id })
+          .from(invoiceMessages)
+          .innerJoin(invoices, eq(invoiceMessages.invoiceId, invoices.id))
+          .where(and(eq(invoiceMessages.id, targetId), ...(scope ? [scope] : [])))
+          .limit(1);
+        if (!row) {
+          return NextResponse.json({ error: "Notification not found" }, { status: 404 });
+        }
+        await db
+          .update(invoiceMessages)
+          .set({ isReadByStaff: true })
+          .where(eq(invoiceMessages.id, targetId));
+      } else {
+        const [row] = await db
+          .select({ id: invoices.id })
+          .from(invoices)
+          .where(and(eq(invoices.id, targetId), ...(scope ? [scope] : [])))
+          .limit(1);
+        if (!row) {
+          return NextResponse.json({ error: "Notification not found" }, { status: 404 });
+        }
+      }
+
+      await db
+        .insert(notificationDismissals)
+        .values({ staffId: me.id, notificationKey: key })
+        .onConflictDoNothing();
+
+      return NextResponse.json({ success: true, dismissed: key });
+    }
 
     const updated = await db
       .update(invoiceMessages)
