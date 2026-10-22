@@ -104,8 +104,10 @@ npm run db:migrate
 
 - Behind Traefik: the app trusts `x-forwarded-for`/`x-forwarded-proto`
   (rate limits, audit IPs, secure cookies). Serve only HTTPS in prod.
-- After each deploy: run `npm run db:migrate` (Coolify terminal or
-  pre-deploy command), then redeploy.
+- After each deploy: apply migrations **inside the app container** (the
+  production image has no dev deps): Coolify → your app → Terminal, then
+  `node scripts/migrate.mjs`. Same command works as the Pre-deployment
+  Command. With DB access from a dev machine: `npm run db:migrate`.
 - S3 bucket CORS must allow the web origin (PUT/GET/HEAD) or browser
   uploads fail with CORS errors (mobile is unaffected).
 - Cron: `s3:cleanup --apply` daily; `db:purge --older-than-days=30 --apply`
@@ -134,7 +136,8 @@ Plus: `S3_ENDPOINT` (phone-reachable), `S3_BUCKET_NAME`, `AWS_*` keys,
 ### 3. Migration order
 ```bash
 cd web
-npm run db:migrate   # applies pending files in numeric order; never edit old ones
+npm run db:migrate            # dev machine with DB access (drizzle-kit)
+node scripts/migrate.mjs      # inside the prod container (no dev deps)
 ```
 Current chain: `0000`–`0012` (Phase 1), `0013` (audit_log + soft-delete),
 `0014` (perf indexes), `0015` (message drafts), `0016` (report notes).
