@@ -18,6 +18,7 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [stats, setStats] = useState<{ byStatus: Record<string, number>; unassigned: number; byPriority: Record<string, number>; total: number } | null>(null);
+  const [unreadByClient, setUnreadByClient] = useState<Record<string, number>>({});
 
   function listParams() {
     const params = new URLSearchParams();
@@ -29,9 +30,10 @@ export default function StaffDashboard() {
   async function loadAssignedInvoices() {
     setLoading(true);
     try {
-      const [listRes, statsRes] = await Promise.all([
+      const [listRes, statsRes, threadsRes] = await Promise.all([
         fetch(`/api/invoices?${listParams()}`),
         fetch(`/api/invoices/stats?assigned_to=me`),
+        fetch(`/api/threads?folder=all&limit=100`),
       ]);
       const data = await listRes.json();
       const statsData = await statsRes.json();
@@ -40,6 +42,20 @@ export default function StaffDashboard() {
         setDismissedIds([]);
       }
       if (statsData.success) setStats(statsData.stats);
+
+      const threadsData = await threadsRes.json();
+      if (threadsData.success) {
+        const counts: Record<string, number> = {};
+        for (const thread of threadsData.threads as Array<{
+          client?: { id?: string };
+          unread?: number;
+        }>) {
+          const clientId = thread.client?.id;
+          if (!clientId) continue;
+          counts[clientId] = (counts[clientId] ?? 0) + Number(thread.unread ?? 0);
+        }
+        setUnreadByClient(counts);
+      }
     } catch (err) {
       console.error("Failed to load assigned invoices:", err);
     } finally {
@@ -214,14 +230,27 @@ export default function StaffDashboard() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="text-sm font-bold text-slate-900">{c.name}</div>
-                    <span className="relative p-1 rounded-md text-slate-500">
+                    <button
+                      type="button"
+                      title={
+                        (unreadByClient[c.id] ?? 0) > 0
+                          ? `${unreadByClient[c.id]} unread message${unreadByClient[c.id] === 1 ? "" : "s"}`
+                          : "No unread messages"
+                      }
+                      aria-label={`${c.name} messages (${unreadByClient[c.id] ?? 0} unread)`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        router.push(`/staff/messages?client=${encodeURIComponent(c.id)}`);
+                      }}
+                      className="relative -m-1 p-1 rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 flex-shrink-0"
+                    >
                       <Bell className="w-4 h-4" />
-                      {c.pending > 0 && (
+                      {(unreadByClient[c.id] ?? 0) > 0 && (
                         <Badge className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-red-600 text-[10px] text-white flex items-center justify-center">
-                          {c.pending}
+                          {unreadByClient[c.id]}
                         </Badge>
                       )}
-                    </span>
+                    </button>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-2">Total Pending Actions: {c.pending}</div>
                   <div className="grid grid-cols-2 gap-1 mt-1 text-[11px] text-slate-500">

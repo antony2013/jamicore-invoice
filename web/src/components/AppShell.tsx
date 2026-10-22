@@ -34,7 +34,7 @@ export default function AppShell({
         ]
       : [
           { href: "/staff/dashboard", label: "Dashboard" },
-          { href: "/staff/dashboard#client-cards", label: "Client" },
+          { href: "/staff/clients", label: "Client" },
           { href: "/staff/history", label: "History" },
           { href: "/staff/reports", label: "Reports" },
         ];

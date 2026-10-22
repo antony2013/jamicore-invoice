@@ -161,6 +161,15 @@ export default function StaffMessagesPage() {
       const res = await fetch(`/api/invoices/${invoiceId}/messages`);
       const data = await res.json();
       setMessages((prev) => ({ ...prev, [invoiceId]: data.success ? data.messages : [] }));
+      if (data.success) {
+        const readCount = threads.find((t) => t.invoiceId === invoiceId)?.unread ?? 0;
+        if (readCount > 0) {
+          setThreads((prev) =>
+            prev.map((t) => (t.invoiceId === invoiceId ? { ...t, unread: 0 } : t))
+          );
+          setTotalUnread((prev) => Math.max(0, prev - readCount));
+        }
+      }
     } catch {
       setMessages((prev) => ({ ...prev, [invoiceId]: [] }));
     } finally {
