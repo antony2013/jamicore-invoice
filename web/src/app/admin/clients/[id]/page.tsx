@@ -106,7 +106,7 @@ export default function AdminClientDetailPage({
 
   return (
     <AppShell role="admin" title={client ? client.name : "Client"} hideHeader>
-      <div className="mx-auto w-full max-w-[620px]">
+      <div className="w-full max-w-4xl">
         <Link
           href="/admin/clients"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800"
