@@ -22,24 +22,33 @@ export default function AdminClientDetailPage({
   const { id } = use(params);
   const [client, setClient] = useState<any | null>(null);
   const [outlets, setOutlets] = useState<any[]>([]);
+  const [staffList, setStaffList] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [reportsCapped, setReportsCapped] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fetchingUrl, setFetchingUrl] = useState<string | null>(null);
+  const [outletName, setOutletName] = useState("");
+  const [outletAddress, setOutletAddress] = useState("");
+  const [outletPhone, setOutletPhone] = useState("");
+  const [outletError, setOutletError] = useState<string | null>(null);
+  const [savingOutlet, setSavingOutlet] = useState(false);
+  const [busyOutletId, setBusyOutletId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [clientRes, outletRes, repRes] = await Promise.all([
+      const [clientRes, outletRes, repRes, staffRes] = await Promise.all([
         fetch("/api/clients"),
         fetch(`/api/outlets?clientId=${encodeURIComponent(id)}`),
         fetch(`/api/reports?client=${encodeURIComponent(id)}&limit=50`),
+        fetch("/api/staff"),
       ]);
       const clientData = await clientRes.json();
       const outletData = await outletRes.json();
       const repData = await repRes.json();
+      const staffData = await staffRes.json();
       if (clientData.success) {
         const found = (clientData.clients as any[]).find((c) => c.id === id);
         if (!found) throw new Error("Client not found.");
@@ -50,10 +59,97 @@ export default function AdminClientDetailPage({
       if (!repData.success) throw new Error(repData.error || "Failed to load reports");
       setReports(repData.reports);
       setReportsCapped(Boolean(repData.nextCursor));
+      if (staffData.success) {
+        setStaffList(staffData.staff.filter((s: any) => s.role === "staff"));
+      }
     } catch (err: any) {
       setLoadError(err.message || "Failed to load client workspace.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleAddOutlet(e: React.FormEvent) {
+    e.preventDefault();
+    setOutletError(null);
+    if (outletName.trim().length < 2) {
+      setOutletError("Outlet name must be at least 2 characters.");
+      return;
+    }
+    const ph = outletPhone.trim();
+    if (ph && !/^\+\d{7,15}$/.test(ph)) {
+      setOutletError("Outlet phone must be E.164 format, e.g. +18765550123.");
+      return;
+    }
+    setSavingOutlet(true);
+    try {
+      const res = await fetch("/api/outlets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: id,
+          name: outletName.trim(),
+          ...(outletAddress.trim() ? { address: outletAddress.trim() } : {}),
+          ...(ph ? { phone: ph } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create outlet");
+      setOutlets((prev) => [...prev, data.outlet]);
+      setOutletName("");
+      setOutletAddress("");
+      setOutletPhone("");
+    } catch (err: any) {
+      setOutletError(err.message);
+    } finally {
+      setSavingOutlet(false);
+    }
+  }
+
+  async function handleOutletStaff(outletId: string, staffId: string) {
+    setOutletError(null);
+    setBusyOutletId(outletId);
+    try {
+      const res = await fetch(`/api/outlets/${outletId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedStaffId: staffId || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to set outlet staff");
+      setOutlets((prev) =>
+        prev.map((o) =>
+          o.id === outletId
+            ? {
+                ...o,
+                assignedStaffId: staffId || null,
+                assignedStaffName: staffId
+                  ? staffList.find((s) => s.id === staffId)?.name || null
+                  : null,
+              }
+            : o
+        )
+      );
+    } catch (err: any) {
+      setOutletError(err.message);
+    } finally {
+      setBusyOutletId(null);
+    }
+  }
+
+  async function handleDeleteOutlet(outletId: string) {
+    if (!confirm("Delete this outlet? Invoices must be unlinked first.")) return;
+    setOutletError(null);
+    setBusyOutletId(outletId);
+    try {
+      const res = await fetch(`/api/outlets/${outletId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete outlet");
+      setOutlets((prev) => prev.filter((o) => o.id !== outletId));
+    } catch (err: any) {
+      setOutletError(err.message);
+    } finally {
+      setBusyOutletId(null);
     }
   }
 
@@ -79,7 +175,7 @@ export default function AdminClientDetailPage({
 
   const workspaceTiles = [
     {
-      href: "/admin/clients",
+      href: "#assigned-outlets",
       icon: Store,
       title: "Outlets & Staff",
       subtitle: "Add outlets and assign staff",
@@ -175,30 +271,80 @@ export default function AdminClientDetailPage({
           })}
         </div>
 
-        <h3 className="mt-6 mb-2 text-sm font-bold text-slate-900">Assigned outlets</h3>
+        <h3 id="assigned-outlets" className="mt-6 mb-2 text-sm font-bold text-slate-900">Assigned outlets</h3>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
+          {outletError && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">
+              {outletError}
+            </div>
+          )}
           {outlets.length === 0 ? (
-            <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets assigned yet."}</p>
+            <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets assigned yet — add the first one below."}</p>
           ) : (
             <div className="space-y-3">
               {outlets.map((o) => (
-                <div key={o.id} className="flex items-center gap-3">
+                <div key={o.id} className="flex flex-wrap items-center gap-3">
                   <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
                     <Store className="h-4 w-4" />
                   </span>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold text-slate-900">{o.name}</div>
                     <div className="text-[11px] text-slate-500">
-                      {o.assignedStaffName ? `Staff: ${o.assignedStaffName}` : "Manual routing"}
-                      {[o.address, o.phone].filter(Boolean).length > 0
-                        ? ` · ${[o.address, o.phone].filter(Boolean).join(" · ")}`
-                        : ""}
+                      {[o.address, o.phone].filter(Boolean).join(" · ") || "No address or phone"}
                     </div>
                   </div>
+                  <select
+                    value={o.assignedStaffId || ""}
+                    onChange={(e) => handleOutletStaff(o.id, e.target.value)}
+                    disabled={busyOutletId === o.id}
+                    className="max-w-[160px] rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs outline-none disabled:opacity-50"
+                    title="Default staff for this outlet"
+                  >
+                    <option value="">Manual…</option>
+                    {staffList.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleDeleteOutlet(o.id)}
+                    disabled={busyOutletId === o.id}
+                    className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
                 </div>
               ))}
             </div>
           )}
+          <form onSubmit={handleAddOutlet} className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+            <input
+              value={outletName}
+              onChange={(e) => setOutletName(e.target.value)}
+              placeholder="Outlet name *"
+              required
+              minLength={2}
+              className="min-w-[140px] flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              value={outletAddress}
+              onChange={(e) => setOutletAddress(e.target.value)}
+              placeholder="Address (optional)"
+              className="min-w-[140px] flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              value={outletPhone}
+              onChange={(e) => setOutletPhone(e.target.value)}
+              placeholder="+18765550123 (optional)"
+              className="w-44 rounded-lg border border-slate-300 px-2.5 py-1.5 font-mono text-xs outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="submit"
+              disabled={savingOutlet}
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingOutlet ? "Adding…" : "Add outlet"}
+            </button>
+          </form>
         </div>
 
         <h3 className="mt-6 mb-2 text-sm font-bold text-slate-900">Client reports</h3>
