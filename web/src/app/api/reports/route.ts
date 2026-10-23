@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceReports, invoices } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
@@ -26,6 +26,10 @@ export async function GET(request: Request) {
     if (client && !UUID_RE.test(client)) {
       return NextResponse.json({ error: "Invalid client filter." }, { status: 400 });
     }
+    const outlet = searchParams.get("outlet")?.trim() || undefined;
+    if (outlet && outlet !== "none" && !UUID_RE.test(outlet)) {
+      return NextResponse.json({ error: "Invalid outlet filter." }, { status: 400 });
+    }
     const limitRaw = searchParams.get("limit");
     const limit = Math.min(Math.max(parseInt(limitRaw || "50", 10) || 50, 1), 100);
     const cursorRaw = searchParams.get("cursor");
@@ -40,6 +44,9 @@ export async function GET(request: Request) {
     // Staff only ever see reports on their own assigned invoices.
     if (me.role === "staff") scope.push(eq(invoices.assignedTo, me.id));
     if (client) scope.push(eq(invoices.clientId, client));
+    if (outlet) {
+      scope.push(outlet === "none" ? isNull(invoices.outletId) : eq(invoices.outletId, outlet));
+    }
     const scopedInvoices = await db.query.invoices.findMany({
       where: and(...scope),
       columns: { id: true },
@@ -67,7 +74,7 @@ export async function GET(request: Request) {
             createdAt: true,
             ocrData: true,
           },
-          with: { client: safeClient },
+          with: { client: safeClient, outlet: true },
         },
       },
       orderBy: [desc(invoiceReports.createdAt), desc(invoiceReports.id)],
@@ -102,6 +109,9 @@ export async function GET(request: Request) {
           : null,
         client: r.invoice?.client
           ? { id: r.invoice.client.id, name: r.invoice.client.name }
+          : null,
+        outlet: r.invoice?.outlet
+          ? { id: r.invoice.outlet.id, name: r.invoice.outlet.name }
           : null,
       })),
       nextCursor,

@@ -38,39 +38,27 @@ export default function AdminClientsPage() {
   const [outletError, setOutletError] = useState<string | null>(null);
   // Overview (design pattern, existing data only)
   const [allOutlets, setAllOutlets] = useState<any[]>([]);
-  const [reportCount, setReportCount] = useState<number | null>(null);
-  const [reportCapped, setReportCapped] = useState(false);
   const [activity, setActivity] = useState<any[]>([]);
-  const [openThreads, setOpenThreads] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const [clientRes, staffRes, outletRes, reportRes, activityRes, statsRes] = await Promise.all([
+      const [clientRes, staffRes, outletRes, activityRes] = await Promise.all([
         fetch("/api/clients"),
         fetch("/api/staff"),
         fetch("/api/outlets"),
-        fetch("/api/audit?action=report.&limit=100"),
         fetch("/api/history?limit=8"),
-        fetch("/api/invoices/stats"),
       ]);
       const data = await clientRes.json();
       const staffData = await staffRes.json();
       const outletData = await outletRes.json();
-      const reportData = await reportRes.json();
       const activityData = await activityRes.json();
-      const statsData = await statsRes.json();
       if (data.success) setClients(data.clients);
       if (staffData.success) {
         setStaffList(staffData.staff.filter((s: any) => s.role === "staff"));
       }
       if (outletData.success) setAllOutlets(outletData.outlets);
-      if (reportData.success) {
-        setReportCount(reportData.entries.length);
-        setReportCapped(Boolean(reportData.nextCursor));
-      }
       if (activityData.success) setActivity(activityData.logs);
-      if (statsData.success) setOpenThreads(statsData.stats.byStatus.needs_info ?? 0);
     } catch (err) {
       console.error("Failed to load clients:", err);
     } finally {
@@ -402,7 +390,7 @@ export default function AdminClientsPage() {
     <AppShell
       role="admin"
       title="Clients"
-      subtitle="Client accounts, outlets, default staff routing, and removal."
+      subtitle="Manage client accounts, outlets, staff, reports and communications."
       actions={
         <div className="flex items-center gap-2">
           <button onClick={() => setShowForm((v) => !v)} className="dc-btn" type="button">
@@ -414,38 +402,15 @@ export default function AdminClientsPage() {
         </div>
       }
     >
-        {/* Overview cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total clients</div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">{loading && clients.length === 0 ? "…" : clients.length}</div>
-            <div className="text-[11px] text-slate-400 mt-1">Registered accounts</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total outlets</div>
-            <div className="text-2xl font-bold text-emerald-700 mt-1">{loading && clients.length === 0 ? "…" : allOutlets.length}</div>
-            <div className="text-[11px] text-slate-400 mt-1">Across all clients</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Reports</div>
-            <div className="text-2xl font-bold text-purple-700 mt-1">
-              {reportCount === null ? "…" : `${reportCount}${reportCapped ? "+" : ""}`}
-            </div>
-            <div className="text-[11px] text-slate-400 mt-1">Uploaded report records</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Messages</div>
-            <div className="text-2xl font-bold text-amber-600 mt-1">{openThreads === null ? "…" : openThreads}</div>
-            <div className="text-[11px] text-slate-400 mt-1">Threads awaiting reply</div>
-          </div>
-        </div>
+        {/* Banner */}
+        <div className="mb-6 h-52 w-full rounded-xl bg-[#D9D9D9] sm:h-60" aria-hidden="true" />
 
         {/* Client accounts */}
         <div id="client-accounts" className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-slate-900">Client accounts</h2>
           <a href="#manage-clients" className="dc-btn">View clients</a>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
           {clients.map((c) => (
             <div
               key={c.id}
@@ -464,7 +429,12 @@ export default function AdminClientsPage() {
                   Joined {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "—"}
                 </div>
               </div>
-              <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-600">
+              {c.archivedAt && (
+                <span className="mt-1 inline-block text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                  archived
+                </span>
+              )}
+              <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-slate-600">
                 <span>Outlets: <strong>{outletCountByClient[c.id] ?? 0}</strong></span>
                 <span>Staff: <strong>{c.assignedStaffName || "Manual"}</strong></span>
                 <span>Invoices: <strong>{c.totalInvoices}</strong></span>
@@ -472,23 +442,11 @@ export default function AdminClientsPage() {
               <div className="mt-2 text-[11px] text-slate-500 font-mono">
                 User ID: {c.username || "—"}
               </div>
-              <div className="text-[11px] text-slate-500">
-                {[c.phone, c.email].filter(Boolean).join(" · ") || "—"}
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <Link
-                  href={`/admin/clients/${c.id}/reports`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-medium"
-                >
-                  Reports
-                </Link>
-                {c.archivedAt && (
-                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
-                    archived
-                  </span>
-                )}
-              </div>
+              {[c.phone, c.email].filter(Boolean).length > 0 && (
+                <div className="text-[11px] text-slate-500">
+                  {[c.phone, c.email].filter(Boolean).join(" · ")}
+                </div>
+              )}
             </div>
           ))}
           {clients.length === 0 && !loading && (

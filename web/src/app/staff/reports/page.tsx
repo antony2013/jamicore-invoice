@@ -21,16 +21,18 @@ type ReportEntry = {
     amount: string | null;
   } | null;
   client: { id: string; name: string } | null;
+  outlet: { id: string; name: string } | null;
 };
 
-type ClientOption = { id: string; name: string };
+type OutletOption = { id: string; name: string };
 
 const REPORT_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const MAX_REPORT_BYTES = 10 * 1024 * 1024;
 
 export default function StaffReportsPage() {
-  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [outlets, setOutlets] = useState<OutletOption[]>([]);
   const [clientFilter, setClientFilter] = useState("all");
+  const [outletFilter, setOutletFilter] = useState("all");
   const [reports, setReports] = useState<ReportEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -49,6 +51,7 @@ export default function StaffReportsPage() {
   function query(cursor?: string | null): string {
     const p = new URLSearchParams();
     if (clientFilter !== "all") p.set("client", clientFilter);
+    if (outletFilter !== "all") p.set("outlet", outletFilter);
     p.set("limit", "50");
     if (cursor) p.set("cursor", cursor);
     return p.toString();
@@ -70,10 +73,11 @@ export default function StaffReportsPage() {
       if (invData.success) {
         const seen = new Map<string, string>();
         for (const inv of invData.invoices ?? []) {
-          const c = inv.client;
-          if (c?.id && !seen.has(c.id)) seen.set(c.id, c.name || "Unknown");
+          const outletId = inv.outletId || inv.outlet?.id || "none";
+          const outletName = inv.outlet?.name || (outletId === "none" ? "No outlet" : "Outlet");
+          if (!seen.has(outletId)) seen.set(outletId, outletName);
         }
-        setClients(Array.from(seen, ([id, name]) => ({ id, name })));
+        setOutlets(Array.from(seen, ([id, name]) => ({ id, name })));
         setUploadInvoices(invData.invoices ?? []);
       }
       if (!repData.success) throw new Error(repData.error || "Failed to load reports");
@@ -185,11 +189,11 @@ export default function StaffReportsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientFilter]);
+  }, [clientFilter, outletFilter]);
 
-  const clientName = useMemo(
-    () => clients.find((c) => c.id === clientFilter)?.name,
-    [clients, clientFilter]
+  const outletName = useMemo(
+    () => outlets.find((o) => o.id === outletFilter)?.name,
+    [outlets, outletFilter]
   );
 
   return (
@@ -270,16 +274,16 @@ export default function StaffReportsPage() {
         </Card>
       )}
 
-      <h2 className="text-sm font-bold text-slate-900">Client report library</h2>
+      <h2 className="text-sm font-bold text-slate-900">Report library</h2>
       <select
-        value={clientFilter}
-        onChange={(e) => setClientFilter(e.target.value)}
+        value={outletFilter}
+        onChange={(e) => setOutletFilter(e.target.value)}
         className="dc-ctl w-full max-w-md"
       >
-        <option value="all">All clients</option>
-        {clients.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
+        <option value="all">All outlets</option>
+        {outlets.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
           </option>
         ))}
       </select>
@@ -293,7 +297,7 @@ export default function StaffReportsPage() {
       <div className="space-y-2">
         {reports.length === 0 && !loading && (
           <p className="text-sm text-slate-400 text-center py-8">
-            No reports shared yet{clientName ? ` for ${clientName}` : ""}.
+            No reports shared yet{outletName ? ` for ${outletName}` : ""}.
           </p>
         )}
         {loading && reports.length === 0 && (
@@ -308,7 +312,7 @@ export default function StaffReportsPage() {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
                 <div className="text-[11px] text-slate-500">
-                  {rep.client?.name || "Unknown"} ·{" "}
+                  {rep.outlet?.name || "No outlet"} ·{" "}
                   {rep.createdAt
                     ? new Date(rep.createdAt).toLocaleDateString("en-GB", {
                         day: "2-digit",
