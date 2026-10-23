@@ -82,6 +82,12 @@ export default function StaffClientsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!loading && clients.length === 1) {
+      router.replace(`/staff/clients/${encodeURIComponent(clients[0].id)}`);
+    }
+  }, [loading, clients, router]);
+
   return (
     <AppShell
       role="staff"

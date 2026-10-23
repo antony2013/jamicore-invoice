@@ -197,18 +197,20 @@ export default function StaffReportsPage() {
       role="staff"
       title="Reports & Documents"
       subtitle="Upload, organize and view client reports."
-      nav={
-        scopedClient
-          ? [
-              { href: `/staff/messages?client=${scopedClient}`, label: "Messages" },
-              { href: `/staff/reports?client=${scopedClient}`, label: "Reports" },
-            ]
-          : undefined
-      }
+      nav={[
+        {
+          href: scopedClient ? `/staff/messages?client=${scopedClient}` : "/staff/messages",
+          label: "Messages",
+        },
+        {
+          href: scopedClient ? `/staff/reports?client=${scopedClient}` : "/staff/reports",
+          label: "Reports",
+        },
+      ]}
       actions={
         scopedClient ? (
-          <Link href="/staff/dashboard" className="dc-btn">
-            ← Back to dashboard
+          <Link href={`/staff/clients/${scopedClient}`} className="dc-btn">
+            ← Back to client
           </Link>
         ) : undefined
       }

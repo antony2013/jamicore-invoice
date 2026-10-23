@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import { FileText } from "lucide-react";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -12,6 +13,8 @@ export default function AppShell({
   subtitle,
   actions,
   nav,
+  headerBrand,
+  hideHeader,
   children,
 }: {
   role: "admin" | "staff";
@@ -19,6 +22,8 @@ export default function AppShell({
   subtitle?: string;
   actions?: React.ReactNode;
   nav?: Array<{ href: string; label: string }>;
+  headerBrand?: { name: string; subtitle?: string };
+  hideHeader?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -34,9 +39,8 @@ export default function AppShell({
         ]
       : [
           { href: "/staff/dashboard", label: "Dashboard" },
-          { href: "/staff/clients", label: "Client" },
           { href: "/staff/history", label: "History" },
-          { href: "/staff/reports", label: "Reports" },
+          { href: "/staff/clients", label: "Client" },
         ];
   const items = nav ?? defaultItems;
 
@@ -68,16 +72,32 @@ export default function AppShell({
       </aside>
       <main className="dc-main">
         {role === "staff" && <ImpersonationBanner />}
-        <header className="dc-header">
-          <div>
-            <h1 className="m-0 text-[26px] font-semibold">{title}</h1>
-            {subtitle ? <p className="mt-1 text-sm text-[#475467]">{subtitle}</p> : null}
-          </div>
+        {hideHeader ? null : (
+        <header className={`dc-header ${headerBrand ? "dc-topbar" : ""}`}>
+          {headerBrand ? (
+            <div className="flex items-center gap-3">
+              <span className="dc-brand-tile">
+                <FileText className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <div className="dc-brand-name">{headerBrand.name}</div>
+                {headerBrand.subtitle ? (
+                  <div className="dc-brand-sub">{headerBrand.subtitle}</div>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h1 className="m-0 text-[26px] font-semibold">{title}</h1>
+              {subtitle ? <p className="mt-1 text-sm text-[#475467]">{subtitle}</p> : null}
+            </div>
+          )}
           <div className="dc-header-actions flex items-center gap-3">
             <NotificationBell />
             {actions}
           </div>
         </header>
+        )}
         {children}
       </main>
     </div>

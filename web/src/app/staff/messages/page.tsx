@@ -44,7 +44,6 @@ export default function StaffMessagesPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expandedClient, setExpandedClient] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, any[]>>({});
   const [threadBusy, setThreadBusy] = useState<string | null>(null);
@@ -140,7 +139,6 @@ export default function StaffMessagesPage() {
         setThreads(data.threads);
         setTotalUnread(data.totalUnread ?? 0);
       }
-      setExpandedClient(null);
       setExpandedId(null);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load messages.");
@@ -314,7 +312,6 @@ export default function StaffMessagesPage() {
   function continueDraft(d: Draft) {
     if (!d.invoice) return;
     setReplies((prev) => ({ ...prev, [d.invoice!.id]: d.body }));
-    if (d.client) setExpandedClient(d.client.id);
     setExpandedId(d.invoice.id);
     setTimeout(() => {
       document.getElementById(`thread-${d.invoice!.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -367,19 +364,30 @@ export default function StaffMessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  // Client-wise grouping for inbox/sent (one card per client).
-  const clientGroups = (() => {
-    const byId = new Map<string, { id: string; name: string; threads: Thread[]; unread: number }>();
-    for (const t of threads) {
-      const id = t.client.id || "unknown";
-      const name = t.client.name || "Unknown client";
-      const g = byId.get(id) ?? { id, name, threads: [] as Thread[], unread: 0 };
-      g.threads.push(t);
-      g.unread += t.unread;
-      byId.set(id, g);
+  function splitMessage(body?: string | null) {
+    const text = (body || "").trim();
+    if (!text) return { subject: "New message", preview: "" };
+    const newline = text.indexOf("\n");
+    if (newline > 0) {
+      return {
+        subject: text.slice(0, newline),
+        preview: text.slice(newline + 1).replace(/\n+/g, " "),
+      };
     }
-    return Array.from(byId.values()).sort((a, b) => b.unread - a.unread || a.name.localeCompare(b.name));
-  })();
+    const match = text.match(/^(.{8,90}?[.!?])\s+(.+)$/s);
+    if (match) return { subject: match[1], preview: match[2] };
+    return { subject: text, preview: "" };
+  }
+
+  function formatWhen(value?: string | null): string {
+    if (!value) return "";
+    const date = new Date(value);
+    const today = new Date();
+    const sameDay = date.toDateString() === today.toDateString();
+    const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (sameDay) return `Today, ${time}`;
+    return `${date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}, ${time}`;
+  }
 
   const filteredDrafts = drafts.filter((d) => {
     const q = search.trim().toLowerCase();
@@ -392,19 +400,21 @@ export default function StaffMessagesPage() {
       role="staff"
       title="Messages"
       subtitle="Invoice Desk · Staff Mailbox"
-      nav={
-        clientFilter
-          ? [
-              { href: `/staff/messages?client=${clientFilter}`, label: "Messages" },
-              { href: `/staff/reports?client=${clientFilter}`, label: "Reports" },
-            ]
-          : undefined
-      }
+      nav={[
+        {
+          href: clientFilter ? `/staff/messages?client=${clientFilter}` : "/staff/messages",
+          label: "Messages",
+        },
+        {
+          href: clientFilter ? `/staff/reports?client=${clientFilter}` : "/staff/reports",
+          label: "Reports",
+        },
+      ]}
       actions={
         <div className="flex items-center gap-3">
           {clientFilter ? (
-            <Link href="/staff/dashboard" className="dc-btn">
-              ← Back to dashboard
+            <Link href={`/staff/clients/${clientFilter}`} className="dc-btn">
+              ← Back to client
             </Link>
           ) : null}
           {totalUnread > 0 ? (
@@ -569,67 +579,65 @@ export default function StaffMessagesPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {clientGroups.length === 0 && !loading && (
+          <div className="flex items-center justify-between">
+            <h2 className="text-[16px] font-bold text-slate-900">
+              {folder === "sent" ? "Sent" : "Inbox"}
+            </h2>
+            <span className="text-[12px] text-slate-500">
+              {threads.length} email{threads.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {threads.length === 0 && !loading && (
             <p className="text-sm text-slate-400 text-center py-8">No threads found.</p>
           )}
-          {loading && clientGroups.length === 0 && (
+          {loading && threads.length === 0 && (
             <p className="text-sm text-slate-400 text-center py-8">Loading threads…</p>
           )}
-          {clientGroups.map((g) => (
-            <Card key={g.id} className="p-4">
-              <button
-                onClick={() => setExpandedClient(expandedClient === g.id ? null : g.id)}
-                className="w-full flex items-center gap-3 text-left"
+          {threads.map((t) => {
+            const thread = messages[t.invoiceId] || [];
+            const { subject, preview } = splitMessage(t.lastBody);
+            const unread = t.unread > 0;
+            return (
+              <Card
+                key={t.invoiceId}
+                id={`thread-${t.invoiceId}`}
+                className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
               >
-                <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4" />
-                </span>
-                <span className="flex-1 min-w-0">
-                  <span className="flex items-baseline justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-900 truncate">
-                      {g.name}
-                      {g.unread > 0 && (
-                        <Badge className="ml-1.5 bg-blue-600 text-white">New</Badge>
-                      )}
+                <button
+                  onClick={() => toggleExpand(t.invoiceId)}
+                  className="w-full flex items-start gap-3 p-4 text-left"
+                >
+                  <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-semibold text-slate-700 truncate">
+                        {t.client.name || "Unknown client"}
+                      </span>
+                      {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
+                    </span>
+                    <span className="block text-[13px] font-bold text-slate-900 truncate">
+                      {subject}
+                    </span>
+                    {preview ? (
+                      <span className="block text-[11px] text-slate-500 truncate">
+                        {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
+                      </span>
+                    ) : null}
+                    <span className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-blue-200 bg-white text-[10px] font-semibold text-blue-600">
+                        {t.invoiceNo || shortInvoiceId({ id: t.invoiceId })}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{formatWhen(t.lastAt)}</span>
                     </span>
                   </span>
-                  <span className="block text-[11px] text-slate-500 mt-0.5">
-                    {g.threads.length} thread{g.threads.length === 1 ? "" : "s"}
-                    {g.unread > 0 ? ` · ${g.unread} unread` : ""}
+                  <span className="text-slate-400 text-xs mt-1">
+                    {expandedId === t.invoiceId ? "▾" : "▸"}
                   </span>
-                </span>
-                <span className="text-slate-400">{expandedClient === g.id ? "▾" : "▸"}</span>
-              </button>
-              {expandedClient === g.id && (
-                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                  {g.threads.map((t) => {
-                    const thread = messages[t.invoiceId] || [];
-                    return (
-                      <div key={t.invoiceId} id={`thread-${t.invoiceId}`} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                        <button
-                          onClick={() => toggleExpand(t.invoiceId)}
-                          className="w-full flex items-center justify-between gap-2 text-left"
-                        >
-                          <div className="text-xs min-w-0">
-                            <span className="dc-mono">{t.invoiceNo || shortInvoiceId({ id: t.invoiceId })}</span>
-                            <span className="text-slate-500"> · {t.status}</span>
-                            <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                              {t.lastBody
-                                ? t.lastBody.length > 90
-                                  ? `${t.lastBody.substring(0, 90)}…`
-                                  : t.lastBody
-                                : "Tap to open thread"}
-                            </div>
-                          </div>
-                          <span className="flex items-center gap-1.5 flex-shrink-0">
-                            {t.unread > 0 && (
-                              <Badge className="bg-blue-600 text-white">{t.unread}</Badge>
-                            )}
-                            <span className="text-slate-400">{expandedId === t.invoiceId ? "▾" : "▸"}</span>
-                          </span>
-                        </button>
-                        {expandedId === t.invoiceId && (
-                          <div className="mt-3 pt-3 border-t border-slate-100">
+                </button>
+                {expandedId === t.invoiceId && (
+                  <div className="px-4 pb-4">
                             {threadBusy === t.invoiceId ? (
                               <p className="text-xs text-slate-400">Loading thread…</p>
                             ) : thread.length === 0 ? (
@@ -710,15 +718,11 @@ export default function StaffMessagesPage() {
                             <Link href={`/staff/invoices/${t.invoiceId}`} className="text-xs text-blue-600 hover:underline mt-2 inline-block">
                               Open invoice →
                             </Link>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-          ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
     </AppShell>
