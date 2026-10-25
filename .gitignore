@@ -29,6 +29,9 @@ Thumbs.db
 # Drizzle output cache (migrations themselves ARE committed)
 drizzle/
 
+# graphify knowledge-graph tooling output
+graphify-out/
+
 # TypeScript build info
 *.tsbuildinfo
 

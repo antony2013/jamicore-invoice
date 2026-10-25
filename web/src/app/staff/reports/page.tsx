@@ -78,7 +78,11 @@ export default function StaffReportsPage() {
           if (!seen.has(outletId)) seen.set(outletId, outletName);
         }
         setOutlets(Array.from(seen, ([id, name]) => ({ id, name })));
-        setUploadInvoices(invData.invoices ?? []);
+        const invs = invData.invoices ?? [];
+        setUploadInvoices(invs);
+        // Inside a client's report library the upload must never make you hunt
+        // for the invoice: target the client's most recent one by default.
+        if (scopedClient) setUploadInvoiceId((prev) => prev || invs[0]?.id || "");
       }
       if (!repData.success) throw new Error(repData.error || "Failed to load reports");
       setReports(repData.reports);
@@ -229,18 +233,27 @@ export default function StaffReportsPage() {
       {uploadOpen && (
         <Card className="p-4">
           <div className="text-xs font-bold text-slate-800 mb-2">Upload report (.xlsx)</div>
-          <select
-            value={uploadInvoiceId}
-            onChange={(e) => setUploadInvoiceId(e.target.value)}
-            className="dc-ctl w-full mb-2"
-          >
-            <option value="">Choose invoice…</option>
-            {uploadInvoices.map((inv) => (
-              <option key={inv.id} value={inv.id}>
-                {inv.ocrData?.invoiceNo || inv.id.slice(0, 8)} · {inv.status}
-              </option>
-            ))}
-          </select>
+          {!scopedClient && (
+            <select
+              value={uploadInvoiceId}
+              onChange={(e) => setUploadInvoiceId(e.target.value)}
+              className="dc-ctl w-full mb-2"
+            >
+              <option value="">Choose invoice…</option>
+              {uploadInvoices.map((inv) => (
+                <option key={inv.id} value={inv.id}>
+                  {inv.ocrData?.invoiceNo || inv.id.slice(0, 8)} · {inv.status}
+                </option>
+              ))}
+            </select>
+          )}
+          {scopedClient && (
+            <div className="text-[11px] text-slate-500 mb-2">
+              {uploadInvoices[0]
+                ? `Invoice: ${uploadInvoices[0].ocrData?.invoiceNo || uploadInvoices[0].id.slice(0, 8)} · ${uploadInvoices[0].status}`
+                : "No open invoice — upload needs an invoice"}
+            </div>
+          )}
           <label className="inline-flex items-center gap-2 px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50">
             📎 Choose file
             <input

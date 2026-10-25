@@ -212,6 +212,21 @@ export default function StaffMessagesPage() {
 
   async function openComposer() {
     setComposing(true);
+    // Inside a client mailbox the composer should never make you hunt for the
+    // client: list only that client's invoices and preselect the most recent.
+    if (clientFilter) {
+      try {
+        const res = await fetch(`/api/invoices?client=${clientFilter}&limit=100`);
+        const data = await res.json();
+        if (data.success) {
+          setComposeInvoices(data.invoices);
+          setComposeInvoiceId(data.invoices[0]?.id ?? "");
+        }
+      } catch {
+        // composer still opens; invoice list stays empty
+      }
+      return;
+    }
     if (composeInvoices.length === 0) {
       try {
         const res = await fetch("/api/invoices?assigned_to=me&limit=100");
@@ -433,18 +448,26 @@ export default function StaffMessagesPage() {
       {composing && (
         <Card className="p-4">
           <div className="text-xs font-bold text-slate-800 mb-2">New message</div>
-          <select
-            value={composeInvoiceId}
-            onChange={(e) => setComposeInvoiceId(e.target.value)}
-            className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white outline-none mb-2"
-          >
-            <option value="">Choose invoice…</option>
-            {composeInvoices.map((i: any) => (
-              <option key={i.id} value={i.id}>
-                {shortInvoiceId(i)} · {i.client?.name || ""} · {i.status}
-              </option>
-            ))}
-          </select>
+          {!clientFilter && (
+            <select
+              value={composeInvoiceId}
+              onChange={(e) => setComposeInvoiceId(e.target.value)}
+              className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white outline-none mb-2"
+            >
+              <option value="">Choose invoice…</option>
+              {composeInvoices.map((i: any) => (
+                <option key={i.id} value={i.id}>
+                  {shortInvoiceId(i)} · {i.client?.name || ""} · {i.status}
+                </option>
+              ))}
+            </select>
+          )}
+          {clientFilter && (
+            <div className="text-[11px] text-slate-500 mb-2">
+              To: {composeInvoices[0]?.client?.name || "this client"}
+              {composeInvoices.length === 0 ? " · no open invoice — message needs an invoice" : ""}
+            </div>
+          )}
           <textarea
             value={composeBody}
             onChange={(e) => setComposeBody(e.target.value)}
