@@ -9,6 +9,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ARG S3_ENDPOINT=http://localhost:4566
 ENV S3_ENDPOINT=$S3_ENDPOINT
+# next build imports route modules for page-data collection; those modules
+# validate required secrets at import time. Runtime values are passed by the
+# container env (Coolify/compose), these dummies never serve traffic.
+ENV NEXTAUTH_SECRET=build-time-dummy-not-a-real-secret
+ENV JWT_SECRET=build-time-dummy-not-a-real-secret
+ENV DATABASE_URL=postgres://build:build@localhost/build
 ENV NODE_ENV=production
 RUN npm run build
 

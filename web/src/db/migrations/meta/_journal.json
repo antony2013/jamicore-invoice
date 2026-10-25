@@ -1,132 +1,139 @@
 {
-    "version":  "7",
-    "dialect":  "postgresql",
-    "entries":  [
-                    {
-                        "idx":  0,
-                        "version":  "7",
-                        "when":  1789706761698,
-                        "tag":  "0000_fix-audit-findings",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  1,
-                        "version":  "7",
-                        "when":  1789711859809,
-                        "tag":  "0001_client-password-auth",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  2,
-                        "version":  "7",
-                        "when":  1789717537502,
-                        "tag":  "0002_client-note",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  3,
-                        "version":  "7",
-                        "when":  1789718574010,
-                        "tag":  "0003_page-notes",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  4,
-                        "version":  "7",
-                        "when":  1789791877301,
-                        "tag":  "0004_outlets",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  5,
-                        "version":  "7",
-                        "when":  1789968608622,
-                        "tag":  "0005_presence-default-staff",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  6,
-                        "version":  "7",
-                        "when":  1789992159037,
-                        "tag":  "0006_client-team",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  7,
-                        "version":  "7",
-                        "when":  1790399812180,
-                        "tag":  "0007_invoice-category",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  8,
-                        "version":  "7",
-                        "when":  1790408016205,
-                        "tag":  "0008_outlet-creator",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  9,
-                        "version":  "7",
-                        "when":  1790411495901,
-                        "tag":  "0009_outlet-default-staff",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  10,
-                        "version":  "7",
-                        "when":  1790485755362,
-                        "tag":  "0010_member-outlet",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  11,
-                        "version":  "7",
-                        "when":  1790826442562,
-                        "tag":  "0011_invoice-reports-messages",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  12,
-                        "version":  "7",
-                        "when":  1791261765626,
-                        "tag":  "0012_phase1-security-lifecycle",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  13,
-                        "version":  "7",
-                        "when":  1791269493057,
-                        "tag":  "0013_phase22-audit-softdelete",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  14,
-                        "version":  "7",
-                        "when":  1791284507517,
-                        "tag":  "0014_phase23-indexes",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  15,
-                        "version":  "7",
-                        "when":  1792036980301,
-                        "tag":  "0015_message-drafts",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  16,
-                        "version":  "7",
-                        "when":  1792211015087,
-                        "tag":  "0016_report-notes",
-                        "breakpoints":  true
-                    },
-                    {
-                        "idx":  17,
-                        "version":  "7",
-                        "when":  1792641863937,
-                        "tag":  "0017_notification-dismissals",
-                        "breakpoints":  true
-                    }
-                ]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789706761698,
+      "tag": "0000_fix-audit-findings",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789711859809,
+      "tag": "0001_client-password-auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789717537502,
+      "tag": "0002_client-note",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789718574010,
+      "tag": "0003_page-notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789791877301,
+      "tag": "0004_outlets",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789968608622,
+      "tag": "0005_presence-default-staff",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789992159037,
+      "tag": "0006_client-team",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790399812180,
+      "tag": "0007_invoice-category",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790408016205,
+      "tag": "0008_outlet-creator",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790411495901,
+      "tag": "0009_outlet-default-staff",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790485755362,
+      "tag": "0010_member-outlet",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790826442562,
+      "tag": "0011_invoice-reports-messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791261765626,
+      "tag": "0012_phase1-security-lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791269493057,
+      "tag": "0013_phase22-audit-softdelete",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791284507517,
+      "tag": "0014_phase23-indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792036980301,
+      "tag": "0015_message-drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792211015087,
+      "tag": "0016_report-notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792641863937,
+      "tag": "0017_notification-dismissals",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792932510094,
+      "tag": "0018_chat-messages",
+      "breakpoints": true
+    }
+  ]
 }

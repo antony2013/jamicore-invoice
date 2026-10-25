@@ -1,0 +1,110 @@
+# JamiCore Invoice — Coolify Docker Compose stack
+#
+# Use this file with a Coolify "Docker Compose" resource (Docker Compose Empty).
+# Coolify injects every ${VAR} from the service's Environment Variables page.
+#
+# Required Coolify environment variables (set them in the UI):
+#   POSTGRES_DB           invoice_db
+#   POSTGRES_USER         postgres
+#   POSTGRES_PASSWORD     strong random          (openssl rand -hex 24)
+#   JWT_SECRET            strong random          (openssl rand -hex 32)
+#   NEXTAUTH_SECRET       strong random          (openssl rand -hex 32)
+#   APP_URL               https://<your-web-domain>          (no trailing slash)
+#   S3_PUBLIC_URL         https://<your-s3-domain>           (phone-reachable)
+#   S3_BUCKET_NAME        invoice-uploads
+#   S3_CORS_ORIGINS       https://<your-web-domain>
+#   AWS_ACCESS_KEY_ID     minio root user (any name)
+#   AWS_SECRET_ACCESS_KEY minio root password (strong random)
+#   OCR_PROVIDER          mock  (until Textract credentials exist)
+#   S3_ACCESS_KEY         secret key for the client app (openssl rand -hex 24)
+#
+# Optional (mount S3/MinIO behind Coolify's Traefik with a real domain:
+# one service domain for the web container -> APP_URL, one for MinIO
+# port 9000 -> S3_PUBLIC_URL). Pre-deployment command on the stack:
+#   node scripts/migrate.mjs
+
+services:
+  postgres:
+    image: "postgres:16-alpine"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-invoice_db}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD missing}
+    volumes:
+      - jamicore-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-invoice_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    restart: unless-stopped
+
+  minio:
+    image: "minio/minio:latest"
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID missing}
+      - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY missing}
+      # Browser presigned PUT/GET must reach MinIO from the app origin
+      # (comma-separated origins; MinIO answers with permissive CORS for these)
+      - MINIO_API_CORS_ALLOW_ORIGIN=${S3_CORS_ORIGINS:-*}
+    volumes:
+      - jamicore-minio:/data
+    restart: unless-stopped
+
+  # One-shot: guarantee the private invoice bucket exists.
+  minio-init:
+    image: "minio/mc:latest"
+    depends_on:
+      - minio
+    environment:
+      - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
+      - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-invoice-uploads}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        sleep 3
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$S3_BUCKET_NAME"
+    restart: no
+
+  web:
+    build:
+      context: ./web
+      # CSP is baked from S3_ENDPOINT at build time — must be the PUBLIC URL.
+      args:
+        - S3_ENDPOINT=${S3_PUBLIC_URL:?S3_PUBLIC_URL missing}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-invoice_db}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET missing}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET missing}
+      - NEXTAUTH_URL=${APP_URL:?APP_URL missing}
+      - AWS_REGION=us-east-1
+      - S3_ENDPOINT=${S3_PUBLIC_URL}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-invoice-uploads}
+      - S3_FORCE_PATH_STYLE=true
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_CORS_ORIGINS=${S3_CORS_ORIGINS:-${APP_URL}}
+      - OCR_PROVIDER=${OCR_PROVIDER:-mock}
+      # Maker-checker guardrails (see web/.env.example for semantics)
+      - ENFORCE_MAKER_CHECKER=${ENFORCE_MAKER_CHECKER:-true}
+      - ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT=${ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT:-false}
+      # No seeding on production — create accounts in the admin UI.
+      - SEED_ADMIN_EMAIL=
+      - SEED_STAFF_EMAIL=
+      - SEED_ADMIN_PASSWORD=
+      - SEED_STAFF_PASSWORD=
+      - ALLOW_SEED=
+    restart: unless-stopped
+
+volumes:
+  jamicore-pgdata:
+  jamicore-minio:
