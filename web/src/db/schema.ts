@@ -292,6 +292,25 @@ export const notificationDismissals = pgTable(
   ]
 );
 
+// 8c. Assistant Chat — scoped staff↔bot conversation per outlet or invoice.
+// scopeId is text so the synthetic "none" outlet group is addressable too.
+// Attachments live in S3 under chat/<uuid>-<name>; the row keeps key + name.
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scopeType: text("scope_type").notNull(), // "outlet" | "invoice"
+    scopeId: text("scope_id").notNull(),
+    senderType: text("sender_type").notNull(), // "staff" | "bot"
+    senderId: text("sender_id").notNull(), // staff uuid | "bot"
+    body: text("body"),
+    attachmentS3Key: text("attachment_s3_key"),
+    attachmentName: text("attachment_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("chat_messages_scope_idx").on(t.scopeType, t.scopeId, t.createdAt)]
+);
+
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
