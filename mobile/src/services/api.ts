@@ -715,3 +715,85 @@ export async function changeMyPassword(oldPassword: string, newPassword: string)
   }
   return data;
 }
+
+/* =====================================================================
+ * 16. Scoped staff↔client chat (chat_messages on the backend).
+ * Scopes: an outlet ("outlet", id "<clientId>:<outletId|none>") or a single
+ * invoice ("invoice", id "<invoiceId>"). Attachments are stored under chat/,
+ * viewable via a 5-minute presigned GET.
+ * ===================================================================== */
+
+export type ChatMessage = {
+  id: string;
+  scopeType: string;
+  scopeId: string;
+  senderType: "staff" | "client" | string;
+  senderId: string;
+  body: string | null;
+  attachmentS3Key: string | null;
+  attachmentName: string | null;
+  createdAt: string;
+};
+
+/** History of the scoped thread (max 200 messages). */
+export async function getChat(scopeType: "outlet" | "invoice", scopeId: string): Promise<ChatMessage[]> {
+  const token = requireAuth();
+  const qs = new URLSearchParams({ scopeType, scopeId }).toString();
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-chat?${qs}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to load chat.");
+  }
+  return data.messages as ChatMessage[];
+}
+
+/**
+ * Send a chat message. `image` is an expo-image-picker asset with width/height
+ * (FormData accepts the local file uri directly on RN).
+ */
+export async function sendChatMessage(
+  scopeType: "outlet" | "invoice",
+  scopeId: string,
+  message: string,
+  image?: { uri: string; name?: string; mimeType?: string }
+): Promise<ChatMessage> {
+  const token = requireAuth();
+  const form = new FormData();
+  form.append("scopeType", scopeType);
+  form.append("scopeId", scopeId);
+  form.append("message", message.trim());
+  if (image?.uri) {
+    form.append("file", {
+      uri: image.uri,
+      name: image.name || "photo.jpg",
+      type: image.mimeType || "image/jpeg",
+    } as any);
+  }
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-chat`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form as any,
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to send message.");
+  }
+  return data.message as ChatMessage;
+}
+
+/** 5-minute presigned view URL for a chat/ attachment (image or PDF). */
+export async function getChatAttachmentUrl(key: string): Promise<string> {
+  const token = requireAuth();
+  const response = await apiFetch(
+    `${currentApiBaseUrl}/api/client-chat/attachment?key=${encodeURIComponent(key)}`,
+    { method: "GET", headers: { Authorization: `Bearer ${token}` } }
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to open attachment.");
+  }
+  return data.url as string;
+}

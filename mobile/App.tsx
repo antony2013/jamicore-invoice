@@ -44,9 +44,12 @@ import {
   getInvoiceMessages,
   sendInvoiceMessage,
   requestInvoiceReport,
+  getChat,
+  sendChatMessage,
+  getChatAttachmentUrl,
   CATEGORY_LABELS,
 } from "./src/services/api";
-import type { InvoiceCategory, InvoiceMessage, Outlet, TeamMember } from "./src/services/api";
+import type { InvoiceCategory, InvoiceMessage, Outlet, TeamMember, ChatMessage } from "./src/services/api";
 
 /* ------------------------------------------------------------------ */
 /* Liquid Glass design language (iOS 26 inspired, built with expo-blur */
@@ -256,7 +259,7 @@ function GlassButton({
 export default function App() {
   // Navigation: login -> outlet gate (if 2+ outlets) -> scan/history/team/branches
   // + detail (invoice view/edit) + account (password/PIN)
-  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account" | "team" | "branches">("login");
+  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account" | "team" | "branches" | "chat">("login");
   // Admin-provided credentials (no OTP)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -320,6 +323,17 @@ export default function App() {
   const [msgText, setMsgText] = useState("");
   const [msgSending, setMsgSending] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
+  // Scoped staff↔client chat (new): works for outlet and invoice scopes.
+  const [chatMsgs, setChatMsgs] = useState<ChatMessage[]>([]);
+  const [chatText, setChatText] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatImage, setChatImage] = useState<{ uri: string; name?: string; mimeType?: string } | null>(null);
+  const [chatScope, setChatScope] = useState<{ type: "outlet" | "invoice"; id: string; title: string } | null>(null);
+  const [chatReturn, setChatReturn] = useState<"branches" | "detail">("branches");
+  // Branch-screen info: which outlets actually hold invoices (for chat targets)
+  const [branchBusyId, setBranchBusyId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editNote, setEditNote] = useState("");
   const [editPageNotes, setEditPageNotes] = useState<string[]>([]);
@@ -524,18 +538,10 @@ export default function App() {
     setDetailReturn(from);
     setEditing(false);
     setViewUrl(null);
-    setThread([]);
-    setMsgText("");
     setScreen("detail");
-    // Thread loads in background; opening marks staff messages read
-    getInvoiceMessages(inv.id)
-      .then((msgs) => {
-        setThread(msgs);
-        setHistory((prev) => prev.map((h) => (h.id === inv.id ? { ...h, unreadMessages: 0 } : h)));
-      })
-      .catch(() => {
-        // Thread stays empty; invoice work is unaffected
-      });
+    // New scoped chat loads in background (unread badge clears like before)
+    loadChat({ type: "invoice", id: inv.id, title: `Invoice chat` }, "detail");
+    setHistory((prev) => prev.map((h) => (h.id === inv.id ? { ...h, unreadMessages: 0 } : h)));
   };
 
   const refreshSelected = async (id: string) => {
@@ -549,6 +555,159 @@ export default function App() {
       // keep stale view on refresh failure
     }
   };
+
+  /* ------------------------------------------------------------------
+   * Scoped staff↔client chat (chat_messages): outlet scope gets its own
+   * screen; the invoice detail shows the same UI scoped to one invoice.
+   */
+  const loadChat = async (
+    scope: { type: "outlet" | "invoice"; id: string; title: string },
+    from: "branches" | "detail" = "branches"
+  ) => {
+    setChatScope(scope);
+    setChatReturn(from);
+    if (from === "branches") setScreen("chat");
+    setChatText("");
+    setChatImage(null);
+    setChatError(null);
+    setChatMsgs([]);
+    setChatLoading(true);
+    try {
+      const msgs = await getChat(scope.type, scope.id);
+      setChatMsgs(msgs);
+    } catch (err: any) {
+      setChatError(err.message || "Failed to load chat.");
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  /** Open the outlet (branch) chat from the Branches tab. */
+  const openBranchChat = async (outletId: string, outletName: string) => {
+    if (!client) return;
+    await loadChat(
+      { type: "outlet", id: `${client.id}:${outletId}`, title: `🏪 ${outletName}` },
+      "branches"
+    );
+  };
+
+  const pickChatImage = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission needed", "Allow photo access to attach an image.");
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.6,
+      });
+      if (res.canceled || res.assets.length === 0) return;
+      const a = res.assets[0];
+      setChatImage({ uri: a.uri, name: "photo.jpg", mimeType: "image/jpeg" });
+    } catch (e: any) {
+      Alert.alert("Attachment Failed", e.message || "Could not pick an image.");
+    }
+  };
+
+  const handleChatSend = async () => {
+    if (!chatScope || chatSending) return;
+    if (!chatText.trim() && !chatImage) return;
+    setChatSending(true);
+    setChatError(null);
+    try {
+      await sendChatMessage(chatScope.type, chatScope.id, chatText, chatImage ?? undefined);
+      setChatText("");
+      setChatImage(null);
+      const msgs = await getChat(chatScope.type, chatScope.id);
+      setChatMsgs(msgs);
+    } catch (err: any) {
+      setChatError(err.message || "Failed to send.");
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  const handleOpenAttachment = async (m: ChatMessage) => {
+    if (!m.attachmentS3Key) return;
+    setChatError(null);
+    try {
+      const url = await getChatAttachmentUrl(m.attachmentS3Key);
+      await WebBrowser.openBrowserAsync(url);
+    } catch (err: any) {
+      setChatError(err.message || "Failed to open attachment.");
+    }
+  };
+
+  /** Shared chat UI: used on the Branch-chat screen and in invoice detail. */
+  const renderChatSection = () => (
+    <View style={styles.threadBox}>
+      <Text style={styles.label}>💬 Office chat</Text>
+      {chatError ? <Text style={styles.chatErrorText}>{chatError}</Text> : null}
+      {chatLoading ? (
+        <ActivityIndicator color="#FBBF24" />
+      ) : chatMsgs.length === 0 ? (
+        <Text style={styles.historyMeta}>
+          No messages yet — write to the office or attach a photo.
+        </Text>
+      ) : (
+        chatMsgs.map((m) => {
+          const mine = m.senderType === "client";
+          return (
+            <View key={m.id} style={[styles.threadMsg, mine ? styles.threadMine : styles.threadTheirs]}>
+              <Text style={styles.threadName}>{mine ? "You" : "Office"}</Text>
+              {m.body ? <Text style={styles.threadBody}>{m.body}</Text> : null}
+              {m.attachmentName ? (
+                <TouchableOpacity onPress={() => handleOpenAttachment(m)}>
+                  <Text style={styles.chatAttachText}>📎 {m.attachmentName} (tap to open)</Text>
+                </TouchableOpacity>
+              ) : null}
+              <Text style={styles.historyMeta}>
+                {new Date(m.createdAt).toLocaleString()}
+              </Text>
+            </View>
+          );
+        })
+      )}
+      {!chatLoading && (
+        <>
+          {chatImage ? (
+            <View style={styles.chatImageChipRow}>
+              <Text style={styles.historyMeta}>📎 {chatImage.name || "photo.jpg"}</Text>
+              <TouchableOpacity onPress={() => setChatImage(null)}>
+                <Text style={styles.chatRemoveText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          <View style={styles.threadInputRow}>
+            <TouchableOpacity
+              style={styles.chatAttachBtn}
+              onPress={pickChatImage}
+              disabled={chatSending}
+            >
+              <Text style={styles.chatAttachBtnText}>📷</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              placeholder="Write to the office…"
+              placeholderTextColor="#64748B"
+              value={chatText}
+              onChangeText={setChatText}
+              maxLength={2000}
+              multiline
+            />
+            <TouchableOpacity
+              style={styles.threadSendBtn}
+              onPress={handleChatSend}
+              disabled={chatSending || (!chatText.trim() && !chatImage)}
+            >
+              <Text style={styles.threadSendText}>{chatSending ? "…" : "Send"}</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </View>
+  );
 
   // 2f. Thread: send a reply to the office
   const handleSendMessage = async () => {
@@ -565,18 +724,21 @@ export default function App() {
     }
   };
 
-  // 2g. One-tap "please share the Excel report for this invoice"
+  // 2g. One-tap "please share the Excel report for this invoice" — goes through
+  // the new scoped chat so the office widget + history show the request.
   const handleRequestReport = async () => {
     if (!selected) return;
-    setMsgSending(true);
+    const scope = chatScope ?? { type: "invoice" as const, id: selected.id };
+    setChatSending(true);
     try {
-      const msg = await requestInvoiceReport(selected.id);
-      setThread((prev) => [msg, ...prev]);
+      await sendChatMessage(scope.type, scope.id, "📄 Please share the Excel report for this invoice.");
+      const msgs = await getChat(scope.type, scope.id);
+      setChatMsgs(msgs);
       Alert.alert("Requested", "The office will share the Excel report here.");
     } catch (err: any) {
       Alert.alert("Request Failed", err.message);
     } finally {
-      setMsgSending(false);
+      setChatSending(false);
     }
   };
 
@@ -1656,55 +1818,14 @@ export default function App() {
                           <GlassButton
                             title="📄 Request Report"
                             onPress={handleRequestReport}
-                            disabled={msgSending}
+                            disabled={chatSending}
                           />
                         </>
                       )}
                     </View>
 
-                    {/* Conversation with the office */}
-                    <View style={styles.threadBox}>
-                      <Text style={styles.label}>💬 Office chat</Text>
-                      {thread.length === 0 ? (
-                        <Text style={styles.historyMeta}>No messages yet — say hello or request the report above.</Text>
-                      ) : (
-                        thread.map((m) => (
-                          <View
-                            key={m.id}
-                            style={[styles.threadMsg, m.mine ? styles.threadMine : styles.threadTheirs]}
-                          >
-                            <Text style={styles.threadName}>
-                              {m.mine ? "You" : m.senderName}
-                              {m.kind === "request_report" ? " · 📄 report requested" : ""}
-                            </Text>
-                            <Text style={styles.threadBody}>{m.body}</Text>
-                            <Text style={styles.historyMeta}>
-                              {new Date(m.createdAt).toLocaleString()}
-                            </Text>
-                          </View>
-                        ))
-                      )}
-                      <View style={styles.threadInputRow}>
-                        <TextInput
-                          style={[styles.input, { flex: 1 }]}
-                          placeholder="Write to the office…"
-                          placeholderTextColor="#64748B"
-                          value={msgText}
-                          onChangeText={setMsgText}
-                          maxLength={500}
-                          multiline
-                        />
-                        <TouchableOpacity
-                          style={styles.threadSendBtn}
-                          onPress={handleSendMessage}
-                          disabled={msgSending || !msgText.trim()}
-                        >
-                          <Text style={styles.threadSendText}>
-                            {msgSending ? "…" : "Send"}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    {/* Chat with the office (scoped to this invoice) */}
+                    {renderChatSection()}
                   </>
                 )}
 
@@ -2078,6 +2199,20 @@ export default function App() {
 
             {/* Screen: Branches — READ ONLY. Branches are created/edited by the
                 office (admin web); mobile only shows the list. */}
+            {screen === "chat" && (
+              <GlassCard>
+                <Text style={styles.cardTitle}>{chatScope?.title || "Office chat"}</Text>
+                <Text style={styles.instruction}>
+                  Messages and photos here reach the office staff handling this{" "}
+                  {chatScope?.type === "invoice" ? "invoice" : "branch"}.
+                </Text>
+                {renderChatSection()}
+                <GlassButton
+                  title={chatReturn === "detail" ? "← Back to invoice" : "← Back to Branches"}
+                  onPress={() => setScreen(chatReturn === "detail" && selected ? "detail" : "branches")}
+                />
+              </GlassCard>
+            )}
             {screen === "branches" && (
               <GlassCard>
                 <Text style={styles.cardTitle}>🏪 Branches</Text>
@@ -2100,6 +2235,18 @@ export default function App() {
                           Added by {o.createdByName || "office"}
                         </Text>
                       </View>
+                      <TouchableOpacity
+                        style={styles.chatBranchBtn}
+                        onPress={() => {
+                          setBranchBusyId(o.id);
+                          openBranchChat(o.id, o.name).finally(() => setBranchBusyId(null));
+                        }}
+                        disabled={branchBusyId === o.id}
+                      >
+                        <Text style={styles.chatBranchBtnText}>
+                          {branchBusyId === o.id ? "…" : "💬 Chat office"}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   ))
                 )}
@@ -2785,16 +2932,62 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   threadSendBtn: {
-    backgroundColor: "#2563EB",
+    backgroundColor: "#FBBF24",
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    minHeight: 48,
-    justifyContent: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginLeft: 8,
   },
   threadSendText: {
     color: "#FFFFFF",
     fontSize: 14,
+    fontWeight: "700",
+  },
+  chatErrorText: {
+    fontSize: 12,
+    color: "#FCA5A5",
+    marginBottom: 6,
+  },
+  chatAttachText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FCD34D",
+    textDecorationLine: "underline",
+    marginTop: 2,
+  },
+  chatImageChipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 6,
+  },
+  chatRemoveText: {
+    color: "#FCA5A5",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  chatAttachBtn: {
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.35)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chatAttachBtnText: {
+    fontSize: 18,
+  },
+  chatBranchBtn: {
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.5)",
+    backgroundColor: "rgba(251,191,36,0.12)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginLeft: 8,
+  },
+  chatBranchBtnText: {
+    color: "#FCD34D",
+    fontSize: 12,
     fontWeight: "700",
   },
   passwordRow: {
