@@ -216,6 +216,36 @@ describe("maker-checker", () => {
   });
 });
 
+describe("returned re-open", () => {
+  it("disputed re-opens to in_review; collected stays terminal", async () => {
+    const db = tdb();
+    const s = await seedStaff();
+    const c = await seedClient();
+    const inv = await seedInvoice(c.id, { status: "disputed", assignedTo: s.id });
+
+    mockAuth.mockResolvedValue(officeSession({ id: s.id, role: "staff" }));
+    const r = await patchInvoice(
+      req(`http://t/api/invoices/${inv.id}`, {
+        method: "PATCH",
+        body: { status: "in_review", note: "re-open" },
+      }),
+      { params: Promise.resolve({ id: inv.id }) } as any
+    );
+    expect(r.status).toBe(200);
+
+    // Finished stays locked — no recovery move from collected.
+    const term = await seedInvoice(c.id, { status: "collected", assignedTo: s.id });
+    const r2 = await patchInvoice(
+      req(`http://t/api/invoices/${term.id}`, {
+        method: "PATCH",
+        body: { status: "in_review", note: "should fail" },
+      }),
+      { params: Promise.resolve({ id: term.id }) } as any
+    );
+    expect(r2.status).toBe(400);
+  });
+});
+
 describe("soft delete", () => {
   it("withdraw-after-assign is 409 with message; soft-deleted rows vanish everywhere", async () => {
     const a = await seedStaff({ role: "admin" });

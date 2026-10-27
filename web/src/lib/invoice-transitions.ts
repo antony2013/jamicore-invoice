@@ -71,7 +71,11 @@ export async function transitionInvoice(tx: DbTx, input: TransitionInput) {
       `Illegal status transition from '${expectedStatus}' to '${nextStatus}'.`
     );
   }
-  if (isTerminalStatus(expectedStatus as InvoiceStatus)) {
+  if (
+    isTerminalStatus(expectedStatus as InvoiceStatus) &&
+    // Single recovery move: Returned invoices can be re-opened to review.
+    !(expectedStatus === "disputed" && nextStatus === "in_review")
+  ) {
     throw new BadRequestError(
       `Invoice is in terminal state '${expectedStatus}'. No further updates or transitions are allowed.`
     );

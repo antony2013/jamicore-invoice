@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, AlertTriangle, ChevronDown } from "lucide-react";
 
 import AppShell from "@/components/AppShell";
 import ChatWidget from "@/components/ChatWidget";
@@ -10,23 +10,47 @@ import { shortInvoiceId } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
   uploaded: "Need to start",
-  ocr_pending: "In progress",
-  ocr_done: "In progress",
+  ocr_pending: "Processing",
+  ocr_done: "Processing",
   ocr_failed: "Need to start",
-  assigned: "In progress",
-  in_review: "In progress",
-  needs_info: "In progress",
+  assigned: "Processing",
+  in_review: "Processing",
+  needs_info: "Processing",
   verified: "Verified",
   collected: "Finished",
   disputed: "Returned",
 };
 
-const NEXT_STATUS: Record<string, string> = {
-  uploaded: "assigned",
-  assigned: "in_review",
-  needs_info: "in_review",
-  in_review: "verified",
-  verified: "collected",
+const STATUS_PILL: Record<string, string> = {
+  uploaded: "bg-amber-50 text-amber-700 ring-amber-200",
+  ocr_failed: "bg-amber-50 text-amber-700 ring-amber-200",
+  ocr_pending: "bg-blue-50 text-blue-700 ring-blue-200",
+  ocr_done: "bg-blue-50 text-blue-700 ring-blue-200",
+  assigned: "bg-blue-50 text-blue-700 ring-blue-200",
+  in_review: "bg-blue-50 text-blue-700 ring-blue-200",
+  needs_info: "bg-blue-50 text-blue-700 ring-blue-200",
+  verified: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  collected: "bg-slate-100 text-slate-700 ring-slate-300",
+  disputed: "bg-red-50 text-red-700 ring-red-200",
+};
+
+// Working-status update path: the pill is a dropdown. Each option mirrors the
+// server transition matrix (invoice-transitions.ts) — no illegal moves shown.
+const NEXT_OPTIONS: Record<string, { status: string; label: string; note: string }[]> = {
+  uploaded: [{ status: "assigned", label: "Start processing", note: "Invoice processing started" }],
+  assigned: [{ status: "in_review", label: "Start review", note: "Invoice moved to review" }],
+  in_review: [
+    { status: "verified", label: "Verify — data checked", note: "Staff verified invoice data accuracy" },
+    { status: "needs_info", label: "Need more info", note: "Staff returned invoice for more information" },
+  ],
+  needs_info: [{ status: "in_review", label: "Resume review", note: "Review resumed after more info" }],
+  verified: [
+    { status: "collected", label: "Collected — finished", note: "Payment successfully collected" },
+    { status: "disputed", label: "Flag as disputed", note: "Invoice disputed" },
+  ],
+  disputed: [
+    { status: "in_review", label: "Re-open — pick back up", note: "Invoice re-opened from Returned" },
+  ],
 };
 
 function formatDate(value?: string | null): string {
@@ -48,9 +72,9 @@ export default function StaffInvoiceVerifyPage({
   const [invoice, setInvoice] = useState<any | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   async function loadInvoiceData() {
     setLoading(true);
@@ -85,11 +109,11 @@ export default function StaffInvoiceVerifyPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  async function handleTransition(targetStatus: string, actionNote: string) {
-    if (!invoice) return;
+  async function updateStatus(targetStatus: string, actionNote: string) {
+    if (!invoice || saving) return;
     setSaving(true);
+    setMenuOpen(false);
     setError(null);
-    setSuccess(null);
     try {
       // Transitions only — no ocrData here. Sending money fields would make
       // every PATCH a "money edit", which 403s staff on verified invoices
@@ -97,14 +121,10 @@ export default function StaffInvoiceVerifyPage({
       const res = await fetch(`/api/invoices/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: targetStatus,
-          note: actionNote,
-        }),
+        body: JSON.stringify({ status: targetStatus, note: actionNote }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update status");
-      setSuccess(`Status updated to ${STATUS_LABELS[targetStatus] ?? targetStatus}.`);
       loadInvoiceData();
     } catch (err: any) {
       setError(err.message);
@@ -139,11 +159,8 @@ export default function StaffInvoiceVerifyPage({
     );
   }
 
-  const isTerminal = invoice.status === "collected" || invoice.status === "disputed";
   const statusLabel = STATUS_LABELS[invoice.status] ?? invoice.status;
-  const nextStatus = NEXT_STATUS[invoice.status];
-  const canReturn = invoice.status === "in_review";
-  const canFlag = invoice.status === "verified";
+  const statusPill = STATUS_PILL[invoice.status] ?? "bg-slate-100 text-slate-600 ring-slate-300";
 
   return (
     <AppShell role="staff" title={`Invoice ${shortInvoiceId(invoice)}`} hideHeader>
@@ -157,39 +174,56 @@ export default function StaffInvoiceVerifyPage({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() =>
-              handleTransition("needs_info", "Staff returned invoice for more information")
+          {/* Status pill doubles as the working-status control: click it,
+              pick the next step, done. Read-only in terminal states. */}
+          {(() => {
+            const options = NEXT_OPTIONS[invoice.status] ?? [];
+            if (options.length === 0) {
+              return (
+                <span
+                  className={`inline-flex items-center rounded-full ring-1 px-3.5 py-1.5 text-[11px] font-semibold ${statusPill}`}
+                >
+                  {statusLabel}
+                </span>
+              );
             }
-            disabled={!canReturn || saving || isTerminal}
-            className="px-3.5 py-1.5 rounded-full bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            Return
-          </button>
-          <button
-            onClick={() => handleTransition("disputed", "Invoice flagged")}
-            disabled={!canFlag || saving || isTerminal}
-            className="px-3.5 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            Flag
-          </button>
-          <button
-            onClick={() =>
-              nextStatus &&
-              handleTransition(
-                nextStatus,
-                nextStatus === "verified"
-                  ? "Staff verified invoice data accuracy"
-                  : nextStatus === "collected"
-                    ? "Payment successfully collected"
-                    : "Advanced to next stage"
-              )
-            }
-            disabled={!nextStatus || saving || isTerminal}
-            className="px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >
-            Next
-          </button>
+            return (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  disabled={saving}
+                  className={`inline-flex items-center gap-1.5 rounded-full ring-1 px-3.5 py-1.5 text-[11px] font-semibold transition hover:brightness-95 disabled:opacity-60 ${statusPill}`}
+                >
+                  {statusLabel}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                {menuOpen && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Close status menu"
+                      className="fixed inset-0 z-40 cursor-default"
+                      onClick={() => setMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
+                      {options.map((opt) => (
+                        <button
+                          key={opt.status}
+                          type="button"
+                          disabled={saving}
+                          onClick={() => updateStatus(opt.status, opt.note)}
+                          className="block w-full px-3 py-2 text-left text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <Link
             href={
               invoice.clientId && (invoice.outletId || invoice.outlet?.id)
@@ -206,12 +240,6 @@ export default function StaffInvoiceVerifyPage({
         </div>
       </div>
 
-      {success && (
-        <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-          <span>{success}</span>
-        </div>
-      )}
       {error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 flex-shrink-0" />

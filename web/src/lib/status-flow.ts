@@ -30,8 +30,8 @@ export const ALLOWED_TRANSITIONS: Record<InvoiceStatus, readonly InvoiceStatus[]
   in_review: ["needs_info", "verified"],
   needs_info: ["in_review"],
   verified: ["collected", "disputed"],
-  collected: [], // Terminal
-  disputed: [], // Terminal
+  collected: [], // Terminal (money trail stays)
+  disputed: ["in_review"], // Re-open: staff can pick the invoice back up
 } as const;
 
 /**

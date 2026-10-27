@@ -124,8 +124,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
-    // Constraint: Check if already in terminal state
-    if (isTerminalStatus(currentInvoice.status as InvoiceStatus)) {
+    // Constraint: Check if already in terminal state. Exception: a Returned
+    // (disputed) invoice can be re-opened by staff moving it to in_review.
+    const reOpenRequested =
+      currentInvoice.status === "disputed" && result.data.status === "in_review";
+    if (isTerminalStatus(currentInvoice.status as InvoiceStatus) && !reOpenRequested) {
       return NextResponse.json(
         {
           error: `Invoice is in terminal state '${currentInvoice.status}'. No further updates or transitions are allowed.`,

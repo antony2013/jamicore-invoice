@@ -188,27 +188,6 @@ export default function StaffDashboard() {
       headerBrand={{ name: "InvoiceDesk", subtitle: "Staff Invoice Processing Portal" }}
       actions={
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            title="Mark all notifications read"
-            aria-label="Mark all notifications read"
-            onClick={dismissAll}
-            disabled={actionItems.length === 0}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#101828] bg-white text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-40"
-          >
-            <Check className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            title="Clear notifications"
-            aria-label="Clear notifications"
-            onClick={dismissAll}
-            disabled={actionItems.length === 0}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#101828] bg-white text-red-600 transition hover:bg-red-50 disabled:opacity-40"
-          >
-            <X className="h-4 w-4" />
-          </button>
-          <span className="mx-1 h-9 w-px bg-slate-200" />
           <span className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-700 ring-1 ring-slate-200">
               {initial}

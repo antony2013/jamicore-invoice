@@ -25,7 +25,7 @@ export default function ChatWidget({
   clientId: string;
   scopeId: string;
   outletLabel: string;
-  invoices: Array<{ id: string; label: string }>;
+  invoices?: Array<{ id: string; label: string }>;
   requestScope?: { id: string; seq: number };
   initialScopeType?: "outlet" | "invoice";
 }) {
@@ -120,7 +120,7 @@ export default function ChatWidget({
   const scopeLabel =
     scopeType === "outlet"
       ? `${outletLabel} · Outlet chat`
-      : `${invoices.find((i) => i.id === activeId)?.label ?? "Invoice"} · Invoice chat`;
+      : `${(invoices ?? []).find((i) => i.id === activeId)?.label ?? "Invoice"} · Invoice chat`;
 
   return (
     <>
@@ -133,43 +133,19 @@ export default function ChatWidget({
               </div>
               <div className="text-[10px] text-slate-300">Office staff · client chat</div>
             </div>
-            <button onClick={() => setOpen(false)} aria-label="Close chat" className="text-slate-300 hover:text-white flex-shrink-0">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 border-b border-slate-200 bg-slate-50 px-3 py-2">
             <button
               onClick={() => {
-                setScopeType("outlet");
-                setActiveId(scopeId);
+                setOpen(false);
+                // Reopening the bubble goes back to this outlet's chat;
+                // invoice threads are entered via the card's Chat button.
+                setScopeType(initialScopeType);
+                setActiveId(initialScopeType === "invoice" ? requestScope?.id ?? scopeId : scopeId);
               }}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition ${
-                scopeType === "outlet" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+              aria-label="Close chat"
+              className="text-slate-300 hover:text-white flex-shrink-0"
             >
-              Whole outlet
+              <X className="h-4 w-4" />
             </button>
-            <select
-              value={scopeType === "invoice" ? activeId : ""}
-              onChange={(e) => {
-                if (!e.target.value) {
-                  setScopeType("outlet");
-                  setActiveId(scopeId);
-                } else {
-                  setScopeType("invoice");
-                  setActiveId(e.target.value);
-                }
-              }}
-              className="flex-1 min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-700 outline-none"
-            >
-              <option value="">This outlet's invoices…</option>
-              {invoices.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto px-3 py-3 bg-slate-50">

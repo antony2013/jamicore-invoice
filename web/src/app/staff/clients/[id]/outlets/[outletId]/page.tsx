@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Store } from "lucide-react";
 
 import AppShell from "@/components/AppShell";
-import ChatWidget, { ChatInvoiceButton } from "@/components/ChatWidget";
+import ChatWidget from "@/components/ChatWidget";
 import { shortInvoiceId } from "@/lib/utils";
 
 type Invoice = {
@@ -138,7 +138,6 @@ export default function StaffOutletPage({
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
-  const [chatScope, setChatScope] = useState<{ id: string; seq: number } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -236,9 +235,6 @@ export default function StaffOutletPage({
             {inv.outlet?.name ? (
               <span className="text-[10px] text-slate-400 truncate">{inv.outlet.name}</span>
             ) : null}
-            <ChatInvoiceButton
-              onChat={() => setChatScope({ id: inv.id, seq: Date.now() })}
-            />
           </span>
         </div>
       </button>
@@ -390,11 +386,6 @@ export default function StaffOutletPage({
         clientId={id}
         scopeId={outletId}
         outletLabel={outletName}
-        invoices={invoices.map((inv) => ({
-          id: inv.id,
-          label: `${shortInvoiceId(inv)} · ${formatAmount(inv)}`,
-        }))}
-        requestScope={chatScope ?? undefined}
       />
     </AppShell>
   );

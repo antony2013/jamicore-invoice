@@ -39,7 +39,7 @@ body {
   display: grid;
   grid-template-columns: 232px 1fr;
   min-height: 100vh;
-  background: #F3F5F7;
+  background: #ffffff;
 }
 .dc-sidebar {
   background: #101828;
