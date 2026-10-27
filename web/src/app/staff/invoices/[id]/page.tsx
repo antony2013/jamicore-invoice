@@ -52,11 +52,6 @@ export default function StaffInvoiceVerifyPage({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [amount, setAmount] = useState("");
-  const [invoiceNo, setInvoiceNo] = useState("");
-  const [vendor, setVendor] = useState("");
-  const [date, setDate] = useState("");
-
   async function loadInvoiceData() {
     setLoading(true);
     setError(null);
@@ -66,11 +61,6 @@ export default function StaffInvoiceVerifyPage({
       if (!res.ok) throw new Error(data.error || "Failed to load invoice");
 
       setInvoice(data.invoice);
-      const ocr = data.invoice.ocrData;
-      setAmount(ocr?.amount ? String(ocr.amount) : "");
-      setInvoiceNo(ocr?.invoiceNo || "");
-      setVendor(ocr?.vendor || "");
-      setDate(ocr?.date || "");
 
       await fetchImage();
     } catch (err: any) {
@@ -101,17 +91,14 @@ export default function StaffInvoiceVerifyPage({
     setError(null);
     setSuccess(null);
     try {
+      // Transitions only — no ocrData here. Sending money fields would make
+      // every PATCH a "money edit", which 403s staff on verified invoices
+      // ("Verified invoices are locked for staff").
       const res = await fetch(`/api/invoices/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: targetStatus,
-          ocrData: {
-            amount: amount ? parseFloat(amount) : null,
-            invoiceNo,
-            vendor,
-            date,
-          },
           note: actionNote,
         }),
       });
