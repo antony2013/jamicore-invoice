@@ -13,7 +13,6 @@ import { officeInvoiceOr404 } from "@/lib/invoice-access";
 import {
   MAX_REPORT_BYTES,
   REPORT_CONTENT_TYPE,
-  checkMagicBytes,
   deleteObjectFromS3,
   generatePresignedReportUploadUrl,
   generatePresignedViewUrl,

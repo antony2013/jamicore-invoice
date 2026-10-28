@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { invoices, assignments, invoiceStatusLog, staff } from "@/db/schema";
+import { invoices, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { notDeleted } from "@/lib/invoice-access";
 import { isValidTransition, InvoiceStatus } from "@/lib/status-flow";

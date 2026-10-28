@@ -16,8 +16,9 @@ mobile/ (Expo React Native, SDK 57) ──Bearer JWT──▶ web/ (Next.js 15 A
   `token_version`); mobile = short-lived JWTs (`tv` claim, revalidated per
   request, 7-day expiry).
 - **Files**: presigned PUT/GET only, 5-minute view links, magic-byte checked.
-- **Money rule**: verified invoices lock for staff; `verified → collected`
-  needs a different account (maker-checker, env-gated).
+- **Money rule**: verified invoices lock for staff.
+- **Maker-checker**: OFF by default (`ENFORCE_MAKER_CHECKER=false`); set it
+  to `true` to require a second account for `verified → collected`.
 
 ## Roles & permissions (matrix)
 
@@ -44,6 +45,13 @@ legacy ocr_* ──▶ assigned (drain only; nothing new enters)
 All status writes go through `transitionInvoice()` (conditional update,
 409 on concurrent change). Soft-deleted rows (`deleted_at`) are invisible
 everywhere; purge only via `db:purge`.
+
+**Completing a job** (`→ collected`) also derives business data in the same
+transaction: `job_number` (`JC-YYYYMMDD-0001`, daily sequence, unique) and
+`completed_at`. Allocation is serialized with a transaction-scoped advisory
+lock inside `transitionInvoice()` / `allocateJobNumber()`, so two concurrent
+completions can never share a number. Both fields are shown on the staff and
+admin invoice pages.
 
 ## Local setup
 
@@ -76,8 +84,9 @@ Docker volumes are the dev database — back it up before risky ops:
 | `NEXTAUTH_SECRET` / `JWT_SECRET` | Session + mobile JWT signing (fail-closed) |
 | `S3_ENDPOINT`, `S3_BUCKET_NAME`, `S3_FORCE_PATH_STYLE`, `AWS_*` | Private bucket config; endpoint must be phone-reachable (LAN IP) |
 | `SEED_*` / `ALLOW_SEED` | First-run accounts (dev) |
-| `ENFORCE_MAKER_CHECKER` (default true) | verified→collected needs a different account |
-| `ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT` (default false) | Admin exemption |
+| `ENFORCE_MAKER_CHECKER` (default false) | verified→collected by a different account; set `true` to re-enable |
+| `ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT` (default false) | Admin exemption (only while maker-checker is on) |
+| `JOB_NUMBER_TZ` (default `Asia/Colombo`) | Calendar day used in `JC-YYYYMMDD-NNNN` job numbers |
 | `DATABASE_URL_TEST` | Scratch DB for `npm test` (name must contain "test") |
 
 ## Migration workflow
@@ -99,6 +108,25 @@ npm run db:migrate
 | `npm run audit:retention [-- --older-than-days=N --archive=file --delete]` | Export old audit rows to JSONL; with `--delete`, prune them after archiving |
 | `npm run db:rotate [-- --apply --scope=staff\|clients\|all]` | Rotate all credentials after a leak |
 | `npm test` | vitest (needs `DATABASE_URL_TEST` scratch DB) |
+| `npm run lint` | ESLint (flat config, `next/core-web-vitals` + TS rules) |
+
+CI (`.github/workflows/ci.yml`) runs on every push/PR: production dependency
+audit, typecheck, lint, the full vitest suite against a scratch Postgres
+service, `next build`, the mobile typecheck, and `docker compose config` for
+the Coolify stack. A red job blocks merge.
+
+## Messaging surfaces (two, on purpose)
+
+| Surface | Tables / API | Who uses it |
+|---|---|---|
+| Invoice thread | `invoice_messages`, `/api/invoices/[id]/messages`, `/api/threads` | Staff "Messages" page + mobile invoice detail: the legacy, per-invoice mail-style thread with unread counters and report attachments |
+| Scoped chat | `chat_messages`, `/api/chat`, `/api/client-chat` (+ `/attachment`) | Staff outlet/invoice chat widget + mobile branch chat: lightweight outlet/invoice-scoped chat with photo attachments |
+
+They are deliberately separate: the thread is a documented, auditable
+per-invoice record (unread counts, Excel reports), while chat is the quick
+branch-level conversation. Both resolve authorization through
+`src/lib/chat-scope.ts` / `src/lib/invoice-access.ts`; chat attachments are
+authorized per message (the key alone is not enough).
 
 ## Deployment notes (Coolify)
 

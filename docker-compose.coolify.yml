@@ -15,7 +15,6 @@
 #   S3_CORS_ORIGINS       https://<your-web-domain>
 #   AWS_ACCESS_KEY_ID     minio root user (any name)
 #   AWS_SECRET_ACCESS_KEY minio root password (strong random)
-#   OCR_PROVIDER          mock  (until Textract credentials exist)
 #   S3_ACCESS_KEY         secret key for the client app (openssl rand -hex 24)
 #
 # Optional (mount S3/MinIO behind Coolify's Traefik with a real domain:
@@ -40,7 +39,10 @@ services:
     restart: unless-stopped
 
   minio:
-    image: "minio/minio:latest"
+    # Pinned release. The official `minio/minio` Docker Hub repo was removed
+    # upstream; this is the maintained community mirror of the same release.
+    # amd64 digest: sha256:2b36182f3479c58b5cba920f20479738ee85ce218de0596a244f9a1368268db9
+    image: "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
     command: server /data --console-address ":9001"
     environment:
       - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID missing}
@@ -54,7 +56,9 @@ services:
 
   # One-shot: guarantee the private invoice bucket exists.
   minio-init:
-    image: "minio/mc:latest"
+    # Pinned release (community mirror — see the minio service comment).
+    # amd64 digest: sha256:883a5b5965c0bca4dba4f17e36f79e7d55f1aa1abea7923d9a95f97e4e1ab052
+    image: "pgsty/mc:RELEASE.2026-10-26T00-00-00Z"
     depends_on:
       - minio
     environment:
@@ -93,10 +97,11 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_CORS_ORIGINS=${S3_CORS_ORIGINS:-${APP_URL}}
-      - OCR_PROVIDER=${OCR_PROVIDER:-mock}
       # Maker-checker guardrails (see web/.env.example for semantics)
-      - ENFORCE_MAKER_CHECKER=${ENFORCE_MAKER_CHECKER:-true}
+      - ENFORCE_MAKER_CHECKER=${ENFORCE_MAKER_CHECKER:-false}
       - ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT=${ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT:-false}
+      # Calendar day used for job numbers (JC-YYYYMMDD-NNNN)
+      - JOB_NUMBER_TZ=${JOB_NUMBER_TZ:-Asia/Colombo}
       # No seeding on production — create accounts in the admin UI.
       - SEED_ADMIN_EMAIL=
       - SEED_STAFF_EMAIL=

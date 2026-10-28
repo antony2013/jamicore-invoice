@@ -247,6 +247,19 @@ export default function StaffInvoiceVerifyPage({
         </div>
       )}
 
+      {invoice.jobNumber && (
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-1 rounded-lg border border-[#E4E7EC] bg-white px-3 py-2 text-[11px] text-slate-500">
+          <span>
+            Job no:{" "}
+            <span className="font-mono font-semibold text-slate-800">{invoice.jobNumber}</span>
+          </span>
+          <span>
+            Job completed:{" "}
+            <span className="font-semibold text-slate-800">{formatDate(invoice.completedAt)}</span>
+          </span>
+        </div>
+      )}
+
       <div className="rounded-lg border border-[#E4E7EC] bg-white p-3">
           {imageUrl ? (
               invoice.s3Key?.toLowerCase().endsWith(".pdf") ? (

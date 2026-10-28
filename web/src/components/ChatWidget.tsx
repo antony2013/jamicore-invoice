@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, X, Paperclip, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 type ChatMsg = {
   id: string;
@@ -63,7 +62,7 @@ export default function ChatWidget({
       setActiveId(requestScope.id);
       setOpen(true);
     }
-  }, [requestScope?.seq]);
+  }, [requestScope?.seq, requestScope?.id]);
 
   useEffect(() => {
     if (open) load();
@@ -109,12 +108,6 @@ export default function ChatWidget({
     } catch {
       setError("Failed to open attachment.");
     }
-  }
-
-  function startInvoiceChat(invId: string) {
-    setScopeType("invoice");
-    setActiveId(invId);
-    setOpen(true);
   }
 
   const scopeLabel =
@@ -250,32 +243,5 @@ export default function ChatWidget({
         </button>
       )}
     </>
-  );
-}
-
-/** Small inline trigger for a specific invoice card.
- * Rendered as a span because it sits inside the invoice card's <button> —
- * nested <button> elements cause a hydration error. */
-export function ChatInvoiceButton({ onChat }: { onChat: () => void }) {
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      onClick={(e) => {
-        e.stopPropagation();
-        onChat();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.stopPropagation();
-          e.preventDefault();
-          onChat();
-        }
-      }}
-      className="inline-block cursor-pointer rounded-md border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 hover:text-blue-600 transition"
-      title="Message the client about this invoice"
-    >
-      💬 Chat
-    </span>
   );
 }

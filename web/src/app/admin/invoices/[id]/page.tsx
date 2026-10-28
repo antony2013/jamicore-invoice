@@ -9,12 +9,9 @@ import {
   DollarSign,
   Building,
   Hash,
-  ShieldCheck,
-  Clock,
   User,
   History,
   AlertCircle,
-  ExternalLink,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
@@ -49,7 +46,6 @@ export default function AdminInvoiceDetailPage({
   // Read-only visibility into the client↔staff thread + Excel report
   const [messages, setMessages] = useState<any[]>([]);
   const [report, setReport] = useState<any | null>(null);
-  const [reportBusy, setReportBusy] = useState(false);
 
   const CATEGORY_OPTIONS = [
     { value: "sales_invoice", label: "Sales Invoice" },
@@ -375,6 +371,30 @@ export default function AdminInvoiceDetailPage({
                   <div className="text-slate-500">{invoice.assignedStaff?.email || "—"}</div>
                 </div>
               </div>
+
+              {/* Job completion (auto-generated when the invoice is collected) */}
+              {invoice.jobNumber && (
+                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100 text-xs">
+                  <div>
+                    <div className="text-slate-400 font-medium mb-1">Job Number</div>
+                    <div className="font-mono font-semibold text-slate-800">
+                      {invoice.jobNumber}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 font-medium mb-1">Job Complete Date</div>
+                    <div className="font-semibold text-slate-800">
+                      {invoice.completedAt
+                        ? new Date(invoice.completedAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "2-digit",
+                            year: "numeric",
+                          })
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Client Note */}
               {invoice.clientNote && (

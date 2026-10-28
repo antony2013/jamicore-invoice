@@ -81,21 +81,18 @@ export async function transitionInvoice(tx: DbTx, input: TransitionInput) {
     );
   }
 
-  // Maker-checker (Phase 2.3, Step-3 hardened): verified -> collected
-  // must be a DIFFERENT account than the one that set verified. The
-  // verifier is the LATEST audit_log `invoice.status` entry for this
-  // invoice whose after.status = 'verified' (a data-edit echo never
-  // carries after.status, so edits can't move the checker). Legacy rows
-  // with no such audit entry fall back to the earliest 'verified'
-  // status_log row, and fail OPEN (with a console warning) if even that
-  // is missing.
-  // ENFORCE_MAKER_CHECKER=false disables; admins are exempt only with
-  // ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT=true.
-  if (
-    expectedStatus === "verified" &&
-    nextStatus === "collected" &&
-    (process.env.ENFORCE_MAKER_CHECKER ?? "true") !== "false"
-  ) {
+  // Maker-checker (Phase 2.3): verified -> collected could be forced to a
+  // DIFFERENT account than the one that set verified. OFF by default since
+  // 2026-10: a single-staff office could otherwise never finish a job.
+  // Set ENFORCE_MAKER_CHECKER=true to re-enable. The verifier is the LATEST
+  // audit_log `invoice.status` entry for this invoice whose after.status =
+  // 'verified' (a data-edit echo never carries after.status, so edits can't
+  // move the checker). Legacy rows with no such audit entry fall back to the
+  // earliest 'verified' status_log row, and fail OPEN (with a console
+  // warning) if even that is missing.
+  // Admins are exempt only with ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT=true.
+  const makerCheckerEnabled = (process.env.ENFORCE_MAKER_CHECKER ?? "false") === "true";
+  if (expectedStatus === "verified" && nextStatus === "collected" && makerCheckerEnabled) {
     const adminExempt =
       !!actor.isAdmin && (process.env.ENFORCE_MAKER_CHECKER_ADMIN_EXEMPT ?? "false") === "true";
     if (!adminExempt && actor.id) {
@@ -148,6 +145,16 @@ export async function transitionInvoice(tx: DbTx, input: TransitionInput) {
   };
   if (input.assignedTo !== undefined) {
     setClause.assignedTo = input.assignedTo;
+  }
+
+  // Completing a job is the ONE status move that also derives business data:
+  // the job number (JC-YYYYMMDD-NNNN, daily sequence) and the completion
+  // timestamp. Both are written in this same transaction/update, so an
+  // invoice can never be `collected` without them.
+  if (nextStatus === "collected") {
+    const job = await allocateJobNumber(tx);
+    setClause.jobNumber = job.jobNumber;
+    setClause.completedAt = job.completedAt;
   }
 
   const whereParts = [eq(invoices.id, invoiceId), eq(invoices.status, expectedStatus as any)];
@@ -212,4 +219,40 @@ export function concurrentEditError(): ConflictError {
 export function updatedAtMatches(updatedAt: Date | string) {
   const iso = updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt;
   return sql`date_trunc('milliseconds', ${invoices.updatedAt}) = date_trunc('milliseconds', ${iso}::timestamptz)`;
+}
+
+/**
+ * Business timezone that decides which day a job number belongs to.
+ * Sri Lanka and India share UTC+5:30, so the default covers both.
+ */
+const JOB_NUMBER_TZ = process.env.JOB_NUMBER_TZ || "Asia/Colombo";
+
+/**
+ * Allocate the next job number for "today" plus the completion timestamp.
+ * MUST be called inside the caller's transaction: a transaction-scoped
+ * advisory lock serializes concurrent completions, so the MAX(seq)+1 read
+ * cannot race with itself (the unique index on job_number is the backstop).
+ * Format: JC-YYYYMMDD-0001 (daily sequence, 4 digits, grows past 9999).
+ */
+export async function allocateJobNumber(
+  tx: DbTx
+): Promise<{ jobNumber: string; completedAt: Date }> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('invoice_job_number'))`);
+
+  const rows = (await tx.execute(sql`
+    SELECT
+      to_char(now() AT TIME ZONE ${JOB_NUMBER_TZ}, 'YYYYMMDD') AS day,
+      now() AS at,
+      COALESCE(MAX((regexp_replace(job_number, '^.*-', ''))::int), 0) AS max_seq
+    FROM invoices
+    WHERE job_number LIKE 'JC-' || to_char(now() AT TIME ZONE ${JOB_NUMBER_TZ}, 'YYYYMMDD') || '-%'
+  `)) as unknown as Array<{ day: string; at: Date | string; max_seq: number | string }>;
+
+  const row = rows[0];
+  const day = row?.day ?? new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const nextSeq = Number(row?.max_seq ?? 0) + 1;
+  return {
+    jobNumber: `JC-${day}-${String(nextSeq).padStart(4, "0")}`,
+    completedAt: new Date(row?.at ?? Date.now()),
+  };
 }

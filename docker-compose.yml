@@ -8,7 +8,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      # Host-local only: dev DB never needs to be reachable from the LAN.
+      - "127.0.0.1:5432:5432"
     volumes:
       - jamicore-postgres:/var/lib/postgresql/data
 
@@ -19,6 +20,7 @@ services:
     environment:
       SERVICES: s3
     ports:
+      # Stays LAN-reachable on purpose: phones hit presigned S3 URLs directly.
       - "4566:4566"
     volumes:
       - jamicore-s3:/var/lib/localstack

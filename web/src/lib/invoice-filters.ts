@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, invoices } from "@/db/schema";
+import { invoices } from "@/db/schema";
 import { notDeleted } from "@/lib/invoice-access";
 import type { OfficeSession } from "@/lib/session";
 

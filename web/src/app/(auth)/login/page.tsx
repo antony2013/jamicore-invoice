@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { signIn, getSession } from "next-auth/react";
-import { Lock, Mail, ShieldAlert, ArrowLeft } from "lucide-react";
+import { Lock, Mail, ShieldAlert } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");

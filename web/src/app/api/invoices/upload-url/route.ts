@@ -7,7 +7,7 @@ import { generatePresignedUploadUrl, MAX_UPLOAD_BYTES } from "@/lib/s3";
 
 const uploadUrlSchema = z.object({
   contentType: z.enum(["image/jpeg", "image/png", "application/pdf"], {
-    errorMap: () => ({ message: "Only JPEG, PNG images and PDF files are supported" }),
+    error: "Only JPEG, PNG images and PDF files are supported",
   }),
   // Expected body size in bytes — REQUIRED and embedded into the signed PUT
   // so S3 rejects mismatched lengths at the policy level (not just client-side).

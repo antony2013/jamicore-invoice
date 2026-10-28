@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { chatMessages } from "@/db/schema";
 import { authenticateClientRequest, type ClientJWTPayload } from "@/lib/jwt";
 import { resolveScope } from "@/lib/chat-scope";
+import { checkRateLimit } from "@/lib/rate-limiter";
 import { s3Client } from "@/lib/s3";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
@@ -57,6 +58,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "Unauthorized. Valid client Bearer token is required." },
       { status: 401 }
+    );
+  }
+
+  // Spam guard: 30 messages per client identity per minute.
+  const limit = await checkRateLimit(
+    `chat:send:client:${client.clientId}:${client.sub}`,
+    30,
+    60 * 1000
+  );
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many messages. Please wait a moment." },
+      { status: 429 }
     );
   }
 

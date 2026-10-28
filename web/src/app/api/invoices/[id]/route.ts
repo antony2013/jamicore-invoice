@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq, desc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { invoices, invoiceStatusLog, assignments, invoiceReports, outlets, staff } from "@/db/schema";
+import { invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { notDeleted } from "@/lib/invoice-access";
 import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
@@ -11,7 +11,6 @@ import { concurrentEditError, transitionInvoice, updatedAtMatches } from "@/lib/
 import { handleRouteError } from "@/lib/http-errors";
 import { writeAudit } from "@/lib/audit";
 import { categorySchema, validateCategory } from "@/lib/categories";
-import { deleteObjectFromS3 } from "@/lib/s3";
 
 export async function GET(
   request: Request,

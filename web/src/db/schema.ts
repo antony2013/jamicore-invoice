@@ -148,6 +148,11 @@ export const invoices = pgTable(
   categoryDetail: text("category_detail"),
   // Which client-staff member uploaded (null = client owner themself)
   uploadedByStaffId: uuid("uploaded_by_staff_id").references(() => clientStaff.id, { onDelete: "set null" }),
+  // Job number + completion date: assigned automatically when the invoice is
+  // moved to `collected` (JC-YYYYMMDD-0001, daily sequence). Unique so two
+  // concurrent completes can never share a number.
+  jobNumber: text("job_number").unique(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
   // Soft delete (Phase 2.2): rows are never hard-deleted via API. Queries
   // must exclude deleted rows (see `notDeleted` in lib/invoice-access).
   deletedAt: timestamp("deleted_at", { withTimezone: true }),

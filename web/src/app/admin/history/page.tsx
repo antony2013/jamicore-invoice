@@ -3,7 +3,7 @@ import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, History, User } from "lucide-react";
+import { RefreshCw, User } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
 export default function AdminHistoryPage() {

@@ -4,11 +4,8 @@ import { shortInvoiceId } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  FileText,
   AlertTriangle,
   CheckCircle2,
-  Clock,
-  UserCheck,
   Filter,
   ArrowRight,
   RefreshCw,

@@ -128,14 +128,11 @@ export default function StaffMessagesPage() {
         );
       } else {
         const res = await fetch(`/api/threads?${threadQuery()}`);
-        let data = await res.json();
+        const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed to load threads");
-        // Inside a client's mailbox the conversation must never look empty:
-        // if the client wrote first, the thread still belongs in their inbox.
-        if (clientFilter && folder === "inbox" && (data.threads?.length ?? 0) === 0) {
-          const all = await fetch(`/api/threads?folder=all&client=${clientFilter}&limit=50`);
-          if (all.ok) data = await all.json();
-        }
+        // Inbox is strictly "client wrote last / unread client mail" — same
+        // rule inside a client mailbox as in the global one. Do NOT fall back
+        // to folder=all here: that made our own sent mail reappear in Inbox.
         setThreads(data.threads);
         setTotalUnread(data.totalUnread ?? 0);
       }

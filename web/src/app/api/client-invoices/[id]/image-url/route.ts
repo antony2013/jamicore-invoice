@@ -27,13 +27,21 @@ export async function GET(
     const invoice = found.invoice;
 
     const url = await generatePresignedViewUrl(invoice.s3Key);
-    const isPdf = invoice.s3Key.toLowerCase().endsWith(".pdf");
+    // Derive the type from the stored key extension — every non-PDF preview
+    // used to be labelled image/jpeg, which breaks PNG viewers.
+    const lowerKey = invoice.s3Key.toLowerCase();
+    const isPdf = lowerKey.endsWith(".pdf");
+    const contentType = isPdf
+      ? "application/pdf"
+      : lowerKey.endsWith(".png")
+        ? "image/png"
+        : "image/jpeg";
 
     return NextResponse.json({
       success: true,
       url,
       expiresIn: 300,
-      contentType: isPdf ? "application/pdf" : "image/jpeg",
+      contentType,
       isPdf,
     });
   } catch (error: unknown) {

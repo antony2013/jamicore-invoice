@@ -2,23 +2,25 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceReports } from "@/db/schema";
-import { requireAdmin } from "@/lib/session";
+import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 import { officeInvoiceOr404 } from "@/lib/invoice-access";
 import { writeAudit, getClientIp } from "@/lib/audit";
 import { deleteObjectFromS3 } from "@/lib/s3";
 
 /**
- * Admin-only report delete. Removes the current report row AND its S3
- * object (DB first in-tx with an audit row, S3 only after commit —
- * same rule as db:purge). The invoice itself is untouched.
+ * Report delete. Removes the current report row AND its S3 object (DB first
+ * in-tx with an audit row, S3 only after commit — same rule as db:purge).
+ * The invoice itself is untouched.
+ * Allowed for admins, and for the staff member the invoice is assigned to
+ * (officeInvoiceOr404 enforces that scope; anyone else gets a 404).
  */
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const me = await requireAdmin();
+    const me = await requireOffice();
     if (me instanceof NextResponse) return me;
     touchPresence(me.id);
 

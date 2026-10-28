@@ -5,6 +5,7 @@ import { chatMessages } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { verifyClientToken, type ClientJWTPayload } from "@/lib/jwt";
 import { resolveScope, type ChatParty } from "@/lib/chat-scope";
+import { checkRateLimit } from "@/lib/rate-limiter";
 import { s3Client } from "@/lib/s3";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
@@ -73,6 +74,19 @@ async function currentStaff() {
 export async function POST(request: NextRequest) {
   const { party, client } = await getParty(request);
   if (!party) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  // Spam guard: 30 messages per sender per minute (attachments included).
+  const limit = await checkRateLimit(
+    `chat:send:${party.senderType}:${party.senderId}`,
+    30,
+    60 * 1000
+  );
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many messages. Please wait a moment." },
+      { status: 429 }
+    );
+  }
 
   let form: FormData;
   try {

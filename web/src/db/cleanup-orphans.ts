@@ -12,7 +12,6 @@ import { ListObjectsV2Command, DeleteObjectCommand, S3Client } from "@aws-sdk/cl
 import * as dotenv from "dotenv";
 dotenv.config(); // local .env; production env passes through untouched
 import { db } from "@/db";
-import { invoices, invoiceReports } from "@/db/schema";
 
 const BUCKET = process.env.S3_BUCKET_NAME || "invoice-uploads";
 const REGION = process.env.AWS_REGION || "us-east-1";

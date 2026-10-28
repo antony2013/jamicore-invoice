@@ -38,14 +38,21 @@ describe("status-flow matrix", () => {
     }
   });
 
-  it("terminal states have no outgoing transitions", () => {
-    for (const t of ["collected", "disputed"] as InvoiceStatus[]) {
-      expect(isTerminalStatus(t)).toBe(true);
-      expect(ALLOWED_TRANSITIONS[t]).toEqual([]);
-      for (const to of ALL) {
-        if (to === t) continue;
-        expect(isValidTransition(t, to)).toBe(false);
-      }
+  it("collected is fully terminal; disputed only allows the re-open edge", () => {
+    expect(isTerminalStatus("collected")).toBe(true);
+    expect(ALLOWED_TRANSITIONS.collected).toEqual([]);
+    for (const to of ALL) {
+      if (to === "collected") continue;
+      expect(isValidTransition("collected", to)).toBe(false);
+    }
+
+    // Returned stays "terminal" for edits/deletes but has ONE recovery
+    // transition back into review (staff can pick the invoice back up).
+    expect(isTerminalStatus("disputed")).toBe(true);
+    expect(ALLOWED_TRANSITIONS.disputed).toEqual(["in_review"]);
+    for (const to of ALL) {
+      if (to === "disputed" || to === "in_review") continue;
+      expect(isValidTransition("disputed", to)).toBe(false);
     }
   });
 

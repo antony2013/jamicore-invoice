@@ -46,6 +46,9 @@ export default function StaffReportsPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const [scopedClient, setScopedClient] = useState<string | null>(null);
 
   function query(cursor?: string | null): string {
@@ -181,13 +184,32 @@ export default function StaffReportsPage() {
     }
   }
 
+  async function handleDelete(rep: ReportEntry) {
+    // Two-step: first click arms, second click deletes (same as admin library).
+    if (confirmId !== rep.id) {
+      setConfirmId(rep.id);
+      return;
+    }
+    setDeletingId(rep.id);
+    try {
+      const res = await fetch(`/api/reports/${rep.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete report");
+      setReports((prev) => prev.filter((r) => r.id !== rep.id));
+      setConfirmId(null);
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to delete report.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("client");
     if (id && /^[0-9a-f-]{36}$/i.test(id)) {
       setScopedClient(id);
       setClientFilter(id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -348,6 +370,21 @@ export default function StaffReportsPage() {
                     className="dc-btn disabled:opacity-50"
                   >
                     ⬇ Download
+                  </button>
+                  <button
+                    onClick={() => handleDelete(rep)}
+                    disabled={deletingId === rep.id}
+                    className={`px-4 py-0 h-11 rounded-lg border text-sm font-medium transition disabled:opacity-50 ${
+                      confirmId === rep.id
+                        ? "bg-red-600 border-red-600 text-white hover:bg-red-700"
+                        : "border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    {deletingId === rep.id
+                      ? "Deleting…"
+                      : confirmId === rep.id
+                        ? "Confirm delete"
+                        : "🗑 Delete"}
                   </button>
                 </div>
               </div>

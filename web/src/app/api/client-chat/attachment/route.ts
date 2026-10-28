@@ -3,8 +3,12 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { s3Client } from "@/lib/s3";
+import { resolveChatAttachmentScope } from "@/lib/chat-scope";
 
-/** Presigned GET for a chat attachment (client side). Key must live under chat/. */
+/**
+ * Presigned GET for a chat attachment (client side). The key must belong to a
+ * stored chat message whose scope belongs to the caller's clientId.
+ */
 export async function GET(request: NextRequest) {
   const client = await authenticateClientRequest(request);
   if (!client) {
@@ -17,6 +21,12 @@ export async function GET(request: NextRequest) {
   if (!key.startsWith("chat/") || key.includes("..")) {
     return NextResponse.json({ error: "Invalid attachment key." }, { status: 400 });
   }
+
+  const scope = await resolveChatAttachmentScope(key, { client });
+  if (!scope) {
+    return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
+  }
+
   try {
     const url = await getSignedUrl(
       s3Client,

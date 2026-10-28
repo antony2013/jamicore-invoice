@@ -152,11 +152,9 @@ describe("409 races", () => {
 
 describe("maker-checker", () => {
   it("verifier cannot collect; someone else can; data edits don't move it", async () => {
-    const db = tdb();
     const a = await seedStaff({ role: "admin" });
     admin(a.id);
     const s1 = await seedStaff();
-    const s2 = await seedStaff();
     const c = await seedClient();
     const inv = await seedInvoice(c.id, { status: "assigned", assignedTo: s1.id });
 
@@ -213,12 +211,48 @@ describe("maker-checker", () => {
       { params: Promise.resolve({ id: inv.id }) } as any
     );
     expect(r.status).toBe(200);
+
+    // Completing auto-generates the business fields.
+    const collected = await r.json();
+    expect(collected.invoice.jobNumber).toMatch(/^JC-\d{8}-\d{4}$/);
+    expect(collected.invoice.completedAt).toBeTruthy();
+  });
+});
+
+describe("job number allocation", () => {
+  it("each completion gets the next daily number + a completion date", async () => {
+    const a = await seedStaff({ role: "admin" });
+    admin(a.id);
+    const c = await seedClient();
+    const inv1 = await seedInvoice(c.id, { status: "verified", assignedTo: a.id });
+    const inv2 = await seedInvoice(c.id, { status: "verified", assignedTo: a.id });
+
+    const collect = async (id: string) => {
+      const res = await patchInvoice(
+        req(`http://t/api/invoices/${id}`, {
+          method: "PATCH",
+          body: { status: "collected" },
+        }),
+        { params: Promise.resolve({ id }) } as any
+      );
+      expect(res.status).toBe(200);
+      return (await res.json()).invoice;
+    };
+
+    const one = await collect(inv1.id);
+    const two = await collect(inv2.id);
+
+    expect(one.jobNumber).toMatch(/^JC-\d{8}-\d{4}$/);
+    const [prefix, day, seq] = one.jobNumber.split("-");
+    expect(prefix).toBe("JC");
+    expect(two.jobNumber).toBe(`JC-${day}-${String(Number(seq) + 1).padStart(4, "0")}`);
+    expect(new Date(one.completedAt).getTime()).toBeGreaterThan(0);
+    expect(new Date(two.completedAt).getTime()).toBeGreaterThan(0);
   });
 });
 
 describe("returned re-open", () => {
   it("disputed re-opens to in_review; collected stays terminal", async () => {
-    const db = tdb();
     const s = await seedStaff();
     const c = await seedClient();
     const inv = await seedInvoice(c.id, { status: "disputed", assignedTo: s.id });

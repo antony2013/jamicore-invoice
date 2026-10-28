@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, ScrollText } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
 type Entry = {

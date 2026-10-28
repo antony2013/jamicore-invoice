@@ -4,7 +4,7 @@ import { shortInvoiceId } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Check, Clock, MessageSquare, Sparkles, X } from "lucide-react";
+import { Bell, Clock, MessageSquare, Sparkles } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 

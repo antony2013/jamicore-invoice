@@ -104,12 +104,23 @@ export async function GET(request: Request) {
       unreadByInvoice.set(m.invoiceId, (unreadByInvoice.get(m.invoiceId) ?? 0) + 1);
     }
 
-    const withLogs = await Promise.all(
-      page.map(async (inv) => {
-        const logs = await db.query.invoiceStatusLog.findMany({
-          where: eq(invoiceStatusLog.invoiceId, inv.id),
+    // Batch the status timeline: one query for the whole page instead of one
+    // query per invoice (100 invoices = 101 round-trips before).
+    const logRows = ids.length
+      ? await db.query.invoiceStatusLog.findMany({
+          where: inArray(invoiceStatusLog.invoiceId, ids),
           orderBy: [desc(invoiceStatusLog.timestamp)],
-        });
+        })
+      : [];
+    const logsByInvoice = new Map<string, typeof logRows>();
+    for (const l of logRows) {
+      const bucket = logsByInvoice.get(l.invoiceId);
+      if (bucket) bucket.push(l);
+      else logsByInvoice.set(l.invoiceId, [l]);
+    }
+
+    const withLogs = page.map((inv) => {
+        const logs = logsByInvoice.get(inv.id) ?? [];
         const manual = manualSet.has(inv.id);
         return {
           id: inv.id,
@@ -147,8 +158,7 @@ export async function GET(request: Request) {
             timestamp: l.timestamp,
           })),
         };
-      })
-    );
+      });
 
     return NextResponse.json({ success: true, invoices: withLogs, nextCursor });
   } catch (error: unknown) {

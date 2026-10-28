@@ -134,7 +134,7 @@ describe("reports API", () => {
     expect(res.status).toBe(200);
 
     const db = tdb();
-    const { invoiceReports, auditLog } = await import("@/db/schema");
+    const { auditLog } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
     expect(await db.query.invoiceReports.findMany({})).toHaveLength(0);
     const audits = await db.query.auditLog.findMany({ where: eq(auditLog.action, "report.delete") });
@@ -142,7 +142,7 @@ describe("reports API", () => {
     expect(audits[0].entityId).toBe(rep.id);
   });
 
-  it("staff cannot delete reports; missing report is 404", async () => {
+  it("staff cannot delete a report on an invoice that is not theirs; missing report is 404", async () => {
     const admin = await seedStaff({ role: "admin" });
     const s = await seedStaff();
     const client = await seedClient();
@@ -154,7 +154,9 @@ describe("reports API", () => {
       req(`http://t/api/reports/${rep.id}`, { method: "DELETE" }),
       { params: Promise.resolve({ id: rep.id }) }
     );
-    expect(denied.status).toBe(403);
+    // 404 (not 403) so staff cannot probe other people's reports.
+    expect(denied.status).toBe(404);
+    expect(await tdb().query.invoiceReports.findMany({})).toHaveLength(1);
 
     mockAuth.mockResolvedValue(officeSession({ id: admin.id, role: "admin" }));
     const missing: Response = await (deleteReport as any)(
@@ -162,6 +164,31 @@ describe("reports API", () => {
       { params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }) }
     );
     expect(missing.status).toBe(404);
+  });
+
+  it("assigned staff can delete their own report; row gone + audit written", async () => {
+    const s = await seedStaff();
+    const client = await seedClient();
+    const inv = await seedInvoice(client.id, { status: "in_review", assignedTo: s.id });
+    const rep = await seedReport(inv.id, s.id, "mine.xlsx");
+    mockAuth.mockResolvedValue(officeSession({ id: s.id, role: "staff" }));
+
+    const res: Response = await (deleteReport as any)(
+      req(`http://t/api/reports/${rep.id}`, { method: "DELETE" }),
+      { params: Promise.resolve({ id: rep.id }) }
+    );
+    expect(res.status).toBe(200);
+
+    const db = tdb();
+    expect(await db.query.invoiceReports.findMany({})).toHaveLength(0);
+    const { auditLog, invoices } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const audits = await db.query.auditLog.findMany({ where: eq(auditLog.action, "report.delete") });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].entityId).toBe(rep.id);
+    // The invoice itself is untouched.
+    const still = await db.query.invoices.findFirst({ where: eq(invoices.id, inv.id) });
+    expect(still?.id).toBe(inv.id);
   });
 });
 
@@ -196,6 +223,29 @@ describe("threads API", () => {
     expect(sentData.threads[0].lastSenderType).toBe("staff");
   });
 
+  it("client-filtered inbox still hides threads we answered last", async () => {
+    const a = await seedStaff();
+    const client = await seedClient();
+    const awaiting = await seedInvoice(client.id, { status: "needs_info", assignedTo: a.id });
+    const answered = await seedInvoice(client.id, { status: "in_review", assignedTo: a.id });
+    await seedMessage(awaiting.id, "client", "please fix this", false);
+    await seedMessage(answered.id, "client", "hello?", false);
+    await seedMessage(answered.id, "staff", "test", true);
+    mockAuth.mockResolvedValue(officeSession({ id: a.id, role: "staff" }));
+
+    const inbox: Response = await (listThreads as any)(
+      req(`http://t/api/threads?folder=inbox&client=${client.id}`)
+    );
+    const inboxData = await inbox.json();
+    expect(inboxData.threads.map((t: { invoiceId: string }) => t.invoiceId)).toEqual([awaiting.id]);
+
+    const sent: Response = await (listThreads as any)(
+      req(`http://t/api/threads?folder=sent&client=${client.id}`)
+    );
+    const sentData = await sent.json();
+    expect(sentData.threads.map((t: { invoiceId: string }) => t.invoiceId)).toEqual([answered.id]);
+  });
+
   it("rejects an invalid folder", async () => {
     const a = await seedStaff();
     mockAuth.mockResolvedValue(officeSession({ id: a.id, role: "staff" }));
@@ -218,7 +268,6 @@ describe("drafts API", () => {
     expect((await save({ invoiceId: mine.id, body: "second" })).status).toBe(200);
 
     const db = tdb();
-    const { messageDrafts } = await import("@/db/schema");
     expect(await db.query.messageDrafts.findMany({})).toHaveLength(1);
 
     const listed: Response = await (listDrafts as any)(req("http://t/api/drafts"));

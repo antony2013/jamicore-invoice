@@ -3,9 +3,9 @@
 //   - office staff: must have an invoice in the scope (strict assignedTo separation)
 //   - client: scope must belong to their own clientId
 // The senderType stored on each message is "staff" or "client".
-import { and, eq, not } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices } from "@/db/schema";
+import { chatMessages, invoices } from "@/db/schema";
 import { notDeleted } from "@/lib/invoice-access";
 import type { OfficeSession } from "@/lib/session";
 import type { ClientJWTPayload } from "@/lib/jwt";
@@ -21,22 +21,31 @@ export async function resolveOutletScope(
   viewer: { staff?: OfficeSession; client?: ClientJWTPayload }
 ): Promise<ChatScope | null> {
   const [clientId, outletKey] = id.split(":");
-  if (!UUID_RE.test(clientId)) return null;
+  if (!UUID_RE.test(clientId) || !outletKey) return null;
   if (outletKey !== "none" && !UUID_RE.test(outletKey)) return null;
   if (viewer.client && viewer.client.clientId !== clientId) return null;
+  if (!viewer.client && !viewer.staff) return null;
+
+  // Existence probe scoped in SQL — never load a slice of the client's
+  // invoices and filter in memory (that silently broke for clients with
+  // more than 200 invoices).
+  const conditions = [
+    eq(invoices.clientId, clientId),
+    outletKey === "none" ? isNull(invoices.outletId) : eq(invoices.outletId, outletKey),
+    notDeleted(),
+  ];
+  // Strict separation: office staff only if they own at least one invoice here.
+  if (viewer.staff && viewer.staff.role !== "admin") {
+    conditions.push(eq(invoices.assignedTo, viewer.staff.id));
+  }
 
   const rows = await db
-    .select({ outletId: invoices.outletId, assignedTo: invoices.assignedTo })
+    .select({ id: invoices.id })
     .from(invoices)
-    .where(and(eq(invoices.clientId, clientId), notDeleted()))
-    .limit(200);
-  const scoped = rows.filter((r) => (r.outletId ?? "none") === outletKey);
-  if (scoped.length === 0) return null;
-  // Strict separation: office staff only if they own at least one invoice here.
-  if (viewer.staff && viewer.staff.role !== "admin" && !scoped.some((r) => r.assignedTo === viewer.staff!.id)) {
-    return null;
-  }
-  return { type: "outlet", id };
+    .where(and(...conditions))
+    .limit(1);
+
+  return rows.length > 0 ? { type: "outlet", id } : null;
 }
 
 /** Validate + authorize an invoice scope (a single invoice inside an outlet). */
@@ -62,4 +71,22 @@ export async function resolveScope(
   if (raw.type === "invoice") return resolveInvoiceScope(id, viewer);
   if (raw.type === "outlet") return resolveOutletScope(id, viewer);
   return null;
+}
+
+/**
+ * Authorize a presigned chat-attachment read: the key must belong to a stored
+ * chat message whose scope the caller can access. Without this, any signed-in
+ * user holding a key could fetch another client's attachment.
+ */
+export async function resolveChatAttachmentScope(
+  key: string,
+  viewer: { staff?: OfficeSession; client?: ClientJWTPayload }
+): Promise<ChatScope | null> {
+  if (!key.startsWith("chat/") || key.includes("..")) return null;
+  const row = await db.query.chatMessages.findFirst({
+    where: eq(chatMessages.attachmentS3Key, key),
+    columns: { scopeType: true, scopeId: true },
+  });
+  if (!row) return null;
+  return resolveScope({ type: row.scopeType, id: row.scopeId }, viewer);
 }
