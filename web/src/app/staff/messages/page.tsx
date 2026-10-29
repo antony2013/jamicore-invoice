@@ -651,10 +651,7 @@ export default function StaffMessagesPage() {
                         {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
                       </span>
                     ) : null}
-                    <span className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-blue-200 bg-white text-[10px] font-semibold text-blue-600">
-                        {t.invoiceNo || shortInvoiceId({ id: t.invoiceId })}
-                      </span>
+                    <span className="mt-1.5 flex items-center justify-end gap-2">
                       <span className="text-[10px] text-slate-400">{formatWhen(t.lastAt)}</span>
                     </span>
                   </span>
@@ -741,9 +738,6 @@ export default function StaffMessagesPage() {
                                     : "Send"}
                               </button>
                             </div>
-                            <Link href={`/staff/invoices/${t.invoiceId}`} className="text-xs text-blue-600 hover:underline mt-2 inline-block">
-                              Open invoice →
-                            </Link>
                   </div>
                 )}
               </Card>
