@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { invoiceReports, invoices } from "@/db/schema";
+import { invoiceReports, invoices, staff } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
@@ -57,6 +57,14 @@ export async function GET(request: Request) {
     }
 
     const conditions: SQL[] = [inArray(invoiceReports.invoiceId, scopedIds)];
+    // Trash view (?trash=1) lists only soft-deleted rows; everything else
+    // (library, invoice page) only ever sees live rows.
+    const trash = ["1", "true", "yes"].includes(
+      (searchParams.get("trash") || "").toLowerCase()
+    );
+    conditions.push(
+      trash ? sql`${invoiceReports.deletedAt} IS NOT NULL` : isNull(invoiceReports.deletedAt)
+    );
     if (cursor) {
       conditions.push(
         sql`(${invoiceReports.createdAt}, ${invoiceReports.id}) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`
@@ -88,6 +96,18 @@ export async function GET(request: Request) {
         ? encodeCursor(last.createdAt as unknown as Date, last.id)
         : null;
 
+    // Who deleted it (Trash view only needs this, so one extra query).
+    const deleterIds = Array.from(
+      new Set(page.map((r) => r.deletedBy).filter((v): v is string => Boolean(v)))
+    );
+    const deleters = deleterIds.length
+      ? await db.query.staff.findMany({
+          where: inArray(staff.id, deleterIds),
+          columns: { id: true, name: true },
+        })
+      : [];
+    const deleterName = new Map(deleters.map((s) => [s.id, s.name]));
+
     return NextResponse.json({
       success: true,
       reports: page.map((r: any) => ({
@@ -97,6 +117,9 @@ export async function GET(request: Request) {
         source: r.source,
         createdAt: r.createdAt,
         uploadedBy: r.uploadedBy,
+        deletedAt: r.deletedAt ?? null,
+        deleteReason: r.deleteReason ?? null,
+        deletedByName: r.deletedBy ? deleterName.get(r.deletedBy) ?? null : null,
         invoice: r.invoice
           ? {
               id: r.invoice.id,

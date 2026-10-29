@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, invoices, invoiceMessages, invoiceReports, invoiceStatusLog } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
@@ -78,7 +78,10 @@ export async function GET(request: Request) {
     const reportRows =
       ids.length > 0
         ? await db.query.invoiceReports.findMany({
-            where: inArray(invoiceReports.invoiceId, ids),
+            where: and(
+              inArray(invoiceReports.invoiceId, ids),
+              isNull(invoiceReports.deletedAt)
+            ),
             columns: { invoiceId: true, fileName: true, createdAt: true, notes: true },
             orderBy: [desc(invoiceReports.createdAt)],
           })

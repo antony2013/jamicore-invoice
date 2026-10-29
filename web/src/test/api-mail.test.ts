@@ -12,7 +12,7 @@ import {
   truncateAll,
 } from "@/test/helpers";
 import { GET as listReports } from "@/app/api/reports/route";
-import { DELETE as deleteReport } from "@/app/api/reports/[id]/route";
+import { DELETE as deleteReport, POST as restoreReport } from "@/app/api/reports/[id]/route";
 import { GET as listThreads } from "@/app/api/threads/route";
 import { GET as listDrafts, POST as saveDraft } from "@/app/api/drafts/route";
 import { DELETE as deleteDraft } from "@/app/api/drafts/[id]/route";
@@ -120,7 +120,51 @@ describe("reports API", () => {
     expect(res.status).toBe(400);
   });
 
-  it("admin deletes a report: row gone, audit written", async () => {
+  it("admin soft-deletes a report: row kept with reason, hidden from library, listed in trash", async () => {
+    const admin = await seedStaff({ role: "admin" });
+    const client = await seedClient();
+    const inv = await seedInvoice(client.id, { status: "verified" });
+    const rep = await seedReport(inv.id, admin.id);
+    mockAuth.mockResolvedValue(officeSession({ id: admin.id, role: "admin" }));
+
+    const res: Response = await (deleteReport as any)(
+      req(`http://t/api/reports/${rep.id}`, {
+        method: "DELETE",
+        body: { reason: "Wrong invoice — re-uploaded the correct file" },
+      }),
+      { params: Promise.resolve({ id: rep.id }) }
+    );
+    expect(res.status).toBe(200);
+
+    const db = tdb();
+    const { auditLog, invoiceReports } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const row = await db.query.invoiceReports.findFirst({
+      where: eq(invoiceReports.id, rep.id),
+    });
+    expect(row?.deletedAt).toBeTruthy();
+    expect(row?.deletedBy).toBe(admin.id);
+    expect(row?.deleteReason).toContain("Wrong invoice");
+    const audits = await db.query.auditLog.findMany({ where: eq(auditLog.action, "report.delete") });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].entityId).toBe(rep.id);
+
+    // Hidden from the normal library...
+    const lib: Response = await (listReports as any)(req("http://t/api/reports"));
+    expect((await lib.json()).reports).toHaveLength(0);
+
+    // ...but visible in trash with who/why.
+    const trashRes: Response = await (listReports as any)(req("http://t/api/reports?trash=1"));
+    const trash = await trashRes.json();
+    expect(trash.reports).toHaveLength(1);
+    expect(trash.reports[0]).toMatchObject({
+      id: rep.id,
+      deleteReason: "Wrong invoice — re-uploaded the correct file",
+      deletedByName: admin.name,
+    });
+  });
+
+  it("refuses a delete with no reason", async () => {
     const admin = await seedStaff({ role: "admin" });
     const client = await seedClient();
     const inv = await seedInvoice(client.id, { status: "verified" });
@@ -131,15 +175,49 @@ describe("reports API", () => {
       req(`http://t/api/reports/${rep.id}`, { method: "DELETE" }),
       { params: Promise.resolve({ id: rep.id }) }
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    const row = await tdb().query.invoiceReports.findFirst();
+    expect(row?.deletedAt).toBeNull();
+  });
+
+  it("restores a trashed report; refuses when a newer live report exists", async () => {
+    const admin = await seedStaff({ role: "admin" });
+    const client = await seedClient();
+    const inv = await seedInvoice(client.id, { status: "verified" });
+    const rep = await seedReport(inv.id, admin.id, "old.xlsx");
+    mockAuth.mockResolvedValue(officeSession({ id: admin.id, role: "admin" }));
+
+    await (deleteReport as any)(
+      req(`http://t/api/reports/${rep.id}`, { method: "DELETE", body: { reason: "duplicate" } }),
+      { params: Promise.resolve({ id: rep.id }) }
+    );
+
+    const restored: Response = await (restoreReport as any)(
+      req(`http://t/api/reports/${rep.id}`, { method: "POST", body: { action: "restore" } }),
+      { params: Promise.resolve({ id: rep.id }) }
+    );
+    expect(restored.status).toBe(200);
 
     const db = tdb();
-    const { auditLog } = await import("@/db/schema");
-    const { eq } = await import("drizzle-orm");
-    expect(await db.query.invoiceReports.findMany({})).toHaveLength(0);
-    const audits = await db.query.auditLog.findMany({ where: eq(auditLog.action, "report.delete") });
-    expect(audits).toHaveLength(1);
-    expect(audits[0].entityId).toBe(rep.id);
+    const row = await db.query.invoiceReports.findFirst();
+    expect(row?.deletedAt).toBeNull();
+    expect(row?.deletedBy).toBeNull();
+    expect(row?.deleteReason).toBeNull();
+
+    const lib: Response = await (listReports as any)(req("http://t/api/reports"));
+    expect((await lib.json()).reports).toHaveLength(1);
+
+    // A second live report for the same invoice blocks a later restore.
+    await (deleteReport as any)(
+      req(`http://t/api/reports/${rep.id}`, { method: "DELETE", body: { reason: "stale" } }),
+      { params: Promise.resolve({ id: rep.id }) }
+    );
+    await seedReport(inv.id, admin.id, "new.xlsx");
+    const conflict: Response = await (restoreReport as any)(
+      req(`http://t/api/reports/${rep.id}`, { method: "POST", body: { action: "restore" } }),
+      { params: Promise.resolve({ id: rep.id }) }
+    );
+    expect(conflict.status).toBe(409);
   });
 
   it("staff cannot delete a report on an invoice that is not theirs; missing report is 404", async () => {
@@ -151,7 +229,7 @@ describe("reports API", () => {
 
     mockAuth.mockResolvedValue(officeSession({ id: s.id, role: "staff" }));
     const denied: Response = await (deleteReport as any)(
-      req(`http://t/api/reports/${rep.id}`, { method: "DELETE" }),
+      req(`http://t/api/reports/${rep.id}`, { method: "DELETE", body: { reason: "not mine" } }),
       { params: Promise.resolve({ id: rep.id }) }
     );
     // 404 (not 403) so staff cannot probe other people's reports.
@@ -160,13 +238,16 @@ describe("reports API", () => {
 
     mockAuth.mockResolvedValue(officeSession({ id: admin.id, role: "admin" }));
     const missing: Response = await (deleteReport as any)(
-      req("http://t/api/reports/00000000-0000-0000-0000-000000000000", { method: "DELETE" }),
+      req("http://t/api/reports/00000000-0000-0000-0000-000000000000", {
+        method: "DELETE",
+        body: { reason: "gone" },
+      }),
       { params: Promise.resolve({ id: "00000000-0000-0000-0000-000000000000" }) }
     );
     expect(missing.status).toBe(404);
   });
 
-  it("assigned staff can delete their own report; row gone + audit written", async () => {
+  it("assigned staff can soft-delete their own report; invoice untouched", async () => {
     const s = await seedStaff();
     const client = await seedClient();
     const inv = await seedInvoice(client.id, { status: "in_review", assignedTo: s.id });
@@ -174,15 +255,20 @@ describe("reports API", () => {
     mockAuth.mockResolvedValue(officeSession({ id: s.id, role: "staff" }));
 
     const res: Response = await (deleteReport as any)(
-      req(`http://t/api/reports/${rep.id}`, { method: "DELETE" }),
+      req(`http://t/api/reports/${rep.id}`, {
+        method: "DELETE",
+        body: { reason: "wrong file" },
+      }),
       { params: Promise.resolve({ id: rep.id }) }
     );
     expect(res.status).toBe(200);
 
     const db = tdb();
-    expect(await db.query.invoiceReports.findMany({})).toHaveLength(0);
     const { auditLog, invoices } = await import("@/db/schema");
     const { eq } = await import("drizzle-orm");
+    const row = await db.query.invoiceReports.findFirst();
+    expect(row?.deletedAt).toBeTruthy();
+    expect(row?.deleteReason).toBe("wrong file");
     const audits = await db.query.auditLog.findMany({ where: eq(auditLog.action, "report.delete") });
     expect(audits).toHaveLength(1);
     expect(audits[0].entityId).toBe(rep.id);

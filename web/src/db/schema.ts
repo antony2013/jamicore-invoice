@@ -238,8 +238,16 @@ export const invoiceReports = pgTable(
   source: text("source").notNull().default("uploaded"),
   uploadedBy: uuid("uploaded_by").references(() => staff.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Soft delete ("Trash"): the row + S3 object stay so it can be restored.
+  // deleteReason is the staff/admin remark ("why was this deleted").
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: uuid("deleted_by").references(() => staff.id),
+  deleteReason: text("delete_reason"),
   },
-  (t) => [index("invoice_reports_invoice_idx").on(t.invoiceId, t.createdAt.desc())]
+  (t) => [
+    index("invoice_reports_invoice_idx").on(t.invoiceId, t.createdAt.desc()),
+    index("invoice_reports_deleted_idx").on(t.deletedAt),
+  ]
 );
 
 // 8. Invoice Messages — the client↔staff conversation thread per invoice.

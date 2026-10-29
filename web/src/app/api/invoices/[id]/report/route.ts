@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "@/db";
 import { invoiceReports, invoiceStatusLog, invoices } from "@/db/schema";
@@ -29,11 +29,13 @@ import { buildInvoiceReportXlsx } from "@/lib/excel-report";
  *   confirm { s3Key, fileName } → verify + replace current report
  *   generate {} → server builds the .xlsx from invoice data + replaces
  * Only ONE current report per invoice (replace semantics — old file removed).
+ * Soft-deleted ("Trash") reports are ignored here; restore lives in
+ * /api/reports/[id] so a trashed file never becomes "current" again by itself.
  */
 
 async function latestReport(invoiceId: string) {
   return db.query.invoiceReports.findFirst({
-    where: eq(invoiceReports.invoiceId, invoiceId),
+    where: and(eq(invoiceReports.invoiceId, invoiceId), isNull(invoiceReports.deletedAt)),
     orderBy: [desc(invoiceReports.createdAt)],
   });
 }
@@ -48,7 +50,7 @@ async function replaceReport(
   notes: string | null
 ) {
   const prev = await tx.query.invoiceReports.findFirst({
-    where: eq(invoiceReports.invoiceId, invoiceId),
+    where: and(eq(invoiceReports.invoiceId, invoiceId), isNull(invoiceReports.deletedAt)),
     orderBy: [desc(invoiceReports.createdAt)],
   });
   const [created] = await tx

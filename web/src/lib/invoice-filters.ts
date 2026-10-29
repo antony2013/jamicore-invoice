@@ -27,8 +27,10 @@ export const VALID_STATUSES = [
 ];
 /** Staff-dashboard shorthands (also accepted by the list/stats/export APIs). */
 export const PSEUDO_STATUSES: Record<string, string[]> = {
+  need_start: ["uploaded", "ocr_pending", "ocr_done", "ocr_failed", "assigned"],
   in_progress: ["in_review", "needs_info"],
   finished: ["collected", "disputed"],
+  returned: ["disputed"],
 };
 export const VALID_PRIORITIES = ["low", "normal", "urgent"];
 const UUID_RE = /^[0-9a-f-]{36}$/i;

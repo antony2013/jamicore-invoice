@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { invoiceReports } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
@@ -27,7 +27,7 @@ export async function GET(
     if ("error" in found) return found.error;
 
     const report = await db.query.invoiceReports.findFirst({
-      where: eq(invoiceReports.invoiceId, id),
+      where: and(eq(invoiceReports.invoiceId, id), isNull(invoiceReports.deletedAt)),
       orderBy: [desc(invoiceReports.createdAt)],
     });
     if (!report) {

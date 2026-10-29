@@ -141,6 +141,13 @@
       "when": 1793169145799,
       "tag": "0019_invoice-job-number",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793251821348,
+      "tag": "0020_report-trash",
+      "breakpoints": true
     }
   ]
 }

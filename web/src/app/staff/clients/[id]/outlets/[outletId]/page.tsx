@@ -137,6 +137,8 @@ export default function StaffOutletPage({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [query, setQuery] = useState("");
 
   async function load() {
@@ -181,10 +183,18 @@ export default function StaffOutletPage({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const from = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
+    const to = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null;
     return invoices.filter((inv) => {
       const category = inv.category || "sales_invoice";
       if (categoryFilter !== "all" && category !== categoryFilter) return false;
       if (statusFilter !== "all" && statusMeta(inv.status).group !== statusFilter) return false;
+      if (from !== null || to !== null) {
+        const created = inv.createdAt ? new Date(inv.createdAt).getTime() : NaN;
+        if (Number.isNaN(created)) return false;
+        if (from !== null && created < from) return false;
+        if (to !== null && created > to) return false;
+      }
       if (!q) return true;
       const haystack = [
         inv.ocrData?.invoiceNo || "",
@@ -196,7 +206,7 @@ export default function StaffOutletPage({
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [invoices, categoryFilter, statusFilter, query]);
+  }, [invoices, categoryFilter, statusFilter, fromDate, toDate, query]);
 
   const invoiceColumn = filtered.filter(
     (inv) => !BILL_CATEGORIES.includes(inv.category || "sales_invoice")
@@ -333,35 +343,64 @@ export default function StaffOutletPage({
 
         <div className="space-y-2">
           <div className="text-[11px] font-semibold text-slate-500">Sections</div>
-          <div className="flex flex-wrap gap-1.5">
-            {CATEGORY_FILTERS.map((cat) => (
-              <button
-                key={cat.key}
-                onClick={() => setCategoryFilter(cat.key)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
-                  categoryFilter === cat.key
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-600">Category:</span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="rounded-lg border border-[#E4E7EC] bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 outline-none max-w-[150px]"
               >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {STATUS_FILTERS.map((st) => (
-              <button
-                key={st.key}
-                onClick={() => setStatusFilter(st.key)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition ${
-                  statusFilter === st.key
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+                {CATEGORY_FILTERS.map((cat) => (
+                  <option key={cat.key} value={cat.key}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-600">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded-lg border border-[#E4E7EC] bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 outline-none max-w-[150px]"
               >
-                {st.label}
+                {STATUS_FILTERS.map((st) => (
+                  <option key={st.key} value={st.key}>
+                    {st.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-600">From:</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="rounded-lg border border-[#E4E7EC] bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 outline-none"
+              />
+              <span className="text-[11px] font-medium text-slate-600">To:</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="rounded-lg border border-[#E4E7EC] bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 outline-none"
+              />
+            </div>
+            {(categoryFilter !== "all" || statusFilter !== "all" || fromDate || toDate) && (
+              <button
+                onClick={() => {
+                  setCategoryFilter("all");
+                  setStatusFilter("all");
+                  setFromDate("");
+                  setToDate("");
+                }}
+                className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline"
+              >
+                Clear
               </button>
-            ))}
+            )}
           </div>
         </div>
 

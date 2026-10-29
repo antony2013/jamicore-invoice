@@ -16,10 +16,11 @@ const CATEGORY_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All" },
-  { value: "assigned", label: "Need to start" },
+  { value: "need_start", label: "Need to start" },
   { value: "in_progress", label: "In progress" },
   { value: "verified", label: "Verified" },
-  { value: "finished", label: "Finished" },
+  { value: "collected", label: "Finished" },
+  { value: "disputed", label: "Returned" },
 ];
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -30,11 +31,22 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: "Others",
 };
 
-function statusChip(status: string): string {
-  if (status === "verified") return "bg-blue-100 text-blue-800";
-  if (status === "collected" || status === "disputed") return "bg-emerald-100 text-emerald-800";
-  if (status === "in_review" || status === "needs_info") return "bg-amber-100 text-amber-800";
-  return "bg-slate-100 text-slate-600";
+/** Same wording as the staff outlet Sections filters. */
+const STATUS_META: Record<string, { label: string; className: string }> = {
+  uploaded: { label: "Need to start", className: "bg-orange-100 text-orange-700" },
+  ocr_pending: { label: "Need to start", className: "bg-orange-100 text-orange-700" },
+  ocr_done: { label: "Need to start", className: "bg-orange-100 text-orange-700" },
+  ocr_failed: { label: "Need to start", className: "bg-orange-100 text-orange-700" },
+  assigned: { label: "Need to start", className: "bg-orange-100 text-orange-700" },
+  in_review: { label: "In progress", className: "bg-amber-100 text-amber-800" },
+  needs_info: { label: "In progress", className: "bg-amber-100 text-amber-800" },
+  verified: { label: "Verified", className: "bg-blue-100 text-blue-800" },
+  collected: { label: "Finished", className: "bg-emerald-100 text-emerald-800" },
+  disputed: { label: "Returned", className: "bg-red-100 text-red-700" },
+};
+
+function statusMeta(status: string) {
+  return STATUS_META[status] ?? { label: status, className: "bg-slate-100 text-slate-600" };
 }
 
 export default function AdminClientReportsPage({
@@ -50,6 +62,8 @@ export default function AdminClientReportsPage({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [search, setSearch] = useState("");
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -59,6 +73,8 @@ export default function AdminClientReportsPage({
     p.set("client", id);
     if (categoryFilter !== "all") p.set("category", categoryFilter);
     if (statusFilter !== "all") p.set("status", statusFilter);
+    if (fromDate) p.set("from", `${fromDate}T00:00:00`);
+    if (toDate) p.set("to", `${toDate}T23:59:59.999`);
     if (search.trim()) p.set("q", search.trim());
     p.set("limit", "50");
     if (cursor) p.set("cursor", cursor);
@@ -111,7 +127,7 @@ export default function AdminClientReportsPage({
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryFilter, statusFilter]);
+  }, [categoryFilter, statusFilter, fromDate, toDate]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -129,6 +145,7 @@ export default function AdminClientReportsPage({
   const showSplit = categoryFilter === "all";
 
   function card(inv: any) {
+    const meta = statusMeta(inv.status);
     return (
       <Link
         key={inv.id}
@@ -143,7 +160,7 @@ export default function AdminClientReportsPage({
               : null}
             <span> · {CATEGORY_LABELS[inv.category] || inv.category || "—"}</span>
           </div>
-          <span className={`dc-chip flex-shrink-0 ${statusChip(inv.status)}`}>{inv.status}</span>
+          <span className={`dc-chip flex-shrink-0 ${meta.className}`}>{meta.label}</span>
         </div>
         <div className="text-sm font-bold text-slate-900">
           J${inv.ocrData?.amount || "0.00"}
@@ -180,31 +197,64 @@ export default function AdminClientReportsPage({
 
       <div className="dc-card p-4">
         <div className="text-xs font-bold text-slate-800 mb-2">Sections</div>
-        <div className="flex items-center gap-1.5 flex-wrap mb-2">
-          {CATEGORY_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              onClick={() => setCategoryFilter(o.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                categoryFilter === o.value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-700">Category:</span>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
             >
-              {o.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {STATUS_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              onClick={() => setStatusFilter(o.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                statusFilter === o.value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+              {CATEGORY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-700">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
             >
-              {o.label}
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-700">From:</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+            />
+            <span className="text-xs font-medium text-slate-700">To:</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+            />
+          </div>
+          {(categoryFilter !== "all" || statusFilter !== "all" || fromDate || toDate) && (
+            <button
+              onClick={() => {
+                setCategoryFilter("all");
+                setStatusFilter("all");
+                setFromDate("");
+                setToDate("");
+              }}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800 underline"
+            >
+              Clear
             </button>
-          ))}
+          )}
         </div>
         <input
           value={search}

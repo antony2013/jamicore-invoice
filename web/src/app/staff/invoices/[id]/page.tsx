@@ -284,7 +284,9 @@ export default function StaffInvoiceVerifyPage({
 
       <ChatWidget
         clientId={invoice.clientId}
-        scopeId={invoice.outletId || invoice.outlet?.id || "none"}
+        // This page opens in invoice mode, so the scope id must be the INVOICE
+        // id. Passing the outlet id (or "none") here made every chat call 400.
+        scopeId={invoice.id}
         outletLabel={invoice.outlet?.name ?? "No outlet"}
         invoices={[{ id: invoice.id, label: shortInvoiceId(invoice) }]}
         initialScopeType="invoice"
