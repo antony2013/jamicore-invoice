@@ -421,6 +421,12 @@ export default function StaffMessagesPage() {
           href: clientFilter ? `/staff/reports?client=${clientFilter}` : "/staff/reports",
           label: "Reports",
         },
+        {
+          href: clientFilter
+            ? `/staff/reports/trash?client=${clientFilter}`
+            : "/staff/reports/trash",
+          label: "Trash",
+        },
       ]}
       actions={
         <div className="flex items-center gap-3">

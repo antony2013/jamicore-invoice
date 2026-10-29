@@ -116,6 +116,7 @@ export default function StaffClientOverviewPage({
       nav={[
         { href: `/staff/messages?client=${id}`, label: "Messages" },
         { href: `/staff/reports?client=${id}`, label: "Reports" },
+        { href: `/staff/reports/trash?client=${id}`, label: "Trash" },
       ]}
     >
       <Link

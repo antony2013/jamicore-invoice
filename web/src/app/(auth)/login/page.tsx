@@ -61,7 +61,7 @@ export default function LoginPage() {
           <img
             src="/logo.png"
             alt="JamiCore"
-            className="h-20 w-auto rounded-xl bg-white border border-slate-200 shadow-sm px-4 py-2 object-contain"
+            className="h-20 w-auto object-contain"
           />
         </div>
         <h2 className="mt-6 text-center text-2xl font-bold tracking-tight text-slate-900">

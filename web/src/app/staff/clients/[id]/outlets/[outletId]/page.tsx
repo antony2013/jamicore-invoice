@@ -13,6 +13,7 @@ type Invoice = {
   id: string;
   status: string;
   category?: string | null;
+  jobNumber?: string | null;
   outlet?: { name?: string | null } | null;
   client?: { name?: string | null } | null;
   ocrData?: { amount?: number | string | null; invoiceNo?: string | null } | null;
@@ -197,7 +198,9 @@ export default function StaffOutletPage({
       }
       if (!q) return true;
       const haystack = [
+        inv.jobNumber || "",
         inv.ocrData?.invoiceNo || "",
+        shortInvoiceId(inv),
         inv.id,
         category,
         inv.outlet?.name || "",
@@ -226,9 +229,10 @@ export default function StaffOutletPage({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="text-[13px] font-semibold text-slate-800 truncate">
-              {shortInvoiceId(inv)}
+              {inv.jobNumber || shortInvoiceId(inv)}
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+              {inv.jobNumber ? `${shortInvoiceId(inv)} · ` : ""}
               Uploaded {formatDate(inv.createdAt)}
               {inv.updatedAt ? ` · Updated ${formatDate(inv.updatedAt)}` : ""}
             </div>
@@ -275,6 +279,7 @@ export default function StaffOutletPage({
       nav={[
         { href: `/staff/messages?client=${id}`, label: "Messages" },
         { href: `/staff/reports?client=${id}`, label: "Reports" },
+        { href: `/staff/reports/trash?client=${id}`, label: "Trash" },
       ]}
     >
       <Link
@@ -342,7 +347,7 @@ export default function StaffOutletPage({
         </div>
 
         <div className="space-y-2">
-          <div className="text-[11px] font-semibold text-slate-500">Sections</div>
+          <div className="text-[11px] font-semibold text-slate-500">Filter</div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-medium text-slate-600">Category:</span>
@@ -407,7 +412,7 @@ export default function StaffOutletPage({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search invoice ID or document type…"
+          placeholder="Search job no, invoice no or ID…"
           className="w-full rounded-lg border border-[#E4E7EC] bg-slate-50 px-3 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
         />
       </div>
