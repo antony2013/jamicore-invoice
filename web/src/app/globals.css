@@ -49,10 +49,25 @@ body {
   gap: 28px;
 }
 .dc-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   color: #fff;
   font-weight: 600;
   font-size: 18px;
   padding: 0 14px;
+}
+/* Logo artwork is black on transparent; flip it to white so it stays legible
+   on the #101828 sidebar. hue-rotate keeps the orange accent orange-ish. */
+.dc-logo-img {
+  display: block;
+  width: 132px;
+  height: auto;
+  filter: invert(1) hue-rotate(180deg) saturate(1.5) brightness(1.1);
+}
+.dc-logo-text {
+  line-height: 1.2;
 }
 .dc-nav { display: flex; flex-direction: column; gap: 4px; }
 .dc-nav a {
@@ -143,9 +158,15 @@ body {
     display: none;
   }
   .dc-logo {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
     padding: 0 2px 0 0;
     font-size: 16px;
     white-space: nowrap;
+  }
+  .dc-logo-img {
+    width: 68px;
   }
   .dc-nav {
     flex-direction: row;

@@ -56,7 +56,10 @@ export default function AppShell({
   return (
     <div className="dc-root">
       <aside className="dc-sidebar">
-        <div className="dc-logo">Invoice Desk</div>
+        <div className="dc-logo">
+          <img src="/logo.png" alt="JamiCore" className="dc-logo-img" />
+          <span className="dc-logo-text">Invoice Desk</span>
+        </div>
         <nav className="dc-nav">
           {items.map((item) => {
             const active = activeHref === pathOf(item.href);
