@@ -16,17 +16,9 @@ export default function AdminDashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [outletFilter, setOutletFilter] = useState<string>("all");
-  const [outletList, setOutletList] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
-  const [staffFilter, setStaffFilter] = useState<string>(() => {
-    if (typeof window === "undefined") return "all";
-    return new URLSearchParams(window.location.search).get("assigned_to") || "all";
-  });
-  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [staffFilter, setStaffFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [clientFilter, setClientFilter] = useState<string>("all");
-  const [clientList, setClientList] = useState<any[]>([]);
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -47,11 +39,8 @@ export default function AdminDashboard() {
   function listParams(cursor?: string | null) {
     const params = new URLSearchParams();
     if (statusFilter !== "all") params.set("status", statusFilter);
-    if (outletFilter !== "all") params.set("outlet", outletFilter);
-    if (categoryFilter !== "all") params.set("category", categoryFilter);
     if (staffFilter !== "all") params.set("assigned_to", staffFilter);
-    if (priorityFilter !== "all") params.set("priority", priorityFilter);
-    if (clientFilter !== "all") params.set("client", clientFilter);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
     if (fromDate) params.set("from", fromDate);
     if (toDate) params.set("to", toDate);
     if (search.trim()) params.set("q", search.trim());
@@ -62,11 +51,8 @@ export default function AdminDashboard() {
 
   function statsParams() {
     const params = new URLSearchParams();
-    if (outletFilter !== "all") params.set("outlet", outletFilter);
-    if (categoryFilter !== "all") params.set("category", categoryFilter);
     if (staffFilter !== "all") params.set("assigned_to", staffFilter);
-    if (priorityFilter !== "all") params.set("priority", priorityFilter);
-    if (clientFilter !== "all") params.set("client", clientFilter);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
     if (fromDate) params.set("from", fromDate);
     if (toDate) params.set("to", toDate);
     if (search.trim()) params.set("q", search.trim());
@@ -79,19 +65,15 @@ export default function AdminDashboard() {
     try {
       const qs = listParams();
       const url = qs ? `/api/invoices?${qs}` : "/api/invoices";
-      const [invRes, statsRes, staffRes, outletRes, clientRes] = await Promise.all([
+      const [invRes, statsRes, staffRes] = await Promise.all([
         fetch(url),
         fetch(statsParams()),
         fetch("/api/staff"),
-        fetch("/api/outlets"),
-        fetch("/api/clients"),
       ]);
 
       const invData = await invRes.json();
       const statsData = await statsRes.json();
       const staffData = await staffRes.json();
-      const outletData = await outletRes.json();
-      const clientData = await clientRes.json();
 
       if (invData.success) {
         setInvoices(invData.invoices);
@@ -102,8 +84,6 @@ export default function AdminDashboard() {
       }
       if (statsData.success) setStats(statsData.stats);
       if (staffData.success) setStaffList(staffData.staff);
-      if (outletData.success) setOutletList(outletData.outlets);
-      if (clientData.success) setClientList(clientData.clients);
     } catch (err: any) {
       console.error("Failed to load admin data:", err);
       setLoadError(err.message || "Failed to load dashboard data.");
@@ -132,7 +112,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, outletFilter, staffFilter, categoryFilter, priorityFilter, clientFilter, fromDate, toDate]);
+  }, [statusFilter, staffFilter, categoryFilter, fromDate, toDate]);
 
   // Debounced server search (typing doesn't hammer the API; skipped on mount)
   const searchFirst = useRef(true);
@@ -194,11 +174,8 @@ export default function AdminDashboard() {
     // Server-side export (same filters, streamed, max 20,000 rows).
     const params = new URLSearchParams();
     if (statusFilter !== "all") params.set("status", statusFilter);
-    if (outletFilter !== "all") params.set("outlet", outletFilter);
-    if (categoryFilter !== "all") params.set("category", categoryFilter);
     if (staffFilter !== "all") params.set("assigned_to", staffFilter);
-    if (priorityFilter !== "all") params.set("priority", priorityFilter);
-    if (clientFilter !== "all") params.set("client", clientFilter);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
     if (fromDate) params.set("from", fromDate);
     if (toDate) params.set("to", toDate);
     if (search.trim()) params.set("q", search.trim());
@@ -285,116 +262,74 @@ export default function AdminDashboard() {
 
         {/* Filter Toolbar */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <span className="text-xs font-medium text-slate-700">Filter Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
-            >
-              <option value="all">All Invoices</option>
-              <option value="uploaded">Uploaded</option>
-              
-              <option value="ocr_done">OCR Done (legacy)</option>
-              <option value="ocr_failed">OCR Failed (legacy)</option>
-              <option value="assigned">Assigned</option>
-              <option value="in_review">In Review</option>
-              <option value="needs_info">Needs Info</option>
-              <option value="verified">Verified</option>
-              <option value="collected">Collected</option>
-              <option value="disputed">Disputed</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs font-medium text-slate-700">Outlet:</span>
-            <select
-              value={outletFilter}
-              onChange={(e) => setOutletFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[220px]"
-            >
-              <option value="all">All Outlets</option>
-              {outletList.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.clientName} — {o.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs font-medium text-slate-700">Staff:</span>
-            <select
-              value={staffFilter}
-              onChange={(e) => setStaffFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
-            >
-              <option value="all">All Staff</option>
-              <option value="unassigned">Unassigned</option>
-              {staffList.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs font-medium text-slate-700">Priority:</span>
-            <select
-              value={priorityFilter}
-              onChange={(e) => setPriorityFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
-            >
-              <option value="all">All</option>
-              <option value="low">Low</option>
-              <option value="normal">Normal</option>
-              <option value="urgent">Urgent</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs font-medium text-slate-700">Category:</span>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
-            >
-              <option value="all">All</option>
-              <option value="sales_invoice">Sales Invoice</option>
-              <option value="purchase_bill">Purchase Bill</option>
-              <option value="expense_bill">Expense Bill</option>
-              <option value="asset_bill">Asset Bill</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs font-medium text-slate-700">Client:</span>
-            <select
-              value={clientFilter}
-              onChange={(e) => setClientFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
-            >
-              <option value="all">All Clients</option>
-              {clientList.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs font-medium text-slate-700">From:</span>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
-            />
-            <span className="text-xs font-medium text-slate-700">To:</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
-            />
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 w-full sm:w-auto">
+            <span className="flex items-center gap-2 text-xs font-medium text-slate-700">
+              <Filter className="w-4 h-4 text-slate-400" /> Filter
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-700">Category:</span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
+              >
+                <option value="all">All</option>
+                <option value="sales_invoice">Sales Invoice</option>
+                <option value="purchase_bill">Purchase Bill</option>
+                <option value="expense_bill">Expense Bill</option>
+                <option value="asset_bill">Asset Bill</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-700">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+              >
+                <option value="all">All</option>
+                <option value="uploaded">Uploaded</option>
+                <option value="assigned">Assigned</option>
+                <option value="in_review">In Review</option>
+                <option value="needs_info">Needs Info</option>
+                <option value="verified">Verified</option>
+                <option value="collected">Collected</option>
+                <option value="disputed">Disputed</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-700">Staff:</span>
+              <select
+                value={staffFilter}
+                onChange={(e) => setStaffFilter(e.target.value)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
+              >
+                <option value="all">All Staff</option>
+                <option value="unassigned">Unassigned</option>
+                {staffList.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-700">From:</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+              />
+              <span className="text-xs font-medium text-slate-700">To:</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+              />
+            </div>
           </div>
 
           <button
