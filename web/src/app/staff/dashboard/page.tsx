@@ -154,7 +154,7 @@ export default function StaffDashboard() {
         inv.status === "uploaded"
           ? "New invoice uploaded — available to take"
           : inv.status === "assigned"
-            ? "New invoice uploaded"
+            ? "Assigned to you — ready to start"
             : inv.status === "in_review"
               ? "Invoice requires review"
               : "Client reply needs review",
@@ -191,10 +191,10 @@ export default function StaffDashboard() {
 
   const total = stats?.total ?? 0;
   const inProgress = (stats?.byStatus.in_review ?? 0) + (stats?.byStatus.needs_info ?? 0);
-  const uploaded = stats
+  const toStart = stats
     ? (stats.byStatus.uploaded ?? 0) + (stats.byStatus.assigned ?? 0)
     : "…";
-  const finished = (stats?.byStatus.collected ?? 0) + (stats?.byStatus.disputed ?? 0);
+  const finished = stats?.byStatus.collected ?? 0;
   const initial = (user?.name || "Staff").trim().charAt(0).toUpperCase();
 
   return (
@@ -261,11 +261,11 @@ export default function StaffDashboard() {
         )}
       </section>
 
-      {/* My Assigned Invoices */}
+      {/* My Work Queue */}
       <section className="rounded-xl border border-slate-200 bg-[#F9FAFB] p-4">
-        <h2 className="text-[16px] font-bold text-slate-900">My Assigned Invoices</h2>
+        <h2 className="text-[16px] font-bold text-slate-900">My Work Queue</h2>
         <p className="mt-0.5 text-[11px] text-slate-500">
-          Review the assigned work, verify each invoice, and manage workflow status
+          Unclaimed uploads and invoices assigned to you, with their workflow status
         </p>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
@@ -283,8 +283,8 @@ export default function StaffDashboard() {
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">Uploaded</div>
-            <div className="mt-0.5 text-[22px] font-bold leading-tight text-blue-600">{uploaded}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">To Start</div>
+            <div className="mt-0.5 text-[22px] font-bold leading-tight text-blue-600">{toStart}</div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">Finished</div>
@@ -327,17 +327,22 @@ export default function StaffDashboard() {
         {cardClients.length === 0 ? (
           <div className="mt-3 rounded-xl border border-slate-200 bg-white py-12 text-center">
             <p className="text-sm font-medium text-slate-600">
-              {loading ? "Loading queue..." : "No invoices assigned to you yet."}
+              {loading ? "Loading queue..." : "Nothing in your queue right now."}
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              New invoices assigned by admin will appear here automatically.
+              New uploads and invoices assigned to you will appear here automatically.
             </p>
           </div>
         ) : (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {cardClients.map((c) => {
               const unread = unreadByClient[c.id] ?? 0;
-              const busy = c.pending > 0;
+              const chip =
+                c.inProgress > 0
+                  ? { label: "In Progress", className: "border-amber-200 bg-amber-50 text-amber-600" }
+                  : c.toStart > 0
+                    ? { label: "To Start", className: "border-blue-200 bg-blue-50 text-blue-600" }
+                    : { label: "Verified", className: "border-emerald-200 bg-emerald-50 text-emerald-600" };
               const latest = c.latest;
               return (
                 <div
@@ -366,13 +371,9 @@ export default function StaffDashboard() {
                         )}
                       </button>
                       <span
-                        className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
-                          busy
-                            ? "border-amber-200 bg-amber-50 text-amber-600"
-                            : "border-emerald-200 bg-emerald-50 text-emerald-600"
-                        }`}
+                        className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${chip.className}`}
                       >
-                        {busy ? "In Progress" : "Uploaded"}
+                        {chip.label}
                       </span>
                     </div>
                   </div>
