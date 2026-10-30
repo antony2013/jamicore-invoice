@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
 
@@ -20,13 +20,51 @@ export function notDeletedSql() {
   return sql`"invoices"."deleted_at" IS NULL`;
 }
 
+/**
+ * Statuses an UNCLAIMED invoice can be in. Uploads land as `uploaded`; the
+ * ocr_* values are legacy rows still draining. Anything verified or later is
+ * always owned by a staffer, so an unclaimed row in those states stays
+ * admin-only.
+ */
+export const UNCLAIMED_STATUSES = [
+  "uploaded",
+  "ocr_pending",
+  "ocr_done",
+  "ocr_failed",
+  "assigned",
+] as const;
+
+/**
+ * Staff queue visibility: unclaimed invoices waiting to be taken are shared
+ * by every staff member, while a claimed invoice belongs to exactly one
+ * staffer. Admins are unscoped and see everything.
+ */
+export function staffInvoiceScope(staffId: string) {
+  return or(
+    eq(invoices.assignedTo, staffId),
+    and(isNull(invoices.assignedTo), inArray(invoices.status, UNCLAIMED_STATUSES))
+  );
+}
+
+/** True when this staffer may open/work the invoice (own or claimable). */
+export function staffCanAccessInvoice(
+  invoice: { assignedTo: string | null; status: string },
+  staffId: string
+) {
+  if (invoice.assignedTo === staffId) return true;
+  return (
+    invoice.assignedTo === null &&
+    (UNCLAIMED_STATUSES as readonly string[]).includes(invoice.status)
+  );
+}
+
 export type OfficeUser = { id: string; role: string; name?: string };
 export type ClientUser = { clientId: string; role: string; sub: string; name?: string };
 
 /**
- * Office scoping (shared): admin sees everything, staff only their own
- * assigned invoices. Returns the invoice or a 404 response (same shape so
- * staff cannot probe other rows).
+ * Office scoping (shared): admin sees everything, staff see unclaimed work
+ * plus their own claimed invoices. Returns the invoice or a 404 response
+ * (same shape so staff cannot probe other staff's rows).
  */
 export async function officeInvoiceOr404(id: string, user: OfficeUser) {
   const invoice = await db.query.invoices.findFirst({
@@ -35,7 +73,7 @@ export async function officeInvoiceOr404(id: string, user: OfficeUser) {
   if (!invoice) {
     return { error: NextResponse.json({ error: "Invoice not found" }, { status: 404 }) as NextResponse };
   }
-  if (user.role !== "admin" && invoice.assignedTo !== user.id) {
+  if (user.role !== "admin" && !staffCanAccessInvoice(invoice, user.id)) {
     return { error: NextResponse.json({ error: "Invoice not found" }, { status: 404 }) as NextResponse };
   }
   return { invoice };

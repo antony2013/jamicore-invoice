@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, invoices, invoiceStatusLog, outlets, staff } from "@/db/schema";
+import { invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { authenticateClientRequest } from "@/lib/jwt";
 import { notDeleted } from "@/lib/invoice-access";
 import { deleteObjectFromS3, inspectUploadObject, MAX_UPLOAD_BYTES } from "@/lib/s3";
@@ -114,7 +114,6 @@ export async function POST(request: Request) {
 
     // Outlet must belong to the authenticated client (never trust blindly)
     let outletId: string | null = null;
-    let outletDefaultId: string | null = null;
     if (result.data.outletId) {
       const outlet = await db.query.outlets.findFirst({
         where: eq(outlets.id, result.data.outletId),
@@ -126,34 +125,11 @@ export async function POST(request: Request) {
         );
       }
       outletId = outlet.id;
-      outletDefaultId = (outlet as { assignedStaffId?: string | null }).assignedStaffId ?? null;
     }
 
-    // Auto-assign routing (most specific wins):
-    // 1. outlet default staff (when upload tagged with an outlet that has one)
-    // 2. client default staff — else the invoice stays `uploaded` for manual assign.
-    async function resolveAssignee(staffId: string | null): Promise<{ id: string; name: string } | null> {
-      if (!staffId) return null;
-      const target = await db.query.staff.findFirst({ where: eq(staff.id, staffId) });
-      if (target && (target as { role?: string }).role === "staff") {
-        return { id: target.id, name: target.name };
-      }
-      return null;
-    }
-    let autoAssignee: { id: string; name: string } | null = null;
-    let autoSource = "";
-    if (outletDefaultId) {
-      autoAssignee = await resolveAssignee(outletDefaultId);
-      if (autoAssignee) autoSource = "outlet default";
-    }
-    if (!autoAssignee) {
-      const owner = await db.query.clients.findFirst({
-        where: eq(clients.id, client.clientId),
-      });
-      const defaultId = (owner as { assignedStaffId?: string | null })?.assignedStaffId;
-      autoAssignee = await resolveAssignee(defaultId ?? null);
-      if (autoAssignee) autoSource = "client default";
-    }
+    // Every upload lands UNCLAIMED: it is visible to every staff member in
+    // the shared queue until one of them takes it (assigns it to themselves).
+    // No outlet/client default routing any more.
 
     // 5. Insert invoice record within a transaction.
     // Race-safe: the s3_key unique constraint is the arbiter. If two
@@ -167,8 +143,8 @@ export async function POST(request: Request) {
           clientId: client.clientId, // Owning client from JWT, never from body
           s3Key: s3Key,
           imageUrl: s3Key, // Internal private reference
-          status: autoAssignee ? "assigned" : "uploaded",
-          assignedTo: autoAssignee ? autoAssignee.id : null,
+          status: "uploaded",
+          assignedTo: null,
           priority: "normal",
           clientNote: clientNote,
           pageNotes: pageNotes,
@@ -191,23 +167,12 @@ export async function POST(request: Request) {
             : "Invoice uploaded by client",
       });
 
-      if (autoAssignee) {
-        await tx.insert(invoiceStatusLog).values({
-          invoiceId: inserted.id,
-          status: "assigned",
-          changedBy: null,
-          note: `Auto-assigned to ${autoAssignee.name} (${autoSource} staff)`,
-        });
-      }
-
       return inserted;
       });
 
       return NextResponse.json({
         success: true,
-        message: autoAssignee
-          ? `Invoice uploaded and assigned to ${autoAssignee.name}`
-          : "Invoice successfully uploaded",
+        message: "Invoice successfully uploaded",
         invoice: newInvoice,
       });
     } catch (txError: unknown) {

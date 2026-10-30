@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, unique, uuid, integer, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, unique, uuid, integer, jsonb, boolean, pgEnum, primaryKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // Enums
@@ -30,6 +30,9 @@ export const clients = pgTable("clients", {
   passwordHash: text("password_hash"),
   phone: text("phone").unique(),
   email: text("email").unique(),
+  // Business address printed/kept on the client account (admin-maintained,
+  // optional). Outlets carry their own address for branch-level detail.
+  address: text("address"),
   // Default staff for this client: ALL of their invoices (current backlog
   // via bulk-assign, new ones via default-staff auto-assign at upload) route
   // to this person. Null = manual assignment per invoice.
@@ -88,6 +91,25 @@ export const outlets = pgTable(
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("outlets_client_idx").on(t.clientId)]
+);
+
+// 2c. Outlet Staff — which staff members work an outlet (many-to-many).
+// Independent of outlets.assignedStaffId, which stays the single "default
+// staff" used for upload auto-routing.
+export const outletStaff = pgTable(
+  "outlet_staff",
+  {
+    outletId: uuid("outlet_id")
+      .notNull()
+      .references(() => outlets.id, { onDelete: "cascade" }),
+    staffId: uuid("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.outletId, t.staffId] }),
+    index("outlet_staff_staff_idx").on(t.staffId),
+  ]
 );
 
 // 3. Staff Table (Admin and Staff web users)
@@ -360,6 +382,18 @@ export const outletsRelations = relations(outlets, ({ one, many }) => ({
     references: [staff.id],
   }),
   invoices: many(invoices),
+  staffMembers: many(outletStaff),
+}));
+
+export const outletStaffRelations = relations(outletStaff, ({ one }) => ({
+  outlet: one(outlets, {
+    fields: [outletStaff.outletId],
+    references: [outlets.id],
+  }),
+  staff: one(staff, {
+    fields: [outletStaff.staffId],
+    references: [staff.id],
+  }),
 }));
 
 export const staffRelations = relations(staff, ({ many }) => ({
@@ -367,6 +401,7 @@ export const staffRelations = relations(staff, ({ many }) => ({
   assignmentsGiven: many(assignments, { relationName: "assigner" }),
   assignmentsReceived: many(assignments, { relationName: "assignee" }),
   statusLogs: many(invoiceStatusLog),
+  outletMemberships: many(outletStaff),
 }));
 
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({

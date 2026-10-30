@@ -27,7 +27,12 @@ export async function GET(request: Request) {
 
     const rows = await db.query.outlets.findMany({
       where: clientId ? eq(outlets.clientId, clientId) : undefined,
-      with: { client: safeClient, createdBy: safeClientStaff, assignedStaff: safeStaff },
+      with: {
+        client: safeClient,
+        createdBy: safeClientStaff,
+        assignedStaff: safeStaff,
+        staffMembers: { with: { staff: safeStaff } },
+      },
       orderBy: [asc(outlets.name)],
     });
 
@@ -43,6 +48,11 @@ export async function GET(request: Request) {
         createdByName: (o as any).createdBy?.name ?? null,
         assignedStaffId: (o as any).assignedStaffId ?? null,
         assignedStaffName: (o as any).assignedStaff?.name ?? null,
+        // Many-to-many: every staff member who works this outlet.
+        staffIds: ((o as any).staffMembers ?? []).map((m: any) => m.staffId as string),
+        staffNames: ((o as any).staffMembers ?? [])
+          .map((m: any) => m.staff?.name as string | undefined)
+          .filter(Boolean) as string[],
       })),
     });
   } catch (error: any) {

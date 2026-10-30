@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices } from "@/db/schema";
-import { notDeleted } from "@/lib/invoice-access";
+import { notDeleted, staffInvoiceScope } from "@/lib/invoice-access";
 import type { OfficeSession } from "@/lib/session";
 
 /**
@@ -74,9 +74,10 @@ export function parseInvoiceFilters(params: URLSearchParams): InvoiceFilters | N
 }
 
 /**
- * Build the WHERE conditions for the shared filters. Staff callers ALWAYS
- * add their own assignedTo=me first (strict separation — any staff-supplied
- * assigned_to value is ignored).
+ * Build the WHERE conditions for the shared filters. Staff callers ALWAYS get
+ * their own queue scope first: unclaimed invoices (shared by every staffer)
+ * plus the invoices they have claimed. Any staff-supplied assigned_to value
+ * is ignored.
  */
 export async function buildInvoiceConditions(
   f: InvoiceFilters,
@@ -87,7 +88,8 @@ export async function buildInvoiceConditions(
   const conditions: Array<ReturnType<typeof eq> | ReturnType<typeof sql>> = [notDeleted()];
 
   if (me.role !== "admin") {
-    conditions.push(eq(invoices.assignedTo, me.id));
+    const scope = staffInvoiceScope(me.id);
+    if (scope) conditions.push(scope);
   } else if (f.assignedTo === "me") {
     conditions.push(eq(invoices.assignedTo, me.id));
   } else if (f.assignedTo === "unassigned") {

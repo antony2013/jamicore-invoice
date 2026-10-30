@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { invoices, invoiceStatusLog, outlets } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
-import { notDeleted } from "@/lib/invoice-access";
+import { notDeleted, staffCanAccessInvoice } from "@/lib/invoice-access";
 import { safeClient, safeClientStaff, safeStaff } from "@/lib/safe-columns";
 import { isValidTransition, isTerminalStatus, InvoiceStatus } from "@/lib/status-flow";
 import { concurrentEditError, transitionInvoice, updatedAtMatches } from "@/lib/invoice-transitions";
@@ -36,8 +36,8 @@ export async function GET(
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
-    // Strict separation: staff see only invoices assigned to them.
-    if (me.role !== "admin" && invoice.assignedTo !== me.id) {
+    // Staff see unclaimed invoices (shared queue) and their own claimed ones.
+    if (me.role !== "admin" && !staffCanAccessInvoice(invoice, me.id)) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
@@ -63,6 +63,7 @@ export async function GET(
 
 const updateInvoiceSchema = z.object({
   status: z.enum([
+    "assigned",
     "in_review",
     "needs_info",
     "verified",
@@ -117,9 +118,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
-    // Strict separation: staff mutate only their own assigned invoices.
+    // Staff may open and take UNCLAIMED invoices (shared queue) and mutate
+    // their own claimed ones. Another staffer's invoice stays invisible.
     const actorRole = me.role;
-    if (actorRole !== "admin" && currentInvoice.assignedTo !== staffId) {
+    const claiming = actorRole !== "admin" && currentInvoice.assignedTo === null;
+    if (actorRole !== "admin" && !staffCanAccessInvoice(currentInvoice, staffId)) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
@@ -254,6 +257,15 @@ export async function PATCH(
           actor: { type: "staff", id: staffId, isAdmin: me.role === "admin" },
           note: note || `Status updated from ${currentInvoice.status} to ${nextStatus}`,
           extraSet: dataSet,
+          // Taking an unclaimed invoice claims it atomically: the row must
+          // still be unassigned, so two staff clicking at once = one winner.
+          ...(claiming
+            ? {
+                assignedTo: staffId,
+                expectedAssignedTo: null,
+                assignment: { staffId, assignedBy: staffId },
+              }
+            : {}),
         });
         if (Object.keys(dataSet).length > 0) {
           await writeAudit(tx, {
@@ -274,6 +286,7 @@ export async function PATCH(
       const updatePayload: any = {
         updatedAt: new Date(),
         ...dataSet,
+        ...(claiming ? { assignedTo: staffId } : {}),
       };
 
       const [res] = await tx
@@ -283,7 +296,8 @@ export async function PATCH(
           and(
             eq(invoices.id, id),
             eq(invoices.status, currentInvoice.status as any),
-            updatedAtMatches(currentInvoice.updatedAt)
+            updatedAtMatches(currentInvoice.updatedAt),
+            ...(claiming ? [isNull(invoices.assignedTo)] : [])
           )
         )
         .returning();
@@ -312,6 +326,18 @@ export async function PATCH(
           entityId: id,
           before: dataBefore,
           after: dataSet,
+          meta: { note: note ?? null },
+        });
+      }
+
+      if (claiming) {
+        await writeAudit(tx, {
+          actor: { type: "staff", id: staffId },
+          action: "invoice.claim",
+          entityType: "invoice",
+          entityId: id,
+          before: { assignedTo: null },
+          after: { assignedTo: staffId },
           meta: { note: note ?? null },
         });
       }

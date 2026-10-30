@@ -29,6 +29,7 @@ const createClientSchema = z
     password: z.string().min(8, "Password must be at least 8 characters").max(128),
     phone: phoneSchema.optional(),
     email: z.string().email("Invalid email address").toLowerCase().trim().optional(),
+    address: z.string().trim().max(500, "Address is too long").optional(),
   })
   .refine((d) => d.phone || d.email, {
     message: "Either phone (E.164) or email is required",
@@ -41,6 +42,7 @@ function toPublicClient(c: typeof clients.$inferSelect) {
     username: (c as { username?: string | null }).username ?? null,
     phone: (c as { phone?: string | null }).phone ?? null,
     email: (c as { email?: string | null }).email ?? null,
+    address: (c as { address?: string | null }).address ?? null,
     createdAt: c.createdAt,
   };
 }
@@ -65,6 +67,7 @@ export async function GET() {
       username: (c as { username?: string | null }).username ?? null,
       phone: (c as { phone?: string | null }).phone ?? null,
       email: (c as { email?: string | null }).email ?? null,
+      address: (c as { address?: string | null }).address ?? null,
       assignedStaffId: (c as { assignedStaffId?: string | null }).assignedStaffId ?? null,
       assignedStaffName: (c as any).assignedStaff?.name ?? null,
       archivedAt: (c as { archivedAt?: Date | null }).archivedAt ?? null,
@@ -96,7 +99,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, username, password, phone, email } = result.data;
+    const { name, username, password, phone, email, address } = result.data;
 
     // Duplicate check on username, phone and/or email.
     // Usernames must ALSO be unique across team staff (single login field).
@@ -124,6 +127,7 @@ export async function POST(request: Request) {
           passwordHash,
           phone: phone ?? null,
           email: email ?? null,
+          address: address || null,
         })
         .returning();
       await writeAudit(tx, {

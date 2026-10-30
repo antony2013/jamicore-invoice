@@ -17,6 +17,7 @@ export default function AdminClientsPage() {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -81,6 +82,7 @@ export default function AdminClientsPage() {
           password,
           ...(trimmedPhone ? { phone: trimmedPhone } : {}),
           ...(email.trim() ? { email: email.trim() } : {}),
+          ...(address.trim() ? { address: address.trim() } : {}),
         }),
       });
       const data = await res.json();
@@ -91,6 +93,7 @@ export default function AdminClientsPage() {
       setPassword("");
       setPhone("");
       setEmail("");
+      setAddress("");
       setShowForm(false);
       load();
     } catch (err: any) {
@@ -202,6 +205,17 @@ export default function AdminClientsPage() {
                 />
               </div>
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Address</label>
+              <textarea
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="Street, area, city, postal code"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
             <p className="text-[11px] text-slate-400">The client signs into the mobile app with this user ID + password. Share them securely.</p>
             <div className="flex gap-2">
               <button
@@ -262,6 +276,11 @@ export default function AdminClientsPage() {
               {[c.phone, c.email].filter(Boolean).length > 0 && (
                 <div className="text-[11px] text-slate-500">
                   {[c.phone, c.email].filter(Boolean).join(" · ")}
+                </div>
+              )}
+              {c.address && (
+                <div className="mt-1 text-[11px] text-slate-500 line-clamp-2">
+                  {c.address}
                 </div>
               )}
             </div>

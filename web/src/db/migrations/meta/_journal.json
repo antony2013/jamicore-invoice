@@ -148,6 +148,20 @@
       "when": 1793251821348,
       "tag": "0020_report-trash",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793336746581,
+      "tag": "0021_client-address",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793338606503,
+      "tag": "0022_outlet-staff",
+      "breakpoints": true
     }
   ]
 }

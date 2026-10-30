@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { clientStaff, invoices, outlets, staff } from "@/db/schema";
+import { clientStaff, invoices, outletStaff, outlets, staff } from "@/db/schema";
 import { requireAdmin } from "@/lib/session";
 import { notDeleted } from "@/lib/invoice-access";
 import { isValidTransition } from "@/lib/status-flow";
@@ -21,6 +21,9 @@ const updateOutletSchema = z.object({
     .optional(),
   // Default staff for THIS outlet (overrides client default). Null clears it.
   assignedStaffId: z.string().uuid("Invalid staff ID").nullable().optional(),
+  // Full replacement list of staff who work this outlet (checkboxes in the
+  // admin client workspace). Empty array clears every assignment.
+  staffIds: z.array(z.string().uuid("Invalid staff ID")).max(50).optional(),
 });
 
 export async function PATCH(
@@ -46,7 +49,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Outlet not found." }, { status: 404 });
     }
 
-    const { name, address, phone, assignedStaffId } = result.data;
+    const { name, address, phone, assignedStaffId, staffIds } = result.data;
     if (name && name.trim() !== current.name) {
       const dup = await db.query.outlets.findFirst({
         where: and(
@@ -75,19 +78,46 @@ export async function PATCH(
       }
     }
 
+    // Multi-staff assignment: every id must be a live staff account.
+    const uniqueStaffIds = staffIds ? Array.from(new Set(staffIds)) : undefined;
+    if (uniqueStaffIds && uniqueStaffIds.length > 0) {
+      const found = await db.query.staff.findMany({
+        where: inArray(staff.id, uniqueStaffIds),
+        columns: { id: true, role: true, isActive: true },
+      });
+      const valid = new Set(
+        found.filter((s) => s.role === "staff" && s.isActive).map((s) => s.id)
+      );
+      const invalid = uniqueStaffIds.filter((sid) => !valid.has(sid));
+      if (invalid.length > 0) {
+        return NextResponse.json(
+          { error: "Only active staff accounts can be assigned to an outlet." },
+          { status: 400 }
+        );
+      }
+    }
+
     // ONE transaction for update + audit + sweep (all-or-nothing).
     let swept = 0;
+    // Staff-only PATCHes (checkbox roster) touch no outlet column — an empty
+    // .set({}) makes Drizzle throw, so the row update is skipped.
+    const outletPatch: Partial<typeof outlets.$inferInsert> = {
+      ...(name !== undefined ? { name: name.trim() } : {}),
+      ...(address !== undefined ? { address: address?.trim() || null } : {}),
+      ...(phone !== undefined ? { phone: phone ?? null } : {}),
+      ...(assignedStaffId !== undefined ? { assignedStaffId } : {}),
+    };
+    const hasOutletPatch = Object.keys(outletPatch).length > 0;
     const [updated] = await db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(outlets)
-        .set({
-          ...(name !== undefined ? { name: name.trim() } : {}),
-          ...(address !== undefined ? { address: address?.trim() || null } : {}),
-          ...(phone !== undefined ? { phone: phone ?? null } : {}),
-          ...(assignedStaffId !== undefined ? { assignedStaffId } : {}),
-        })
-        .where(eq(outlets.id, id))
-        .returning();
+      const row = hasOutletPatch
+        ? (
+            await tx
+              .update(outlets)
+              .set(outletPatch)
+              .where(eq(outlets.id, id))
+              .returning()
+          )[0]
+        : current;
 
       if (assignedStaffId !== undefined) {
         await writeAudit(tx, {
@@ -96,6 +126,24 @@ export async function PATCH(
           entityType: "outlet",
           entityId: id,
           after: { assignedStaffId },
+          ip: getClientIp(request),
+        });
+      }
+
+      // Multi-staff assignment = full replacement of this outlet's roster.
+      if (uniqueStaffIds !== undefined) {
+        await tx.delete(outletStaff).where(eq(outletStaff.outletId, id));
+        if (uniqueStaffIds.length > 0) {
+          await tx
+            .insert(outletStaff)
+            .values(uniqueStaffIds.map((staffId) => ({ outletId: id, staffId })));
+        }
+        await writeAudit(tx, {
+          actor: { type: "staff", id: me.id },
+          action: "outlet.staff_assign",
+          entityType: "outlet",
+          entityId: id,
+          after: { staffIds: uniqueStaffIds },
           ip: getClientIp(request),
         });
       }

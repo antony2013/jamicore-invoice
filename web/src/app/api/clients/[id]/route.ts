@@ -30,6 +30,7 @@ const updateClientSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters").max(128).optional(),
   phone: phoneSchema.nullable().optional(),
   email: z.string().email("Invalid email address").toLowerCase().trim().nullable().optional(),
+  address: z.string().trim().max(500, "Address is too long").nullable().optional(),
   // Default staff for this client (all invoices route here). Null clears it.
   assignedStaffId: z.string().uuid("Invalid staff ID").nullable().optional(),
   // Archive switch: archived clients cannot log in and their tokens die.
@@ -60,7 +61,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const { name, username, password, phone, email, assignedStaffId, archived } = result.data;
+    const { name, username, password, phone, email, address, assignedStaffId, archived } = result.data;
 
     // Duplicate check for changed unique fields (usernames span owners + team)
     if (username && username !== (current as any).username) {
@@ -94,6 +95,7 @@ export async function PATCH(
     }
     if (phone !== undefined) (patch as any).phone = phone;
     if (email !== undefined) (patch as any).email = email;
+    if (address !== undefined) (patch as any).address = address || null;
     if (assignedStaffId !== undefined) {
       if (assignedStaffId !== null) {
         const target = await db.query.staff.findFirst({ where: eq(staff.id, assignedStaffId) });
@@ -190,6 +192,7 @@ export async function PATCH(
         username: (updated as any).username ?? null,
         phone: (updated as any).phone ?? null,
         email: (updated as any).email ?? null,
+        address: (updated as any).address ?? null,
       },
       swept,
     });

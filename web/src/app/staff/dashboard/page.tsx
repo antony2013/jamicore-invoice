@@ -114,10 +114,16 @@ export default function StaffDashboard() {
       const name = inv.client?.name || (id === "unknown" ? "Unknown client" : id.substring(0, 8));
       const summary =
         byId.get(id) ?? { id, name, pending: 0, toStart: 0, inProgress: 0, verified: 0, latest: null };
+      if (inv.status === "uploaded") summary.toStart += 1;
       if (inv.status === "assigned") summary.toStart += 1;
       if (inv.status === "in_review" || inv.status === "needs_info") summary.inProgress += 1;
       if (inv.status === "verified") summary.verified += 1;
-      if (inv.status === "assigned" || inv.status === "in_review" || inv.status === "needs_info") {
+      if (
+        inv.status === "uploaded" ||
+        inv.status === "assigned" ||
+        inv.status === "in_review" ||
+        inv.status === "needs_info"
+      ) {
         summary.pending += 1;
       }
       const latestAt = new Date(summary.latest?.updatedAt || summary.latest?.createdAt || 0).getTime();
@@ -131,19 +137,27 @@ export default function StaffDashboard() {
   const cardClients =
     clientFilter === "all" ? clientSummaries : clientSummaries.filter((c) => c.id === clientFilter);
 
-  // Action-needed items derived from the loaded assigned queue.
+  // Action-needed items derived from the loaded shared queue.
   const actionItems = visibleInvoices
-    .filter((inv) => inv.status === "assigned" || inv.status === "in_review" || inv.status === "needs_info")
+    .filter(
+      (inv) =>
+        inv.status === "uploaded" ||
+        inv.status === "assigned" ||
+        inv.status === "in_review" ||
+        inv.status === "needs_info"
+    )
     .filter((inv) => !dismissedIds.includes(inv.id))
     .map((inv) => ({
       id: inv.id,
       status: inv.status as string,
       title:
-        inv.status === "assigned"
-          ? "New invoice uploaded"
-          : inv.status === "in_review"
-            ? "Invoice requires review"
-            : "Client reply needs review",
+        inv.status === "uploaded"
+          ? "New invoice uploaded — available to take"
+          : inv.status === "assigned"
+            ? "New invoice uploaded"
+            : inv.status === "in_review"
+              ? "Invoice requires review"
+              : "Client reply needs review",
       subtitle: `${inv.client?.name || "Unknown client"} · ${shortInvoiceId(inv)}`,
       when: timeAgo(inv.updatedAt || inv.createdAt),
     }))
@@ -177,7 +191,9 @@ export default function StaffDashboard() {
 
   const total = stats?.total ?? 0;
   const inProgress = (stats?.byStatus.in_review ?? 0) + (stats?.byStatus.needs_info ?? 0);
-  const uploaded = stats ? (stats.byStatus.assigned ?? 0) : "…";
+  const uploaded = stats
+    ? (stats.byStatus.uploaded ?? 0) + (stats.byStatus.assigned ?? 0)
+    : "…";
   const finished = (stats?.byStatus.collected ?? 0) + (stats?.byStatus.disputed ?? 0);
   const initial = (user?.name || "Staff").trim().charAt(0).toUpperCase();
 

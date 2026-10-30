@@ -5,7 +5,7 @@ import { invoiceReports, invoices, staff } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 import { decodeCursor, encodeCursor } from "@/lib/cursor";
-import { notDeleted } from "@/lib/invoice-access";
+import { notDeleted, staffInvoiceScope } from "@/lib/invoice-access";
 import { safeClient } from "@/lib/safe-columns";
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
@@ -41,8 +41,12 @@ export async function GET(request: Request) {
     // Reports live on the invoices table's scope: resolve visible invoice
     // IDs first (client filter + soft-delete), then page the reports.
     const scope: SQL[] = [notDeleted()];
-    // Staff only ever see reports on their own assigned invoices.
-    if (me.role === "staff") scope.push(eq(invoices.assignedTo, me.id));
+    // Staff see reports on their own claimed invoices plus the shared
+    // unclaimed queue.
+    if (me.role === "staff") {
+      const staffScope = staffInvoiceScope(me.id);
+      if (staffScope) scope.push(staffScope);
+    }
     if (client) scope.push(eq(invoices.clientId, client));
     if (outlet) {
       scope.push(outlet === "none" ? isNull(invoices.outletId) : eq(invoices.outletId, outlet));

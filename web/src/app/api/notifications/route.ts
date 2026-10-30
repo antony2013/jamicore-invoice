@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { clients, invoiceMessages, invoices, notificationDismissals } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
+import { staffInvoiceScope } from "@/lib/invoice-access";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,7 +24,7 @@ export async function GET() {
     touchPresence(me.id);
 
     const isAdmin = me.role === "admin";
-    const scope = isAdmin ? undefined : eq(invoices.assignedTo, me.id);
+    const scope = isAdmin ? undefined : staffInvoiceScope(me.id);
 
     const dismissedRows = await db
       .select({ key: notificationDismissals.notificationKey })
@@ -75,7 +76,7 @@ export async function GET() {
         .where(unreadWhere),
     ]);
 
-    const actionStatuses = isAdmin ? (["uploaded"] as const) : (["assigned"] as const);
+    const actionStatuses = isAdmin ? (["uploaded"] as const) : (["uploaded", "assigned"] as const);
     const queueWhere = and(
       inArray(invoices.status, [...actionStatuses]),
       ...(scope ? [scope] : []),
@@ -113,7 +114,7 @@ export async function GET() {
       ...queueRows.map((inv) => ({
         id: `inv-${inv.id}`,
         type: "invoice",
-        title: isAdmin ? "Invoice waiting for triage" : "New invoice assigned to you",
+        title: isAdmin ? "Invoice waiting for triage" : "New invoice waiting in the queue",
         body: inv.clientName,
         href: isAdmin ? "/admin/dashboard" : `/staff/invoices/${inv.id}`,
         createdAt: inv.createdAt,
@@ -138,7 +139,7 @@ export async function POST(request: Request) {
     touchPresence(me.id);
 
     const isAdmin = me.role === "admin";
-    const scope = isAdmin ? undefined : eq(invoices.assignedTo, me.id);
+    const scope = isAdmin ? undefined : staffInvoiceScope(me.id);
 
     const payload = (await request.json().catch(() => null)) as
       | { action?: string; key?: string }
