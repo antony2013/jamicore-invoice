@@ -422,7 +422,7 @@ export default function AdminDashboard() {
         {/* Invoice Table */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600">
+            <table className="w-full min-w-[860px] xl:min-w-0 text-left text-xs text-slate-600">
               <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3.5">
@@ -433,15 +433,15 @@ export default function AdminDashboard() {
                       title="Select all shown"
                     />
                   </th>
-                  <th className="px-6 py-3.5">Invoice ID / S3 Key</th>
-                  <th className="px-6 py-3.5">Client</th>
-                  <th className="px-6 py-3.5">Outlet</th>
-                  <th className="px-6 py-3.5">Category</th>
-                  <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5">Details</th>
-                  <th className="px-6 py-3.5">Assigned To</th>
-                  <th className="px-6 py-3.5">Priority</th>
-                  <th className="px-6 py-3.5 text-right">Actions</th>
+                  <th className="px-3 py-3.5">Invoice ID / S3 Key</th>
+                  <th className="px-3 py-3.5">Client</th>
+                  <th className="px-3 py-3.5">Outlet</th>
+                  <th className="px-3 py-3.5">Category</th>
+                  <th className="px-3 py-3.5">Status</th>
+                  <th className="px-3 py-3.5">Details</th>
+                  <th className="px-3 py-3.5">Assigned To</th>
+                  <th className="px-3 py-3.5">Priority</th>
+                  <th className="px-3 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -463,7 +463,7 @@ export default function AdminDashboard() {
                             onChange={() => toggleSelect(inv.id)}
                           />
                         </td>
-                        <td className="px-6 py-4 font-mono text-slate-800">
+                        <td className="px-3 py-4 font-mono text-slate-800">
                           <Link
                             href={`/admin/invoices/${inv.id}`}
                             className="text-blue-600 hover:underline font-semibold"
@@ -479,11 +479,11 @@ export default function AdminDashboard() {
                               : ""}
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-4">
                           <div className="font-medium text-slate-800">{inv.client?.name || "Unknown"}</div>
                           <div className="text-[11px] text-slate-500">{inv.client?.phone || inv.client?.email}</div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-4">
                           {inv.outlet ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
                               {inv.outlet.name}
@@ -492,7 +492,7 @@ export default function AdminDashboard() {
                             <span className="text-slate-400 italic text-[11px]">No outlet</span>
                           )}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-4">
                           <span
                             className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-semibold"
                             title={inv.category === "other" && inv.categoryDetail ? inv.categoryDetail : undefined}
@@ -502,7 +502,7 @@ export default function AdminDashboard() {
                               : ({ sales_invoice: "Sales", purchase_bill: "Purchase", expense_bill: "Expense", asset_bill: "Asset" } as Record<string, string>)[inv.category] || inv.category}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-4">
                           <span
                             className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase ${
                               inv.status === "collected"
@@ -519,7 +519,7 @@ export default function AdminDashboard() {
                             {inv.status}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-4">
                           {inv.ocrData ? (
                             <div>
                               <div className="font-semibold text-slate-900">
@@ -537,7 +537,7 @@ export default function AdminDashboard() {
                             <span className="text-slate-400 text-[11px] italic">Manual entry</span>
                           )}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-4">
                           {inv.assignedStaff ? (
                             <span className="font-medium text-slate-700">
                               {inv.assignedStaff.name}
@@ -546,7 +546,7 @@ export default function AdminDashboard() {
                             <span className="text-slate-400 italic">Unassigned</span>
                           )}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-4">
                           <span
                             className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
                               inv.priority === "urgent"
@@ -559,7 +559,7 @@ export default function AdminDashboard() {
                             {inv.priority}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right space-x-2">
+                        <td className="px-3 py-4 text-right space-x-2 whitespace-nowrap">
                           {isAssignReady && !inv.assignedTo && (
                             <button
                               onClick={() => {
