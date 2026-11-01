@@ -58,13 +58,12 @@ body {
   font-size: 18px;
   padding: 0 14px;
 }
-/* Logo artwork is black on transparent; flip it to white so it stays legible
-   on the #101828 sidebar. hue-rotate keeps the orange accent orange-ish. */
+/* The sidebar uses a transparent white-wordmark variant of the same artwork:
+   the black wordmark is invisible on #101828, the orange accent stays exact. */
 .dc-logo-img {
   display: block;
   width: 132px;
   height: auto;
-  filter: invert(1) hue-rotate(180deg) saturate(1.5) brightness(1.1);
 }
 .dc-logo-text {
   line-height: 1.2;
@@ -146,42 +145,57 @@ body {
     top: 0;
     z-index: 40;
     align-self: start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "logo footer"
+      "nav nav";
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 14px;
+  }
+  .dc-logo {
+    grid-area: logo;
     flex-direction: row;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: 8px;
+    padding: 0;
+    font-size: 16px;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .dc-logo-img {
+    width: 68px;
+    flex-shrink: 0;
+  }
+  .dc-logo-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dc-nav {
+    grid-area: nav;
+    flex-direction: row;
+    gap: 4px;
+    margin: 0 -14px;
+    padding: 0 14px;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
   }
-  .dc-sidebar::-webkit-scrollbar {
+  .dc-nav::-webkit-scrollbar {
     display: none;
   }
-  .dc-logo {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    padding: 0 2px 0 0;
-    font-size: 16px;
-    white-space: nowrap;
-  }
-  .dc-logo-img {
-    width: 68px;
-  }
-  .dc-nav {
-    flex-direction: row;
-    gap: 4px;
-  }
   .dc-nav a {
-    padding: 8px 12px;
+    padding: 7px 11px;
     font-size: 13px;
     white-space: nowrap;
   }
   .dc-footer {
+    grid-area: footer;
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0 0 0 auto;
+    margin: 0;
     padding: 0;
     font-size: 12px;
     white-space: nowrap;
