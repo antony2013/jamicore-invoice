@@ -84,14 +84,31 @@ export default function StaffClientOverviewPage({
   }, [id]);
 
   const outletGroups = (() => {
-    const byId = new Map<string, { id: string; name: string; pending: number; total: number }>();
+    const byId = new Map<
+      string,
+      { id: string; name: string; pending: number; running: number; total: number }
+    >();
     for (const inv of invoices) {
       const outletId = inv.outletId || inv.outlet?.id || "none";
       const outletName = inv.outlet?.name || (outletId === "none" ? "No outlet" : "Outlet");
-      const group = byId.get(outletId) ?? { id: outletId, name: outletName, pending: 0, total: 0 };
+      const group = byId.get(outletId) ?? {
+        id: outletId,
+        name: outletName,
+        pending: 0,
+        running: 0,
+        total: 0,
+      };
       group.total += 1;
       if (inv.status === "assigned" || inv.status === "in_review" || inv.status === "needs_info") {
         group.pending += 1;
+      }
+      if (
+        inv.status === "uploaded" ||
+        inv.status === "assigned" ||
+        inv.status === "in_review" ||
+        inv.status === "needs_info"
+      ) {
+        group.running += 1;
       }
       byId.set(outletId, group);
     }
@@ -196,13 +213,21 @@ export default function StaffClientOverviewPage({
                 </span>
               )}
             </div>
-            <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-500">
-              <span className="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0">
-                <User className="h-3 w-3" />
-              </span>
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-wide text-slate-400">Assigned staff</div>
-                <div className="text-[11px] font-semibold text-slate-700">You</div>
+            <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0">
+                  <User className="h-3 w-3" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400">Assigned staff</div>
+                  <div className="text-[11px] font-semibold text-slate-700">You</div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-center flex-shrink-0">
+                <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap">
+                  Running jobs
+                </div>
+                <div className="text-sm font-bold leading-tight text-slate-900">{outlet.running}</div>
               </div>
             </div>
           </div>

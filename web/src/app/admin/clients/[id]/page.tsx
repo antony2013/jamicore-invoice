@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
+// Invoice statuses that still count as a running job for an outlet.
+const RUNNING_STATUSES = new Set<string>(["uploaded", "assigned", "in_review", "needs_info"]);
+
 export default function AdminClientDetailPage({
   params,
 }: {
@@ -25,6 +28,7 @@ export default function AdminClientDetailPage({
   const [outlets, setOutlets] = useState<any[]>([]);
   const [staffList, setStaffList] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [reportsCapped, setReportsCapped] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -45,16 +49,18 @@ export default function AdminClientDetailPage({
     setLoading(true);
     setLoadError(null);
     try {
-      const [clientRes, outletRes, repRes, staffRes] = await Promise.all([
+      const [clientRes, outletRes, repRes, staffRes, invRes] = await Promise.all([
         fetch("/api/clients"),
         fetch(`/api/outlets?clientId=${encodeURIComponent(id)}`),
         fetch(`/api/reports?client=${encodeURIComponent(id)}&limit=50`),
         fetch("/api/staff"),
+        fetch(`/api/invoices?client=${encodeURIComponent(id)}&limit=100`),
       ]);
       const clientData = await clientRes.json();
       const outletData = await outletRes.json();
       const repData = await repRes.json();
       const staffData = await staffRes.json();
+      const invData = await invRes.json();
       if (clientData.success) {
         const found = (clientData.clients as any[]).find((c) => c.id === id);
         if (!found) throw new Error("Client not found.");
@@ -71,6 +77,7 @@ export default function AdminClientDetailPage({
           staffData.staff.filter((s: any) => s.role === "staff" && s.isActive !== false)
         );
       }
+      if (invData.success) setInvoices(invData.invoices ?? []);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load client workspace.");
     } finally {
@@ -242,6 +249,13 @@ export default function AdminClientDetailPage({
       subtitle: "Business and contact settings",
     },
   ];
+
+  // Open work per outlet: anything not yet verified/collected/returned.
+  const runningByOutlet = invoices.reduce<Record<string, number>>((acc, inv) => {
+    if (!inv?.outletId || !RUNNING_STATUSES.has(inv.status)) return acc;
+    acc[inv.outletId] = (acc[inv.outletId] ?? 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <AppShell role="admin" title={client ? client.name : "Client"} hideHeader>
@@ -418,13 +432,23 @@ export default function AdminClientDetailPage({
                           {[o.address, o.phone].filter(Boolean).join(" · ") || "No address or phone"}
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteOutlet(o.id)}
-                        disabled={busyOutletId === o.id}
-                        className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-center">
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                            Running jobs
+                          </div>
+                          <div className="text-base font-bold leading-tight text-slate-900">
+                            {runningByOutlet[o.id] ?? 0}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteOutlet(o.id)}
+                          disabled={busyOutletId === o.id}
+                          className="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
 
                     <div className="relative mt-3 border-t border-slate-100 pt-3">
