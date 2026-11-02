@@ -7,6 +7,7 @@ import { authenticateClientRequest } from "@/lib/jwt";
 import { notDeleted } from "@/lib/invoice-access";
 import { deleteObjectFromS3, inspectUploadObject, MAX_UPLOAD_BYTES } from "@/lib/s3";
 import { categorySchema, validateCategory } from "@/lib/categories";
+import { allocateJobNumber } from "@/lib/invoice-transitions";
 
 const confirmUploadSchema = z.object({
   s3Key: z.string().min(1, "s3Key is required"),
@@ -137,6 +138,9 @@ export async function POST(request: Request) {
     // catches 23505 and returns the winner's row instead of a 500.
     try {
       const newInvoice = await db.transaction(async (tx) => {
+      // Every invoice carries a JC-YYYYMMDD-NNNN job number from the moment it
+      // is created, so the same short id identifies it end to end.
+      const job = await allocateJobNumber(tx);
       const [inserted] = await tx
         .insert(invoices)
         .values({
@@ -146,6 +150,7 @@ export async function POST(request: Request) {
           status: "uploaded",
           assignedTo: null,
           priority: "normal",
+          jobNumber: job.jobNumber,
           clientNote: clientNote,
           pageNotes: pageNotes,
           outletId: outletId,

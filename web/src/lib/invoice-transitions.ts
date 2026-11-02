@@ -147,14 +147,20 @@ export async function transitionInvoice(tx: DbTx, input: TransitionInput) {
     setClause.assignedTo = input.assignedTo;
   }
 
-  // Completing a job is the ONE status move that also derives business data:
-  // the job number (JC-YYYYMMDD-NNNN, daily sequence) and the completion
-  // timestamp. Both are written in this same transaction/update, so an
-  // invoice can never be `collected` without them.
+  // Completing a job derives business data: the completion timestamp, and —
+  // for rows uploaded before job numbers were allocated at upload — the job
+  // number (JC-YYYYMMDD-NNNN, daily sequence). Both are written in this same
+  // transaction/update, so an invoice can never be `collected` without them.
   if (nextStatus === "collected") {
-    const job = await allocateJobNumber(tx);
-    setClause.jobNumber = job.jobNumber;
-    setClause.completedAt = job.completedAt;
+    const current = await tx.query.invoices.findFirst({
+      where: eq(invoices.id, invoiceId),
+      columns: { jobNumber: true },
+    });
+    if (!current?.jobNumber) {
+      const job = await allocateJobNumber(tx);
+      setClause.jobNumber = job.jobNumber;
+    }
+    setClause.completedAt = new Date();
   }
 
   const whereParts = [eq(invoices.id, invoiceId), eq(invoices.status, expectedStatus as any)];
