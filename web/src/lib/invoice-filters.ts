@@ -113,17 +113,21 @@ export async function buildInvoiceConditions(
   if (f.from) conditions.push(sql`${invoices.createdAt} >= ${f.from}::timestamptz`);
   if (f.to) conditions.push(sql`${invoices.createdAt} <= ${f.to}::timestamptz`);
 
-  // Search: client name, invoice no, vendor, id prefix.
+  // Search: client name, invoice no, vendor, job number, id prefix.
   if (f.q) {
     const like = `%${f.q.replace(/[%_\\]/g, "\\$&")}%`;
+    // The UI shows the OCR invoice number with an INV- prefix, so accept that
+    // prefix in search too and match the stored (unprefixed) value.
+    const invLike = `%${f.q.replace(/^inv[-\s]?/i, "").replace(/[%_\\]/g, "\\$&")}%`;
     const matchingClients = await db.query.clients.findMany({
       where: sql`name ILIKE ${like}`,
       columns: { id: true },
     });
     const ors = [
       sql`${invoices.id}::text LIKE ${f.q + "%"}`,
+      sql`${invoices.jobNumber} ILIKE ${like}`,
       sql`${invoices.ocrData}->>'vendor' ILIKE ${like}`,
-      sql`${invoices.ocrData}->>'invoiceNo' ILIKE ${like}`,
+      sql`${invoices.ocrData}->>'invoiceNo' ILIKE ${invLike}`,
     ];
     if (matchingClients.length > 0) {
       ors.push(inArray(invoices.clientId, matchingClients.map((c) => c.id)));

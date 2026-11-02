@@ -7,7 +7,7 @@ import { ArrowLeft, Store } from "lucide-react";
 
 import AppShell from "@/components/AppShell";
 import ChatWidget from "@/components/ChatWidget";
-import { shortInvoiceId } from "@/lib/utils";
+import { formatInvoiceNo, shortInvoiceId } from "@/lib/utils";
 
 type Invoice = {
   id: string;
@@ -229,10 +229,10 @@ export default function StaffOutletPage({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="text-[13px] font-semibold text-slate-800 truncate">
-              {inv.jobNumber || shortInvoiceId(inv)}
+              {shortInvoiceId(inv)}
             </div>
             <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-              {inv.jobNumber ? `${shortInvoiceId(inv)} · ` : ""}
+              {inv.ocrData?.invoiceNo ? `${formatInvoiceNo(inv.ocrData.invoiceNo)} · ` : ""}
               Uploaded {formatDate(inv.createdAt)}
               {inv.updatedAt ? ` · Updated ${formatDate(inv.updatedAt)}` : ""}
             </div>

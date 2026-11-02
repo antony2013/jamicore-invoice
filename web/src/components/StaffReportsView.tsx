@@ -5,6 +5,7 @@ import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import ReportDeleteDialog from "@/components/ReportDeleteDialog";
+import { formatInvoiceNo } from "@/lib/utils";
 
 type ReportEntry = {
   id: string;
@@ -329,7 +330,7 @@ export default function StaffReportsView({
               <option value="">Choose invoice…</option>
               {uploadInvoices.map((inv) => (
                 <option key={inv.id} value={inv.id}>
-                  {inv.ocrData?.invoiceNo || inv.id.slice(0, 8)} · {inv.status}
+                  {formatInvoiceNo(inv.ocrData?.invoiceNo) || inv.id.slice(0, 8)} · {inv.status}
                 </option>
               ))}
             </select>
@@ -337,7 +338,7 @@ export default function StaffReportsView({
           {scopedClient && (
             <div className="text-[11px] text-slate-500 mb-2">
               {uploadInvoices[0]
-                ? `Invoice: ${uploadInvoices[0].ocrData?.invoiceNo || uploadInvoices[0].id.slice(0, 8)} · ${uploadInvoices[0].status}`
+                ? `Invoice: ${formatInvoiceNo(uploadInvoices[0].ocrData?.invoiceNo) || uploadInvoices[0].id.slice(0, 8)} · ${uploadInvoices[0].status}`
                 : "No open invoice — upload needs an invoice"}
             </div>
           )}

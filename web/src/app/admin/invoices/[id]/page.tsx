@@ -1,5 +1,5 @@
 "use client";
-import { shortInvoiceId } from "@/lib/utils";
+import { formatInvoiceNo, shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
@@ -455,7 +455,7 @@ export default function AdminInvoiceDetailPage({
                       <Hash className="w-3.5 h-3.5" /> Invoice #
                     </div>
                     <div className="text-base font-bold text-slate-900">
-                      {invoice.ocrData?.invoiceNo || "—"}
+                      {invoice.ocrData?.invoiceNo ? formatInvoiceNo(invoice.ocrData.invoiceNo) : "—"}
                     </div>
                   </div>
 
