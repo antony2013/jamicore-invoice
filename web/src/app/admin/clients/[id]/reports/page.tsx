@@ -196,52 +196,8 @@ export default function AdminClientReportsPage({
       </div>
 
       <div className="dc-card p-4">
-        <div className="text-xs font-bold text-slate-800 mb-2">Sections</div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-700">Category:</span>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
-            >
-              {CATEGORY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-700">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-700">From:</span>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
-            />
-            <span className="text-xs font-medium text-slate-700">To:</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
-            />
-          </div>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="text-xs font-bold text-slate-800">Sections</div>
           {(categoryFilter !== "all" || statusFilter !== "all" || fromDate || toDate) && (
             <button
               onClick={() => {
@@ -250,17 +206,65 @@ export default function AdminClientReportsPage({
                 setFromDate("");
                 setToDate("");
               }}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-800 underline"
+              className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
             >
               Clear
             </button>
           )}
         </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold text-slate-700">Category</span>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {CATEGORY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold text-slate-700">Status</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold text-slate-700">From</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="w-full min-w-0 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold text-slate-700">To</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-full min-w-0 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </label>
+        </div>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search invoice ID or document type…"
-          className="mt-3 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 outline-none"
+          className="mt-3 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -286,10 +290,15 @@ export default function AdminClientReportsPage({
       )}
 
       {invoices.length === 0 && !loading && (
-        <p className="text-sm text-slate-400 text-center py-8">No invoices match these filters.</p>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+          <p className="text-sm font-medium text-slate-600">No invoices match these filters.</p>
+          <p className="mt-1 text-xs text-slate-400">Widen the date range or clear a filter.</p>
+        </div>
       )}
       {loading && invoices.length === 0 && (
-        <p className="text-sm text-slate-400 text-center py-8">Loading invoices…</p>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+          <p className="text-sm font-medium text-slate-500">Loading invoices…</p>
+        </div>
       )}
       {nextCursor && (
         <div className="flex justify-center">

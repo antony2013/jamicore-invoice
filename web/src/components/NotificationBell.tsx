@@ -138,7 +138,7 @@ export default function NotificationBell() {
           {unread > 0 && (
             <Badge
               variant="destructive"
-              className="absolute -top-1 -right-1 h-[18px] min-w-[18px] justify-center rounded-full px-1 text-[10px] font-bold leading-none shadow"
+              className="absolute -top-1 -right-1 h-[18px] min-w-[18px] justify-center rounded-full px-1 text-[11px] font-bold leading-none shadow"
             >
               {unread > 99 ? "99+" : unread}
             </Badge>
@@ -155,7 +155,7 @@ export default function NotificationBell() {
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-slate-900">Notifications</span>
             {unread > 0 && (
-              <Badge variant="secondary" className="h-5 rounded-full px-2 text-[10px] font-bold">
+              <Badge variant="secondary" className="h-5 rounded-full px-2 text-[11px] font-bold">
                 {unread} new
               </Badge>
             )}
@@ -208,7 +208,7 @@ export default function NotificationBell() {
                         <span className="mt-0.5 block truncate text-[11px] text-slate-500">
                           {item.body}
                         </span>
-                        <span className="mt-1 block text-[10px] text-slate-400">
+                        <span className="mt-1 block text-[11px] text-slate-400">
                           {timeAgo(item.createdAt)}
                         </span>
                       </span>
@@ -234,7 +234,7 @@ export default function NotificationBell() {
         )}
 
         <DropdownMenuSeparator className="my-0" />
-        <div className="px-4 py-2 text-center text-[10px] text-slate-400">
+        <div className="px-4 py-2 text-center text-[11px] text-slate-400">
           {items.length > 0
             ? `${items.length} notification${items.length === 1 ? "" : "s"} · refreshes every minute`
             : "Updates automatically"}

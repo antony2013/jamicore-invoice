@@ -45,9 +45,16 @@ export default function AdminHistoryPage() {
     >
         <div className="dc-card p-6">
           {loading && logs.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-8">Loading history...</p>
+            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-500">Loading history…</p>
+            </div>
           ) : logs.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-8">No activity yet.</p>
+            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-600">No activity yet.</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Invoice movements across every client are logged here.
+              </p>
+            </div>
           ) : (
             <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
               {logs.map((log) => (
@@ -70,7 +77,7 @@ export default function AdminHistoryPage() {
                     )}
                   </div>
                   {log.note && <p className="text-xs text-slate-600 mt-0.5">{log.note}</p>}
-                  <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                  <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
                     <User className="w-3 h-3" />
                     {log.actor ? `${log.actor.name} (${log.actor.role})` : "Automated System / Worker"}
                   </div>

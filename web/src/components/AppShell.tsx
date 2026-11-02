@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { signOut } from "next-auth/react";
 import { FileText } from "lucide-react";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
@@ -53,6 +54,24 @@ export default function AppShell({
     .filter((href) => pathname === href || pathname.startsWith(href + "/"))
     .sort((a, b) => b.length - a.length)[0];
 
+  // On phones the nav scrolls sideways; keep the active item in view so a
+  // deep link (Trash, Audit log) never lands on an apparently unselected tab.
+  const navRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const active = nav.querySelector<HTMLElement>("a.active");
+    if (!active) return;
+    const navBox = nav.getBoundingClientRect();
+    const linkBox = active.getBoundingClientRect();
+    if (linkBox.left < navBox.left || linkBox.right > navBox.right) {
+      nav.scrollTo({
+        left: nav.scrollLeft + (linkBox.left - navBox.left) - 12,
+        behavior: "smooth",
+      });
+    }
+  }, [pathname]);
+
   return (
     <div className="dc-root">
       <aside className="dc-sidebar">
@@ -60,7 +79,7 @@ export default function AppShell({
           <img src="/logo-white.png" alt="JamiCore" className="dc-logo-img" />
           <span className="dc-logo-text">Invoice Desk</span>
         </div>
-        <nav className="dc-nav">
+        <nav className="dc-nav" ref={navRef}>
           {items.map((item) => {
             const active = activeHref === pathOf(item.href);
             return (

@@ -200,8 +200,8 @@ export default function StaffDashboard() {
   return (
     <AppShell
       role="staff"
-      title="InvoiceDesk"
-      headerBrand={{ name: "InvoiceDesk", subtitle: "Staff Invoice Processing Portal" }}
+      title="My Work Queue"
+      subtitle="Unclaimed uploads and invoices assigned to you."
       actions={
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-2">
@@ -212,7 +212,7 @@ export default function StaffDashboard() {
               <span className="block text-[12px] font-semibold text-slate-900">
                 {user?.name || "Staff"}
               </span>
-              <span className="block text-[10px] text-slate-500">Invoice Staff</span>
+              <span className="block text-[11px] text-slate-500">Invoice Staff</span>
             </span>
           </span>
         </div>
@@ -229,9 +229,16 @@ export default function StaffDashboard() {
           )}
         </div>
         {actionItems.length === 0 ? (
-          <p className="text-xs text-slate-400">
-            {loading ? "Checking the assigned queue…" : "Nothing needs action right now."}
-          </p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+            <p className="text-sm font-medium text-slate-600">
+              {loading ? "Checking the assigned queue…" : "Nothing needs action right now."}
+            </p>
+            {!loading && (
+              <p className="mt-1 text-xs text-slate-400">
+                Messages, reviews and stalled invoices surface here.
+              </p>
+            )}
+          </div>
         ) : (
           <div className="space-y-2">
             {actionItems.map((item) => {
@@ -261,21 +268,21 @@ export default function StaffDashboard() {
         )}
       </section>
 
-      {/* My Work Queue */}
+      {/* Queue totals */}
       <section className="rounded-xl border border-slate-200 bg-[#F9FAFB] p-4">
-        <h2 className="text-[16px] font-bold text-slate-900">My Work Queue</h2>
+        <h2 className="text-[16px] font-bold text-slate-900">Queue totals</h2>
         <p className="mt-0.5 text-[11px] text-slate-500">
-          Unclaimed uploads and invoices assigned to you, with their workflow status
+          Counts across the invoices assigned to you
         </p>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Total</div>
             <div className="mt-0.5 text-[22px] font-bold leading-tight text-slate-900">
               {stats ? total : "…"}
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-600">
               In Progress
             </div>
             <div className="mt-0.5 text-[22px] font-bold leading-tight text-amber-600">
@@ -283,11 +290,11 @@ export default function StaffDashboard() {
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">To Start</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-blue-600">To Start</div>
             <div className="mt-0.5 text-[22px] font-bold leading-tight text-blue-600">{toStart}</div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">Finished</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Finished</div>
             <div className="mt-0.5 text-[22px] font-bold leading-tight text-emerald-600">
               {stats ? finished : "…"}
             </div>
@@ -325,9 +332,9 @@ export default function StaffDashboard() {
         </div>
 
         {cardClients.length === 0 ? (
-          <div className="mt-3 rounded-xl border border-slate-200 bg-white py-12 text-center">
+          <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center">
             <p className="text-sm font-medium text-slate-600">
-              {loading ? "Loading queue..." : "Nothing in your queue right now."}
+              {loading ? "Loading queue…" : "Nothing in your queue right now."}
             </p>
             <p className="mt-1 text-xs text-slate-400">
               New uploads and invoices assigned to you will appear here automatically.
@@ -365,13 +372,13 @@ export default function StaffDashboard() {
                       >
                         <Bell className="h-3.5 w-3.5" />
                         {unread > 0 && (
-                          <Badge className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-600 px-0.5 text-[9px] text-white">
+                          <Badge className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] text-white">
                             {unread}
                           </Badge>
                         )}
                       </button>
                       <span
-                        className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${chip.className}`}
+                        className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${chip.className}`}
                       >
                         {chip.label}
                       </span>

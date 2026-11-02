@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Download, Eye, FileSpreadsheet, RotateCcw, Trash2, Upload } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import ReportDeleteDialog from "@/components/ReportDeleteDialog";
@@ -191,16 +192,15 @@ export default function AdminReportsView({
       role="admin"
       title="Reports & Documents"
       subtitle="Upload, organize and view client reports."
+      actions={
+        tab === "library" ? (
+          <Link href="/admin/dashboard" className="dc-btn dc-btn-pri inline-flex items-center gap-1.5">
+            <Upload className="h-4 w-4" />
+            Upload Report
+          </Link>
+        ) : undefined
+      }
     >
-      {tab === "library" && (
-        <Link
-          href="/admin/dashboard"
-          className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition"
-        >
-          ⬆ Upload Report
-        </Link>
-      )}
-
       <h2 className="text-sm font-bold text-slate-900">
         {tab === "trash" ? "Trash" : "Client report library"}
       </h2>
@@ -226,16 +226,23 @@ export default function AdminReportsView({
       {tab === "trash" ? (
         <div className="space-y-2">
           {trashLoading && trash.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-8">Loading trash…</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-500">Loading trash…</p>
+            </div>
           )}
           {!trashLoading && trash.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-8">Trash is empty.</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-600">Nothing in the trash.</p>
+              <p className="mt-1 text-xs text-slate-400">
+                A deleted report keeps its remark here until it is restored.
+              </p>
+            </div>
           )}
           {trash.map((rep) => (
             <Card key={rep.id} className="p-4">
               <div className="flex items-start gap-3">
-                <span className="w-10 h-10 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center text-lg flex-shrink-0">
-                  🗑
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                  <Trash2 className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-bold text-slate-900 truncate line-through">
@@ -260,9 +267,15 @@ export default function AdminReportsView({
                     <button
                       onClick={() => restoreReport(rep)}
                       disabled={restoringId === rep.id}
-                      className="dc-btn disabled:opacity-50"
+                      className="dc-btn inline-flex items-center gap-1.5 disabled:opacity-50"
                     >
-                      {restoringId === rep.id ? "Restoring…" : "↩ Restore"}
+                      {restoringId === rep.id ? (
+                        "Restoring…"
+                      ) : (
+                        <>
+                          <RotateCcw className="h-4 w-4" /> Restore
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -273,16 +286,23 @@ export default function AdminReportsView({
       ) : (
         <div className="space-y-2">
           {reports.length === 0 && !loading && (
-            <p className="text-sm text-slate-400 text-center py-8">No reports shared yet.</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-600">No reports shared yet.</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Reports uploaded against an invoice appear here, grouped by client.
+              </p>
+            </div>
           )}
           {loading && reports.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-8">Loading library…</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-500">Loading library…</p>
+            </div>
           )}
           {reports.map((rep) => (
             <Card key={rep.id} className="p-4">
               <div className="flex items-start gap-3">
-                <span className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">
-                  🗎
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
+                  <FileSpreadsheet className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
@@ -300,16 +320,22 @@ export default function AdminReportsView({
                     <button
                       onClick={() => openReport(rep, false)}
                       disabled={fetchingUrl === rep.id}
-                      className="dc-btn disabled:opacity-50"
+                      className="dc-btn inline-flex items-center gap-1.5 disabled:opacity-50"
                     >
-                      {fetchingUrl === rep.id ? "Opening…" : "👁 View"}
+                      {fetchingUrl === rep.id ? (
+                        "Opening…"
+                      ) : (
+                        <>
+                          <Eye className="h-4 w-4" /> View
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={() => openReport(rep, true)}
                       disabled={fetchingUrl === rep.id}
-                      className="dc-btn disabled:opacity-50"
+                      className="dc-btn inline-flex items-center gap-1.5 disabled:opacity-50"
                     >
-                      ⬇ Download
+                      <Download className="h-4 w-4" /> Download
                     </button>
                     <button
                       onClick={() => {
@@ -317,9 +343,15 @@ export default function AdminReportsView({
                         setDeleteTarget(rep);
                       }}
                       disabled={deletingId === rep.id}
-                      className="px-4 py-0 h-11 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-900 transition hover:bg-red-50 hover:border-red-200 hover:text-red-700 disabled:opacity-50"
+                      className="inline-flex h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
                     >
-                      {deletingId === rep.id ? "Moving…" : "🗑 Delete"}
+                      {deletingId === rep.id ? (
+                        "Moving…"
+                      ) : (
+                        <>
+                          <Trash2 className="h-4 w-4" /> Delete
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>

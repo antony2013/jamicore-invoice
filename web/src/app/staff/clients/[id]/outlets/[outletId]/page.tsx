@@ -231,14 +231,14 @@ export default function StaffOutletPage({
             <div className="text-[13px] font-semibold text-slate-800 truncate">
               {shortInvoiceId(inv)}
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+            <div className="text-[11px] text-slate-400 mt-0.5 truncate">
               {inv.ocrData?.invoiceNo ? `${formatInvoiceNo(inv.ocrData.invoiceNo)} · ` : ""}
               Uploaded {formatDate(inv.createdAt)}
               {inv.updatedAt ? ` · Updated ${formatDate(inv.updatedAt)}` : ""}
             </div>
           </div>
           <span
-            className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold whitespace-nowrap ${meta.className}`}
+            className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap ${meta.className}`}
           >
             {meta.label}
           </span>
@@ -247,7 +247,7 @@ export default function StaffOutletPage({
           <span className="text-[13px] font-bold text-slate-900">{formatAmount(inv)}</span>
           <span className="flex items-center gap-1.5 min-w-0">
             {inv.outlet?.name ? (
-              <span className="text-[10px] text-slate-400 truncate">{inv.outlet.name}</span>
+              <span className="text-[11px] text-slate-400 truncate">{inv.outlet.name}</span>
             ) : null}
           </span>
         </div>
@@ -263,7 +263,9 @@ export default function StaffOutletPage({
           <span className="text-[11px] text-slate-400">{list.length} items</span>
         </div>
         {list.length === 0 ? (
-          <p className="text-xs text-slate-400">No {title.toLowerCase()} found.</p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+            <p className="text-sm font-medium text-slate-600">No {title.toLowerCase()} found.</p>
+          </div>
         ) : (
           <div className="space-y-2">{list.map(renderInvoice)}</div>
         )}
@@ -299,13 +301,13 @@ export default function StaffOutletPage({
         </div>
       )}
 
-      <div className="rounded-xl border border-[#E4E7EC] bg-gradient-to-r from-white to-[#F4F8FF] p-5">
+      <div className="rounded-xl border border-[#E4E7EC] bg-white p-5">
         <div className="flex items-center gap-3 min-w-0">
           <span className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
             <Store className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <div className="text-base font-bold text-slate-900 truncate">{outletName}</div>
+            <h1 className="truncate text-base font-bold text-slate-900">{outletName}</h1>
             <div className="text-[11px] text-slate-500 truncate">
               {clientName ? `${clientName} · ` : ""}Outlet account overview
             </div>
@@ -321,25 +323,25 @@ export default function StaffOutletPage({
 
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-400">Total updated</div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-400">Total updated</div>
             <div className="text-lg font-bold text-slate-900">
               {loading && invoices.length === 0 ? "…" : counts.updated}
             </div>
           </div>
           <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-400">In progress</div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-400">In progress</div>
             <div className="text-lg font-bold text-slate-900">
               {loading && invoices.length === 0 ? "…" : counts.progress}
             </div>
           </div>
           <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-400">Verified</div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-400">Verified</div>
             <div className="text-lg font-bold text-slate-900">
               {loading && invoices.length === 0 ? "…" : counts.verified}
             </div>
           </div>
           <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-slate-400">Finished</div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-400">Finished</div>
             <div className="text-lg font-bold text-slate-900">
               {loading && invoices.length === 0 ? "…" : counts.finished}
             </div>
@@ -418,7 +420,9 @@ export default function StaffOutletPage({
       </div>
 
       {loading && invoices.length === 0 ? (
-        <p className="text-xs text-slate-400">Loading invoices…</p>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+          <p className="text-sm font-medium text-slate-500">Loading invoices…</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {renderColumn("Invoices", invoiceColumn)}

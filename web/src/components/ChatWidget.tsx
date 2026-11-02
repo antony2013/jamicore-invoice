@@ -124,7 +124,7 @@ export default function ChatWidget({
               <div className="flex items-center gap-1.5 text-[12px] font-bold truncate">
                 {scopeLabel}
               </div>
-              <div className="text-[10px] text-slate-300">Office staff · client chat</div>
+              <div className="text-[11px] text-slate-300">Office staff · client chat</div>
             </div>
             <button
               onClick={() => {
@@ -165,11 +165,11 @@ export default function ChatWidget({
                   {m.attachmentName && (
                     <button
                       onClick={() => openAttachment(m)}
-                      className={`mt-1 flex items-center gap-1 text-[10px] font-semibold underline ${
+                      className={`mt-1 flex items-center gap-1 text-[11px] font-semibold underline ${
                         m.senderType === "staff" ? "text-blue-100" : "text-blue-600"
                       }`}
                     >
-                      📎 {m.attachmentName}
+                      <Paperclip className="h-3 w-3" /> {m.attachmentName}
                     </button>
                   )}
                 </div>
@@ -181,15 +181,15 @@ export default function ChatWidget({
               </div>
             ))}
             {busy && (
-              <p className="text-[10px] text-slate-400 text-center">Sending…</p>
+              <p className="text-[11px] text-slate-400 text-center">Sending…</p>
             )}
-            {error && <p className="text-[10px] text-red-600 text-center">{error}</p>}
+            {error && <p className="text-[11px] text-red-600 text-center">{error}</p>}
           </div>
 
           <div className="border-t border-slate-200 bg-white px-3 py-2.5">
             {file && (
-              <div className="mb-1.5 flex items-center gap-1 text-[10px] text-slate-600">
-                📎 {file.name}
+              <div className="mb-1.5 flex items-center gap-1 text-[11px] text-slate-600">
+                <Paperclip className="h-3 w-3" /> {file.name}
                 <button onClick={() => setFile(null)} className="text-slate-400 hover:text-slate-700" aria-label="Remove attachment">
                   ×
                 </button>

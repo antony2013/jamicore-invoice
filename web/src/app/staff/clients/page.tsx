@@ -101,9 +101,11 @@ export default function StaffClientsPage() {
       )}
 
       {loading && clients.length === 0 ? (
-        <p className="text-sm text-slate-400 text-center py-10">Loading clients…</p>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-10 text-center">
+          <p className="text-sm font-medium text-slate-500">Loading clients…</p>
+        </div>
       ) : clients.length === 0 ? (
-        <div className="py-12 bg-white rounded-2xl border border-slate-200 text-center">
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white py-12 text-center">
           <p className="text-sm font-medium text-slate-600">No clients assigned yet.</p>
           <p className="text-xs text-slate-400 mt-1">
             Client accounts appear here once invoices are assigned to you.
@@ -145,7 +147,7 @@ export default function StaffClientsPage() {
                 >
                   <Bell className="w-4 h-4" />
                   {(unreadByClient[c.id] ?? 0) > 0 && (
-                    <Badge className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-red-600 text-[10px] text-white flex items-center justify-center">
+                    <Badge className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-1 rounded-full bg-red-600 text-[11px] text-white flex items-center justify-center">
                       {unreadByClient[c.id]}
                     </Badge>
                   )}

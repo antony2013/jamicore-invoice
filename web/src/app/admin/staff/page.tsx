@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, UserPlus } from "lucide-react";
+import { RefreshCw, UserPlus, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
 export default function AdminStaffPage() {
@@ -127,11 +127,12 @@ export default function AdminStaffPage() {
       subtitle="Review queues, presence, and lifecycle controls."
       actions={
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowForm((v) => !v)} className="dc-btn" type="button">
+          <button onClick={() => setShowForm((v) => !v)} className="dc-btn dc-btn-pri" type="button">
             <UserPlus className="mr-1 inline h-3.5 w-3.5" /> Add Staff
           </button>
-          <button onClick={load} className="dc-btn" type="button">
-            <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          <button onClick={load} className="dc-btn" type="button" title="Reload staff">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span className="ml-1 hidden sm:inline">Refresh</span>
           </button>
         </div>
       }
@@ -270,9 +271,20 @@ export default function AdminStaffPage() {
           <p className="text-[11px] text-slate-500">Click View Staff Dashboard to open the individual processing queue.</p>
         </div>
         {visibleStaff.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-8">
-            {loading ? "Loading staff..." : staffList.length === 0 ? "No staff accounts yet." : "No staff match the current search/filter."}
-          </p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+            <p className="text-sm font-medium text-slate-600">
+              {loading
+                ? "Loading staff…"
+                : staffList.length === 0
+                  ? "No staff accounts yet."
+                  : "No staff match the current search or filter."}
+            </p>
+            {!loading && staffList.length === 0 && (
+              <p className="mt-1 text-xs text-slate-400">
+                Use Add Staff above to create the first account.
+              </p>
+            )}
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {visibleStaff.map((s) => {
@@ -414,17 +426,17 @@ export default function AdminStaffPage() {
                         <div className="text-sm font-bold text-slate-900 truncate">
                           {s.name}{" "}
                           {(s as any).isActive === false && (
-                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                            <span className="text-[11px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">
                               inactive
                             </span>
                           )}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">{s.email}</div>
                         <div className="flex items-center gap-1.5 mt-1">
-                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${s.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
+                          <span className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded ${s.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
                             {s.role}
                           </span>
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${online ? "text-emerald-700" : "text-slate-400"}`}>
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${online ? "text-emerald-700" : "text-slate-400"}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${online ? "bg-emerald-500" : "bg-slate-300"}`} />
                             {online ? "Online" : `Offline${ago && ago !== "Never" ? ` · ${ago}` : ""}`}
                           </span>
@@ -434,19 +446,19 @@ export default function AdminStaffPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-lg border border-slate-100 bg-white p-2.5">
-                      <div className="text-[10px] font-semibold text-slate-500">Assigned</div>
+                      <div className="text-[11px] font-semibold text-slate-500">Assigned</div>
                       <div className="text-xl font-bold text-slate-900">{st.assigned}</div>
                     </div>
                     <div className="rounded-lg bg-amber-50 p-2.5">
-                      <div className="text-[10px] font-semibold text-amber-700">In Progress</div>
+                      <div className="text-[11px] font-semibold text-amber-700">In Progress</div>
                       <div className="text-xl font-bold text-amber-600">{st.inProgress}</div>
                     </div>
                     <div className="rounded-lg bg-blue-50 p-2.5">
-                      <div className="text-[10px] font-semibold text-blue-700">Verified</div>
+                      <div className="text-[11px] font-semibold text-blue-700">Verified</div>
                       <div className="text-xl font-bold text-blue-700">{st.verified}</div>
                     </div>
                     <div className="rounded-lg bg-emerald-50 p-2.5">
-                      <div className="text-[10px] font-semibold text-emerald-700">Finished</div>
+                      <div className="text-[11px] font-semibold text-emerald-700">Finished</div>
                       <div className="text-xl font-bold text-emerald-700">{st.collected + st.disputed}</div>
                     </div>
                   </div>
@@ -482,8 +494,9 @@ export default function AdminStaffPage() {
                         <button
                           onClick={() => { setResettingId(null); setResetPassword(""); }}
                           className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs"
+                          title="Cancel"
                         >
-                          ✕
+                          <X className="h-3.5 w-3.5" />
                         </button>
                       </>
                     ) : (
@@ -516,7 +529,7 @@ export default function AdminStaffPage() {
                         (assigned / in review / info needed). Deactivating strands them unless reassigned first.
                       </p>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${(s as any).isActive === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                        <span className={`text-[11px] font-bold uppercase px-2 py-1 rounded ${(s as any).isActive === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
                           {(s as any).isActive === false ? "Inactive" : "Active"}
                         </span>
                         <button

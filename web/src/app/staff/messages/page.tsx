@@ -3,7 +3,7 @@ import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { User } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Paperclip, PenLine, User } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -181,7 +181,7 @@ export default function StaffMessagesPage() {
       let body = note;
       if (file) {
         const report = await uploadReportAttachment(invoiceId, file, note);
-        body = `${note ? `${note}\n\n` : ""}📎 Report sent: ${report.fileName}`.slice(0, 500);
+        body = `${note ? `${note}\n\n` : ""}Report sent: ${report.fileName}`.slice(0, 500);
       }
       const res = await fetch(`/api/invoices/${invoiceId}/messages`, {
         method: "POST",
@@ -267,7 +267,7 @@ export default function StaffMessagesPage() {
       let body = note;
       if (composeFile) {
         const report = await uploadReportAttachment(composeInvoiceId, composeFile, note);
-        body = `${note ? `${note}\n\n` : ""}📎 Report sent: ${report.fileName}`.slice(0, 500);
+        body = `${note ? `${note}\n\n` : ""}Report sent: ${report.fileName}`.slice(0, 500);
       }
       const res = await fetch(`/api/invoices/${composeInvoiceId}/messages`, {
         method: "POST",
@@ -429,25 +429,26 @@ export default function StaffMessagesPage() {
         },
       ]}
       actions={
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {clientFilter ? (
-            <Link href={`/staff/clients/${clientFilter}`} className="dc-btn">
-              ← Back to client
+            <Link href={`/staff/clients/${clientFilter}`} className="dc-btn inline-flex items-center gap-1.5">
+              <ArrowLeft className="h-4 w-4" /> Back to client
             </Link>
           ) : null}
           {totalUnread > 0 ? (
-            <Badge className="bg-blue-600 text-white">{totalUnread} unread</Badge>
+            <Badge className="hidden bg-blue-600 text-white sm:inline-flex">{totalUnread} unread</Badge>
           ) : null}
+          <button
+            type="button"
+            onClick={openComposer}
+            className="dc-btn dc-btn-pri inline-flex items-center gap-1.5"
+          >
+            <PenLine className="h-4 w-4" />
+            Compose
+          </button>
         </div>
       }
     >
-      <button
-        onClick={openComposer}
-        className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition"
-      >
-        ✎ Compose Email
-      </button>
-
       {composing && (
         <Card className="p-4">
           <div className="text-xs font-bold text-slate-800 mb-2">New message</div>
@@ -480,8 +481,8 @@ export default function StaffMessagesPage() {
             className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
           />
           <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <label className="inline-flex items-center gap-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium cursor-pointer hover:bg-slate-50">
-              📎 Attach report
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-50">
+              <Paperclip className="h-3.5 w-3.5" /> Attach report
               <input
                 type="file"
                 accept=".xlsx"
@@ -566,7 +567,7 @@ export default function StaffMessagesPage() {
                     {d.invoice ? ` · ${d.invoice.status}` : ""}
                   </div>
                 </div>
-                <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                <span className="text-[11px] text-slate-400 whitespace-nowrap">
                   {d.updatedAt ? new Date(d.updatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
                 </span>
               </div>
@@ -610,14 +611,23 @@ export default function StaffMessagesPage() {
               {folder === "sent" ? "Sent" : "Inbox"}
             </h2>
             <span className="text-[12px] text-slate-500">
-              {threads.length} email{threads.length === 1 ? "" : "s"}
+              {loading && threads.length === 0
+                ? "…"
+                : `${threads.length} email${threads.length === 1 ? "" : "s"}`}
             </span>
           </div>
           {threads.length === 0 && !loading && (
-            <p className="text-sm text-slate-400 text-center py-8">No threads found.</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-600">No threads found.</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Messages with clients appear here, newest first.
+              </p>
+            </div>
           )}
           {loading && threads.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-8">Loading threads…</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-500">Loading threads…</p>
+            </div>
           )}
           {threads.map((t) => {
             const thread = messages[t.invoiceId] || [];
@@ -652,11 +662,15 @@ export default function StaffMessagesPage() {
                       </span>
                     ) : null}
                     <span className="mt-1.5 flex items-center justify-end gap-2">
-                      <span className="text-[10px] text-slate-400">{formatWhen(t.lastAt)}</span>
+                      <span className="text-[11px] text-slate-400">{formatWhen(t.lastAt)}</span>
                     </span>
                   </span>
-                  <span className="text-slate-400 text-xs mt-1">
-                    {expandedId === t.invoiceId ? "▾" : "▸"}
+                  <span className="mt-1 text-slate-400">
+                    {expandedId === t.invoiceId ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
                   </span>
                 </button>
                 {expandedId === t.invoiceId && (
@@ -680,7 +694,7 @@ export default function StaffMessagesPage() {
                                       {m.senderName || (m.senderType === "staff" ? "Staff" : "Client")}
                                     </div>
                                     <div>{m.body}</div>
-                                    <div className={`text-[10px] mt-1 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-400"}`}>
+                                    <div className={`text-[11px] mt-1 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-400"}`}>
                                       {m.createdAt ? new Date(m.createdAt).toLocaleString() : ""}
                                     </div>
                                   </div>
@@ -689,7 +703,7 @@ export default function StaffMessagesPage() {
                             )}
                             {replyFiles[t.invoiceId] && (
                               <div className="mb-2 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-[11px] text-slate-700">
-                                📎 {replyFiles[t.invoiceId]!.name}
+                                <Paperclip className="h-3 w-3" /> {replyFiles[t.invoiceId]!.name}
                                 <button
                                   onClick={() => setReplyFiles((prev) => ({ ...prev, [t.invoiceId]: null }))}
                                   className="text-slate-500 hover:text-slate-800"
@@ -704,7 +718,7 @@ export default function StaffMessagesPage() {
                                 className="inline-flex items-center justify-center w-9 h-9 border border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 flex-shrink-0"
                                 title="Attach report (.xlsx)"
                               >
-                                📎
+                                <Paperclip className="h-4 w-4 text-slate-500" />
                                 <input
                                   type="file"
                                   accept=".xlsx"

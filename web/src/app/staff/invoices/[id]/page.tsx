@@ -165,13 +165,13 @@ export default function StaffInvoiceVerifyPage({
   return (
     <AppShell role="staff" title={`Invoice ${shortInvoiceId(invoice)}`} hideHeader>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-            Invoice Preview
-          </span>
-          <span className="text-[11px] text-slate-400">
-            Updated {formatDate(invoice.updatedAt)}
-          </span>
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold text-slate-900">
+            Invoice {shortInvoiceId(invoice)}
+          </h1>
+          <p className="text-[11px] text-slate-400">
+            Preview · Updated {formatDate(invoice.updatedAt)}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {/* Status pill doubles as the working-status control: click it,

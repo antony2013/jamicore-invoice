@@ -67,7 +67,7 @@ export default function ReportDeleteDialog({
           placeholder="e.g. Wrong invoice — re-uploaded the correct file"
           className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-red-100"
         />
-        <p className="mt-1 text-[10px] text-slate-400">
+        <p className="mt-1 text-[11px] text-slate-400">
           The file is kept in Trash and can be restored later.
         </p>
 

@@ -56,7 +56,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-slate-50">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+      <div className="px-6 sm:mx-auto sm:w-full sm:max-w-md sm:px-0">
         <div className="flex justify-center">
           <img
             src="/logo.png"
@@ -64,9 +64,9 @@ export default function LoginPage() {
             className="h-20 w-auto object-contain"
           />
         </div>
-        <h2 className="mt-6 text-center text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="mt-6 text-center text-2xl font-bold tracking-tight text-slate-900">
           Staff & Admin Sign In
-        </h2>
+        </h1>
         <p className="mt-2 text-center text-sm text-slate-600">
           Access the invoice verification and management workspace
         </p>

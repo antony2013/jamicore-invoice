@@ -126,11 +126,12 @@ export default function AdminClientsPage() {
       subtitle="Manage client accounts, outlets, staff, reports and communications."
       actions={
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowForm((v) => !v)} className="dc-btn" type="button">
+          <button onClick={() => setShowForm((v) => !v)} className="dc-btn dc-btn-pri" type="button">
             <UserPlus className="mr-1 inline h-3.5 w-3.5" /> Add Client
           </button>
-          <button onClick={load} className="dc-btn" type="button">
-            <RefreshCw className={`mr-1 inline h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          <button onClick={load} className="dc-btn" type="button" title="Reload clients">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <span className="ml-1 hidden sm:inline">Refresh</span>
           </button>
         </div>
       }
@@ -256,12 +257,12 @@ export default function AdminClientsPage() {
                 >
                   {c.name}
                 </Link>
-                <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                <div className="text-[11px] text-slate-400 whitespace-nowrap">
                   Joined {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "—"}
                 </div>
               </div>
               {c.archivedAt && (
-                <span className="mt-1 inline-block text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                <span className="mt-1 inline-block text-[11px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
                   archived
                 </span>
               )}
@@ -286,7 +287,12 @@ export default function AdminClientsPage() {
             </div>
           ))}
           {clients.length === 0 && !loading && (
-            <p className="text-xs text-slate-400">No clients yet.</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-sm font-medium text-slate-600">No clients yet.</p>
+              <p className="mt-1 text-xs text-slate-400">
+                Add the first client above, then invite them to upload invoices.
+              </p>
+            </div>
           )}
         </div>
 
@@ -297,7 +303,16 @@ export default function AdminClientsPage() {
         </div>
         <div className="space-y-2 mb-8">
           {activity.length === 0 && (
-            <p className="text-xs text-slate-400">{loading ? "Loading activity…" : "No recent activity."}</p>
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+              <p className="text-sm font-medium text-slate-600">
+                {loading ? "Loading activity…" : "No recent activity."}
+              </p>
+              {!loading && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Invoice and client changes show up here as they happen.
+                </p>
+              )}
+            </div>
           )}
           {activity.map((log) => (
             <div key={log.id} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs">

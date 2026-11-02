@@ -153,14 +153,14 @@ export default function StaffClientOverviewPage({
         </div>
       )}
 
-      <div className="rounded-xl border border-[#E4E7EC] bg-gradient-to-r from-white to-[#F4F8FF] p-5">
+      <div className="rounded-xl border border-[#E4E7EC] bg-white p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <span className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0">
               <Building2 className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <div className="text-base font-bold text-slate-900 truncate">{displayName}</div>
+              <h1 className="truncate text-base font-bold text-slate-900">{displayName}</h1>
               <div className="text-[11px] text-slate-500">Client account overview</div>
             </div>
           </div>
@@ -219,12 +219,12 @@ export default function StaffClientOverviewPage({
                   <User className="h-3 w-3" />
                 </span>
                 <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-wide text-slate-400">Assigned staff</div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Assigned staff</div>
                   <div className="text-[11px] font-semibold text-slate-700">You</div>
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-center flex-shrink-0">
-                <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap">
                   Running jobs
                 </div>
                 <div className="text-sm font-bold leading-tight text-slate-900">{outlet.running}</div>
@@ -233,19 +233,33 @@ export default function StaffClientOverviewPage({
           </div>
         ))}
         {!loading && outletGroups.length === 0 && (
-          <p className="text-xs text-slate-400">No outlets in your queue.</p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+            <p className="text-sm font-medium text-slate-600">No outlets in your queue.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Outlets appear once this client has invoices assigned to you.
+            </p>
+          </div>
         )}
         {loading && outletGroups.length === 0 && (
-          <p className="text-xs text-slate-400">Loading outlets…</p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+            <p className="text-sm font-medium text-slate-500">Loading outlets…</p>
+          </div>
         )}
       </div>
 
       <h2 className="text-sm font-bold text-slate-900">Client reports</h2>
       <div className="space-y-2">
         {checkingReports && reports.length === 0 ? (
-          <p className="text-xs text-slate-400">Checking reports…</p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+            <p className="text-sm font-medium text-slate-500">Checking reports…</p>
+          </div>
         ) : reports.length === 0 ? (
-          <p className="text-xs text-slate-400">No reports shared yet.</p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+            <p className="text-sm font-medium text-slate-600">No reports shared yet.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Reports you upload for this client show up here.
+            </p>
+          </div>
         ) : (
           reports.map((report) => (
             <Card key={report.invoiceId} className="p-3 flex items-center gap-3">
@@ -254,7 +268,7 @@ export default function StaffClientOverviewPage({
               </span>
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-bold text-slate-800 truncate">{report.fileName}</div>
-                <div className="text-[10px] text-slate-400">{formatDate(report.createdAt)}</div>
+                <div className="text-[11px] text-slate-400">{formatDate(report.createdAt)}</div>
               </div>
               {report.downloadUrl ? (
                 <a

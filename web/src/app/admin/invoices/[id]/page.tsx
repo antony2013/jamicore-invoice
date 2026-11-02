@@ -12,6 +12,9 @@ import {
   User,
   History,
   AlertCircle,
+  FileSpreadsheet,
+  MessageSquare,
+  Upload,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 
@@ -248,7 +251,7 @@ export default function AdminInvoiceDetailPage({
     <AppShell
       role="admin"
       title={`Invoice ${shortInvoiceId(invoice)}`}
-      subtitle={`Client: ${invoice.client?.name || "Unknown"} — ID: ${invoice.id}`}
+      subtitle={`Client: ${invoice.client?.name || "Unknown"}`}
       actions={
         <Link href="/admin/dashboard" className="dc-btn">
           <ArrowLeft className="mr-1 inline h-3.5 w-3.5" /> Back to Queue
@@ -263,7 +266,7 @@ export default function AdminInvoiceDetailPage({
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
                   Private Document Preview
                 </h3>
-                <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                   Signed GET URL (5 min TTL)
                 </span>
               </div>
@@ -331,7 +334,7 @@ export default function AdminInvoiceDetailPage({
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                   {invoice.category === "other" && invoice.categoryDetail
                     ? invoice.categoryDetail
                     : CATEGORY_OPTIONS.find((c) => c.value === invoice.category)?.label || invoice.category}
@@ -346,17 +349,19 @@ export default function AdminInvoiceDetailPage({
                   <div className="text-slate-500">{invoice.client?.phone || invoice.client?.email}</div>
                   <div className="mt-1 text-[11px]">
                     {invoice.uploadedBy ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 font-semibold">
-                        📤 {invoice.uploadedBy.name} (team)
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-700 font-semibold">
+                        <Upload className="h-3 w-3" /> {invoice.uploadedBy.name} (team)
                       </span>
                     ) : (
-                      <span className="text-slate-400">📤 Owner upload</span>
+                      <span className="inline-flex items-center gap-1 text-slate-400">
+                        <Upload className="h-3 w-3" /> Owner upload
+                      </span>
                     )}
                   </div>
                   <div className="mt-1">
                     {invoice.outlet ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
-                        ◍ {invoice.outlet.name}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-700 text-[11px] font-semibold">
+                        <Building className="h-3 w-3" /> {invoice.outlet.name}
                       </span>
                     ) : (
                       <span className="text-slate-400 italic text-[11px]">No outlet</span>
@@ -616,7 +621,7 @@ export default function AdminInvoiceDetailPage({
                         </span>
                       </div>
                       <p className="text-xs text-slate-600 mt-0.5">{log.note}</p>
-                      <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                      <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
                         <User className="w-3 h-3" />
                         {log.actor ? `${log.actor.name} (${log.actor.role})` : "Automated System / Worker"}
                       </div>
@@ -628,8 +633,8 @@ export default function AdminInvoiceDetailPage({
 
             {/* Excel report shared with the client (staff owns it) */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                📊 Excel Report
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700">
+                <FileSpreadsheet className="h-3.5 w-3.5" /> Excel Report
               </h3>
               {report ? (
                 <div className="flex items-center justify-between gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
@@ -655,8 +660,8 @@ export default function AdminInvoiceDetailPage({
 
             {/* Client↔staff thread (read-only — staff replies from their view) */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
-                💬 Client Conversation
+              <h3 className="mb-3 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700">
+                <MessageSquare className="h-3.5 w-3.5" /> Client Conversation
               </h3>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {messages.length === 0 ? (
@@ -673,10 +678,10 @@ export default function AdminInvoiceDetailPage({
                     >
                       <div className={`font-bold mb-0.5 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-500"}`}>
                         {m.senderName}
-                        {m.kind === "request_report" && " · 📄 requested the report"}
+                        {m.kind === "request_report" && " · requested the report"}
                       </div>
                       <div>{m.body}</div>
-                      <div className={`mt-1 text-[10px] ${m.senderType === "staff" ? "text-blue-200" : "text-slate-400"}`}>
+                      <div className={`mt-1 text-[11px] ${m.senderType === "staff" ? "text-blue-200" : "text-slate-400"}`}>
                         {new Date(m.createdAt).toLocaleString()}
                       </div>
                     </div>

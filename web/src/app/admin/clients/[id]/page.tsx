@@ -10,6 +10,7 @@ import {
   FileBarChart,
   FileText,
   MessageSquare,
+  Plus,
   Settings2,
   Store,
 } from "lucide-react";
@@ -38,6 +39,7 @@ export default function AdminClientDetailPage({
   const [outletPhone, setOutletPhone] = useState("");
   const [outletError, setOutletError] = useState<string | null>(null);
   const [savingOutlet, setSavingOutlet] = useState(false);
+  const [showOutletForm, setShowOutletForm] = useState(false);
   const [busyOutletId, setBusyOutletId] = useState<string | null>(null);
   const [staffMenuOutletId, setStaffMenuOutletId] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState(false);
@@ -115,6 +117,7 @@ export default function AdminClientDetailPage({
       setOutletName("");
       setOutletAddress("");
       setOutletPhone("");
+      setShowOutletForm(false);
     } catch (err: any) {
       setOutletError(err.message);
     } finally {
@@ -225,12 +228,6 @@ export default function AdminClientDetailPage({
 
   const workspaceTiles = [
     {
-      href: "#assigned-outlets",
-      icon: Store,
-      title: "Outlets & Staff",
-      subtitle: "Add outlets and assign staff",
-    },
-    {
       href: `/admin/clients/${id}/reports`,
       icon: FileBarChart,
       title: "Reports",
@@ -273,29 +270,117 @@ export default function AdminClientDetailPage({
           </div>
         )}
 
-        <div className="mt-4 flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
               <Building2 className="h-5 w-5" />
             </span>
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold text-slate-900">
                 {client ? client.name : loading ? "Loading…" : "Client"}
-              </h2>
+              </h1>
               <p className="text-xs text-slate-500">Client account overview</p>
             </div>
           </div>
-          {client && !client.archivedAt && (
-            <span className="rounded bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
-              Active
-            </span>
-          )}
-          {client?.archivedAt && (
-            <span className="rounded bg-slate-200 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">
-              Archived
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {client && !client.archivedAt && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOutletForm((v) => !v);
+                  setOutletError(null);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Outlet
+              </button>
+            )}
+            {client && !client.archivedAt && (
+              <span className="rounded bg-emerald-100 px-2 py-1 text-[11px] font-bold uppercase text-emerald-700">
+                Active
+              </span>
+            )}
+            {client?.archivedAt && (
+              <span className="rounded bg-slate-200 px-2 py-1 text-[11px] font-bold uppercase text-slate-600">
+                Archived
+              </span>
+            )}
+          </div>
         </div>
+
+        {showOutletForm && (
+          <form
+            onSubmit={handleAddOutlet}
+            className="mt-4 rounded-xl border border-slate-200 bg-white p-4"
+          >
+            <div className="mb-3 text-sm font-bold text-slate-900">Add Outlet</div>
+            {outletError && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">
+                {outletError}
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-700">
+                  Outlet name *
+                </label>
+                <input
+                  value={outletName}
+                  onChange={(e) => setOutletName(e.target.value)}
+                  placeholder="e.g. Main Street branch"
+                  required
+                  minLength={2}
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-700">
+                  Phone (optional)
+                </label>
+                <input
+                  value={outletPhone}
+                  onChange={(e) => setOutletPhone(e.target.value)}
+                  placeholder="+18765550123"
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 font-mono text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-[11px] font-semibold text-slate-700">
+                  Address (optional)
+                </label>
+                <input
+                  value={outletAddress}
+                  onChange={(e) => setOutletAddress(e.target.value)}
+                  placeholder="Street, area, city"
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="submit"
+                disabled={savingOutlet}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingOutlet ? "Adding…" : "Add outlet"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOutletForm(false);
+                  setOutletError(null);
+                  setOutletName("");
+                  setOutletAddress("");
+                  setOutletPhone("");
+                }}
+                disabled={savingOutlet}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
 
         <div className="mt-5 grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -409,13 +494,15 @@ export default function AdminClientDetailPage({
 
         <h3 id="assigned-outlets" className="mt-6 mb-2 text-sm font-bold text-slate-900">Assigned outlets</h3>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          {outletError && (
-            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">
-              {outletError}
-            </div>
-          )}
           {outlets.length === 0 ? (
-            <p className="text-xs text-slate-400">{loading ? "Loading outlets…" : "No outlets assigned yet — add the first one below."}</p>
+            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
+              <p className="text-sm font-medium text-slate-600">
+                {loading ? "Loading outlets…" : "No outlets yet."}
+              </p>
+              {!loading && (
+                <p className="mt-1 text-xs text-slate-400">Use Add Outlet above to create the first one.</p>
+              )}
+            </div>
           ) : (
             <div className="space-y-3">
               {outlets.map((o) => {
@@ -432,9 +519,9 @@ export default function AdminClientDetailPage({
                           {[o.address, o.phone].filter(Boolean).join(" · ") || "No address or phone"}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-center">
-                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                             Running jobs
                           </div>
                           <div className="text-base font-bold leading-tight text-slate-900">
@@ -524,41 +611,21 @@ export default function AdminClientDetailPage({
               })}
             </div>
           )}
-          <form onSubmit={handleAddOutlet} className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-            <input
-              value={outletName}
-              onChange={(e) => setOutletName(e.target.value)}
-              placeholder="Outlet name *"
-              required
-              minLength={2}
-              className="min-w-[140px] flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              value={outletAddress}
-              onChange={(e) => setOutletAddress(e.target.value)}
-              placeholder="Address (optional)"
-              className="min-w-[140px] flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              value={outletPhone}
-              onChange={(e) => setOutletPhone(e.target.value)}
-              placeholder="+18765550123 (optional)"
-              className="w-44 rounded-lg border border-slate-300 px-2.5 py-1.5 font-mono text-xs outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="submit"
-              disabled={savingOutlet}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {savingOutlet ? "Adding…" : "Add outlet"}
-            </button>
-          </form>
         </div>
 
         <h3 className="mt-6 mb-2 text-sm font-bold text-slate-900">Client reports</h3>
         <div className="rounded-xl border border-slate-200 bg-white p-2">
           {reports.length === 0 ? (
-            <p className="p-2 text-xs text-slate-400">{loading ? "Loading reports…" : "No reports shared yet."}</p>
+            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
+              <p className="text-sm font-medium text-slate-600">
+                {loading ? "Loading reports…" : "No reports shared yet."}
+              </p>
+              {!loading && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Staff uploads against this client land here.
+                </p>
+              )}
+            </div>
           ) : (
             <div className="divide-y divide-slate-100">
               {reports.map((rep: any) => (

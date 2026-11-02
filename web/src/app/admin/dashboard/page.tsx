@@ -225,9 +225,20 @@ export default function AdminDashboard() {
       title="Invoices"
       subtitle="Everything clients have uploaded, in one queue."
       actions={
-        <button onClick={handleExportCsv} className="dc-btn" type="button">
-          Export CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => loadData()}
+            className="dc-btn inline-flex items-center gap-1.5"
+            type="button"
+            title="Reload the queue"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+          <button onClick={handleExportCsv} className="dc-btn dc-btn-pri" type="button">
+            Export CSV
+          </button>
+        </div>
       }
     >
         {/* Status Highlights (server-computed over ALL matching rows, not just the loaded page) */}
@@ -260,18 +271,38 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Filter Toolbar */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 w-full sm:w-auto">
-            <span className="flex items-center gap-2 text-xs font-medium text-slate-700">
-              <Filter className="w-4 h-4 text-slate-400" /> Filter
+        {/* Filter Toolbar — labeled grid so every control shares the same edge */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+              <Filter className="h-3.5 w-3.5 text-slate-400" /> Filter
             </span>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-700">Category:</span>
+            {(categoryFilter !== "all" ||
+              statusFilter !== "all" ||
+              staffFilter !== "all" ||
+              fromDate ||
+              toDate) && (
+              <button
+                onClick={() => {
+                  setCategoryFilter("all");
+                  setStatusFilter("all");
+                  setStaffFilter("all");
+                  setFromDate("");
+                  setToDate("");
+                }}
+                className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold text-slate-700">Category</span>
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All</option>
                 <option value="sales_invoice">Sales Invoice</option>
@@ -280,13 +311,13 @@ export default function AdminDashboard() {
                 <option value="asset_bill">Asset Bill</option>
                 <option value="other">Other</option>
               </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-700">Status:</span>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold text-slate-700">Status</span>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All</option>
                 <option value="uploaded">Uploaded</option>
@@ -297,13 +328,13 @@ export default function AdminDashboard() {
                 <option value="collected">Collected</option>
                 <option value="disputed">Disputed</option>
               </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-700">Staff:</span>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold text-slate-700">Staff</span>
               <select
                 value={staffFilter}
                 onChange={(e) => setStaffFilter(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none max-w-[180px]"
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Staff</option>
                 <option value="unassigned">Unassigned</option>
@@ -313,34 +344,29 @@ export default function AdminDashboard() {
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-slate-700">From:</span>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold text-slate-700">From</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="min-w-0 max-w-[150px] px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+                className="w-full min-w-0 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-xs font-medium text-slate-700">To:</span>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold text-slate-700">To</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="min-w-0 max-w-[150px] px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+                className="w-full min-w-0 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
               />
-            </div>
+            </label>
           </div>
-
-          <button
-            onClick={() => loadData()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh Queue
-          </button>
         </div>
 
-        {/* Search + Export Toolbar */}
+        {/* Search toolbar */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex flex-col sm:flex-row items-center gap-3">
           <input
             value={search}
@@ -351,12 +377,6 @@ export default function AdminDashboard() {
           <span className="text-[11px] text-slate-400 whitespace-nowrap">
             {visibleInvoices.length} shown{stats ? ` of ${stats.total}` : ""}
           </span>
-          <button
-            onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition whitespace-nowrap"
-          >
-            Export CSV
-          </button>
         </div>
 
         {/* Bulk Assign Bar */}
@@ -419,9 +439,9 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Invoice list: stacked cards on phones, table from md up */}
+        {/* Invoice list: stacked cards until the table has room for every column */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="md:hidden">
+          <div className="xl:hidden">
             <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] font-semibold text-slate-700">
               <input
                 type="checkbox"
@@ -432,9 +452,18 @@ export default function AdminDashboard() {
               <span>Select all shown</span>
             </div>
             {visibleInvoices.length === 0 ? (
-              <p className="px-4 py-10 text-center text-xs text-slate-400">
-                {loading ? "Loading invoices..." : "No invoices found matching criteria."}
-              </p>
+              <div className="px-4 py-8">
+                <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center">
+                  <p className="text-sm font-medium text-slate-600">
+                    {loading ? "Loading invoices…" : "No invoices match these filters."}
+                  </p>
+                  {!loading && (
+                    <p className="mt-1 text-xs text-slate-400">
+                      Clear a filter or widen the date range.
+                    </p>
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {visibleInvoices.map((inv) => {
@@ -456,14 +485,14 @@ export default function AdminDashboard() {
                           >
                             {shortInvoiceId(inv)}
                           </Link>
-                          <div className="text-[10px] text-slate-400">
+                          <div className="whitespace-nowrap text-[11px] text-slate-400">
                             {inv.createdAt
                               ? `${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
                               : ""}
                           </div>
                         </div>
                         <span
-                          className={`inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                          className={`inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${
                             inv.status === "collected"
                               ? "bg-emerald-100 text-emerald-800"
                               : inv.status === "ocr_failed" || inv.status === "disputed"
@@ -481,34 +510,34 @@ export default function AdminDashboard() {
 
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Client</div>
+                          <div className="text-[11px] uppercase tracking-wide text-slate-400">Client</div>
                           <div className="truncate font-medium text-slate-800">{inv.client?.name || "Unknown"}</div>
-                          <div className="truncate text-[10px] text-slate-500">
+                          <div className="truncate text-[11px] text-slate-500">
                             {inv.client?.phone || inv.client?.email}
                           </div>
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Outlet</div>
+                          <div className="text-[11px] uppercase tracking-wide text-slate-400">Outlet</div>
                           {inv.outlet ? (
-                            <span className="inline-flex items-center rounded border border-purple-200 bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">
+                            <span className="inline-flex items-center rounded border border-purple-200 bg-purple-50 px-1.5 py-0.5 text-[11px] font-semibold text-purple-700">
                               {inv.outlet.name}
                             </span>
                           ) : (
-                            <span className="text-[10px] italic text-slate-400">No outlet</span>
+                            <span className="text-[11px] italic text-slate-400">No outlet</span>
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Category</div>
-                          <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-400">Category</div>
+                          <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
                             {inv.category === "other"
                               ? inv.categoryDetail || "Other"
                               : ({ sales_invoice: "Sales", purchase_bill: "Purchase", expense_bill: "Expense", asset_bill: "Asset" } as Record<string, string>)[inv.category] || inv.category}
                           </span>
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Priority</div>
+                          <div className="text-[11px] uppercase tracking-wide text-slate-400">Priority</div>
                           <span
-                            className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                            className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-bold uppercase ${
                               inv.priority === "urgent"
                                 ? "bg-red-50 text-red-600"
                                 : inv.priority === "low"
@@ -520,28 +549,28 @@ export default function AdminDashboard() {
                           </span>
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Assigned to</div>
+                          <div className="text-[11px] uppercase tracking-wide text-slate-400">Assigned to</div>
                           {inv.assignedStaff ? (
                             <div className="truncate font-medium text-slate-700">{inv.assignedStaff.name}</div>
                           ) : (
-                            <div className="text-[10px] italic text-slate-400">Unassigned</div>
+                            <div className="text-[11px] italic text-slate-400">Unassigned</div>
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Details</div>
+                          <div className="text-[11px] uppercase tracking-wide text-slate-400">Details</div>
                           {inv.ocrData ? (
                             <>
                               <div className="font-semibold text-slate-900">${inv.ocrData.amount || "—"}</div>
-                              <div className="truncate text-[10px] text-slate-500">
+                              <div className="truncate text-[11px] text-slate-500">
                                 {inv.ocrData.vendor || "No vendor"} • Conf: {inv.ocrData.confidence || "0"}%
                               </div>
                             </>
                           ) : inv.status === "ocr_failed" ? (
-                            <span className="flex items-center gap-1 text-[10px] font-medium text-red-600">
+                            <span className="flex items-center gap-1 text-[11px] font-medium text-red-600">
                               <AlertTriangle className="h-3 w-3" /> Manual entry needed
                             </span>
                           ) : (
-                            <span className="text-[10px] italic text-slate-400">Manual entry</span>
+                            <span className="text-[11px] italic text-slate-400">Manual entry</span>
                           )}
                         </div>
                       </div>
@@ -584,8 +613,8 @@ export default function AdminDashboard() {
             )}
           </div>
 
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[860px] xl:min-w-0 text-left text-xs text-slate-600">
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[860px] text-left text-xs text-slate-600">
               <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3.5">
@@ -610,8 +639,10 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-slate-100">
                 {visibleInvoices.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-6 py-12 text-center text-slate-400">
-                      {loading ? "Loading invoices..." : "No invoices found matching criteria."}
+                    <td colSpan={10} className="px-6 py-12 text-center">
+                      <span className="text-sm font-medium text-slate-600">
+                        {loading ? "Loading invoices…" : "No invoices match these filters."}
+                      </span>
                     </td>
                   </tr>
                 ) : (
@@ -633,7 +664,7 @@ export default function AdminDashboard() {
                           >
                             {shortInvoiceId(inv)}
                           </Link>
-                          <div className="text-[10px] text-slate-400">
+                          <div className="whitespace-nowrap text-[11px] text-slate-400">
                             {inv.createdAt
                               ? `${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
                               : ""}
@@ -664,7 +695,7 @@ export default function AdminDashboard() {
                         </td>
                         <td className="px-3 py-4">
                           <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase ${
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase ${
                               inv.status === "collected"
                                 ? "bg-emerald-100 text-emerald-800"
                                 : inv.status === "ocr_failed" || inv.status === "disputed"
@@ -685,7 +716,7 @@ export default function AdminDashboard() {
                               <div className="font-semibold text-slate-900">
                                 ${inv.ocrData.amount || "—"}
                               </div>
-                              <div className="text-[10px] text-slate-500">
+                              <div className="text-[11px] text-slate-500">
                                 {inv.ocrData.vendor || "No vendor"} &bull; Conf: {inv.ocrData.confidence || "0"}%
                               </div>
                             </div>
@@ -708,7 +739,7 @@ export default function AdminDashboard() {
                         </td>
                         <td className="px-3 py-4">
                           <span
-                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                            className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded ${
                               inv.priority === "urgent"
                                 ? "bg-red-50 text-red-600"
                                 : inv.priority === "low"
