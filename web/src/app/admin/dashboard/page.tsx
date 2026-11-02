@@ -314,20 +314,20 @@ export default function AdminDashboard() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-slate-700">From:</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+                className="min-w-0 max-w-[150px] px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
               />
               <span className="text-xs font-medium text-slate-700">To:</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
+                className="min-w-0 max-w-[150px] px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-slate-50 text-slate-800 outline-none"
               />
             </div>
           </div>
@@ -419,9 +419,172 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Invoice Table */}
+        {/* Invoice list: stacked cards on phones, table from md up */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="md:hidden">
+            <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[11px] font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={visibleInvoices.length > 0 && visibleInvoices.every((i) => selectedIds.includes(i.id))}
+                onChange={toggleSelectVisible}
+                title="Select all shown"
+              />
+              <span>Select all shown</span>
+            </div>
+            {visibleInvoices.length === 0 ? (
+              <p className="px-4 py-10 text-center text-xs text-slate-400">
+                {loading ? "Loading invoices..." : "No invoices found matching criteria."}
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {visibleInvoices.map((inv) => {
+                  const isAssignReady =
+                    inv.status === "uploaded" || inv.status === "ocr_done" || inv.status === "ocr_failed";
+                  return (
+                    <div key={inv.id} className="space-y-2.5 p-4">
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={selectedIds.includes(inv.id)}
+                          onChange={() => toggleSelect(inv.id)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            href={`/admin/invoices/${inv.id}`}
+                            className="font-mono text-xs font-semibold text-blue-600 hover:underline"
+                          >
+                            {shortInvoiceId(inv)}
+                          </Link>
+                          <div className="text-[10px] text-slate-400">
+                            {inv.createdAt
+                              ? `${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                              : ""}
+                          </div>
+                        </div>
+                        <span
+                          className={`inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                            inv.status === "collected"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : inv.status === "ocr_failed" || inv.status === "disputed"
+                              ? "bg-red-100 text-red-800"
+                              : inv.status === "ocr_done"
+                              ? "bg-blue-100 text-blue-800"
+                              : inv.status === "assigned"
+                              ? "bg-purple-100 text-purple-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {inv.status}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Client</div>
+                          <div className="truncate font-medium text-slate-800">{inv.client?.name || "Unknown"}</div>
+                          <div className="truncate text-[10px] text-slate-500">
+                            {inv.client?.phone || inv.client?.email}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Outlet</div>
+                          {inv.outlet ? (
+                            <span className="inline-flex items-center rounded border border-purple-200 bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">
+                              {inv.outlet.name}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] italic text-slate-400">No outlet</span>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Category</div>
+                          <span className="inline-flex items-center rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                            {inv.category === "other"
+                              ? inv.categoryDetail || "Other"
+                              : ({ sales_invoice: "Sales", purchase_bill: "Purchase", expense_bill: "Expense", asset_bill: "Asset" } as Record<string, string>)[inv.category] || inv.category}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Priority</div>
+                          <span
+                            className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                              inv.priority === "urgent"
+                                ? "bg-red-50 text-red-600"
+                                : inv.priority === "low"
+                                ? "bg-slate-100 text-slate-600"
+                                : "bg-blue-50 text-blue-600"
+                            }`}
+                          >
+                            {inv.priority}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Assigned to</div>
+                          {inv.assignedStaff ? (
+                            <div className="truncate font-medium text-slate-700">{inv.assignedStaff.name}</div>
+                          ) : (
+                            <div className="text-[10px] italic text-slate-400">Unassigned</div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">Details</div>
+                          {inv.ocrData ? (
+                            <>
+                              <div className="font-semibold text-slate-900">${inv.ocrData.amount || "—"}</div>
+                              <div className="truncate text-[10px] text-slate-500">
+                                {inv.ocrData.vendor || "No vendor"} • Conf: {inv.ocrData.confidence || "0"}%
+                              </div>
+                            </>
+                          ) : inv.status === "ocr_failed" ? (
+                            <span className="flex items-center gap-1 text-[10px] font-medium text-red-600">
+                              <AlertTriangle className="h-3 w-3" /> Manual entry needed
+                            </span>
+                          ) : (
+                            <span className="text-[10px] italic text-slate-400">Manual entry</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        {isAssignReady && !inv.assignedTo && (
+                          <button
+                            onClick={() => {
+                              setSelectedInvoice(inv);
+                              setSelectedStaffId(staffList.find((x) => x.role === "staff")?.id || "");
+                            }}
+                            className="rounded bg-blue-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-blue-700"
+                          >
+                            Assign
+                          </button>
+                        )}
+                        {inv.status === "assigned" && (
+                          <button
+                            onClick={() => {
+                              setSelectedInvoice(inv);
+                              setSelectedStaffId(inv.assignedTo || staffList.find((x) => x.role === "staff")?.id || "");
+                            }}
+                            className="rounded bg-purple-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-purple-700"
+                            title="Fix a mis-assignment"
+                          >
+                            Re-assign
+                          </button>
+                        )}
+                        <Link
+                          href={`/admin/invoices/${inv.id}`}
+                          className="inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                        >
+                          View <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[860px] xl:min-w-0 text-left text-xs text-slate-600">
               <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
@@ -433,7 +596,7 @@ export default function AdminDashboard() {
                       title="Select all shown"
                     />
                   </th>
-                  <th className="px-3 py-3.5">Invoice ID / S3 Key</th>
+                  <th className="px-3 py-3.5">Invoice ID</th>
                   <th className="px-3 py-3.5">Client</th>
                   <th className="px-3 py-3.5">Outlet</th>
                   <th className="px-3 py-3.5">Category</th>
@@ -468,11 +631,8 @@ export default function AdminDashboard() {
                             href={`/admin/invoices/${inv.id}`}
                             className="text-blue-600 hover:underline font-semibold"
                           >
-                            {shortInvoiceId(inv)}...
+                            {shortInvoiceId(inv)}
                           </Link>
-                          <div className="text-[10px] text-slate-400 truncate max-w-[160px]">
-                            {inv.s3Key}
-                          </div>
                           <div className="text-[10px] text-slate-400">
                             {inv.createdAt
                               ? `${new Date(inv.createdAt).toLocaleDateString()}, ${new Date(inv.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
@@ -615,7 +775,7 @@ export default function AdminDashboard() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
               <h3 className="text-base font-bold text-slate-900 mb-2">
-                Assign Invoice {shortInvoiceId(selectedInvoice)}...
+                Assign Invoice {shortInvoiceId(selectedInvoice)}
               </h3>
               <p className="text-xs text-slate-500 mb-4">
                 Current Status: <strong className="text-slate-800">{selectedInvoice.status}</strong>.
