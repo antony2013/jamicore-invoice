@@ -39,3 +39,5 @@ graphify-out/
 # local agent skills (not part of the product)
 .agents/
 skills-lock.json
+.opencode/
+.taste-skill/
