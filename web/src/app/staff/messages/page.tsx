@@ -28,6 +28,15 @@ type Thread = {
   unread: number;
 };
 
+type StaffDirectMessage = {
+  id: string;
+  body: string;
+  isRead?: boolean;
+  createdAt: string;
+  sender?: { id: string; name: string };
+  recipient?: { id: string; name: string };
+};
+
 type Draft = {
   id: string;
   body: string;
@@ -40,6 +49,9 @@ export default function StaffMessagesPage() {
   const [folder, setFolder] = useState("inbox");
   const [threads, setThreads] = useState<Thread[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
+  const [staffInbox, setStaffInbox] = useState<StaffDirectMessage[]>([]);
+  const [staffSent, setStaffSent] = useState<StaffDirectMessage[]>([]);
+  const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -127,16 +139,30 @@ export default function StaffMessagesPage() {
             : data.drafts
         );
       } else {
-        const res = await fetch(`/api/threads?${threadQuery()}`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load threads");
+        const [threadRes, staffRes] = await Promise.all([
+          fetch(`/api/threads?${threadQuery()}`),
+          fetch("/api/staff-messages"),
+        ]);
+        const data = await threadRes.json();
+        if (!threadRes.ok) throw new Error(data.error || "Failed to load threads");
         // Inbox is strictly "client wrote last / unread client mail" — same
         // rule inside a client mailbox as in the global one. Do NOT fall back
         // to folder=all here: that made our own sent mail reappear in Inbox.
         setThreads(data.threads);
-        setTotalUnread(data.totalUnread ?? 0);
+
+        const staffData = await staffRes.json().catch(() => null);
+        if (staffRes.ok && staffData?.success) {
+          setStaffInbox(staffData.inbox ?? []);
+          setStaffSent(staffData.sent ?? []);
+          setTotalUnread((data.totalUnread ?? 0) + (staffData.unread ?? 0));
+        } else {
+          setStaffInbox([]);
+          setStaffSent([]);
+          setTotalUnread(data.totalUnread ?? 0);
+        }
       }
       setExpandedId(null);
+      setExpandedStaffId(null);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load messages.");
     } finally {
@@ -169,6 +195,27 @@ export default function StaffMessagesPage() {
       setMessages((prev) => ({ ...prev, [invoiceId]: [] }));
     } finally {
       setThreadBusy(null);
+    }
+  }
+
+  async function toggleStaffMessage(m: StaffDirectMessage) {
+    if (expandedStaffId === m.id) {
+      setExpandedStaffId(null);
+      return;
+    }
+    setExpandedStaffId(m.id);
+    if (m.isRead === false) {
+      try {
+        const res = await fetch(`/api/staff-messages/${m.id}`, { method: "PATCH" });
+        if (res.ok) {
+          setStaffInbox((prev) =>
+            prev.map((x) => (x.id === m.id ? { ...x, isRead: true } : x))
+          );
+          setTotalUnread((prev) => Math.max(0, prev - 1));
+        }
+      } catch {
+        // Leaving it unread is safe: the next load re-fetches the flag.
+      }
     }
   }
 
@@ -407,6 +454,15 @@ export default function StaffMessagesPage() {
     return `${d.client?.name || ""} ${d.invoice?.invoiceNo || ""} ${d.body}`.toLowerCase().includes(q);
   });
 
+  const visibleStaffMessages = (folder === "sent" ? staffSent : staffInbox).filter((m) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const who = folder === "sent" ? m.recipient?.name : m.sender?.name;
+    return `${who || ""} ${m.body}`.toLowerCase().includes(q);
+  });
+
+  const totalRows = threads.length + visibleStaffMessages.length;
+
   return (
     <AppShell
       role="staff"
@@ -611,12 +667,12 @@ export default function StaffMessagesPage() {
               {folder === "sent" ? "Sent" : "Inbox"}
             </h2>
             <span className="text-[12px] text-slate-500">
-              {loading && threads.length === 0
+              {loading && totalRows === 0
                 ? "…"
-                : `${threads.length} email${threads.length === 1 ? "" : "s"}`}
+                : `${totalRows} email${totalRows === 1 ? "" : "s"}`}
             </span>
           </div>
-          {threads.length === 0 && !loading && (
+          {totalRows === 0 && !loading && (
             <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
               <p className="text-sm font-medium text-slate-600">No threads found.</p>
               <p className="mt-1 text-xs text-slate-400">
@@ -624,11 +680,62 @@ export default function StaffMessagesPage() {
               </p>
             </div>
           )}
-          {loading && threads.length === 0 && (
+          {loading && totalRows === 0 && (
             <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
               <p className="text-sm font-medium text-slate-500">Loading threads…</p>
             </div>
           )}
+          {visibleStaffMessages.map((m) => {
+            const isSentFolder = folder === "sent";
+            const who = isSentFolder ? m.recipient?.name : m.sender?.name;
+            const unread = !isSentFolder && m.isRead === false;
+            const { subject, preview } = splitMessage(m.body);
+            const open = expandedStaffId === m.id;
+            return (
+              <Card
+                key={m.id}
+                className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+              >
+                <button
+                  onClick={() => toggleStaffMessage(m)}
+                  className="w-full flex items-start gap-3 p-4 text-left"
+                >
+                  <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-semibold text-slate-700 truncate">
+                        {who || "Staff"}
+                      </span>
+                      <Badge className="bg-slate-200 text-slate-700">Staff</Badge>
+                      {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
+                    </span>
+                    <span className="block text-[13px] font-bold text-slate-900 truncate">
+                      {subject}
+                    </span>
+                    {open ? (
+                      <span className="block whitespace-pre-wrap text-[11px] text-slate-600">
+                        {m.body}
+                      </span>
+                    ) : preview ? (
+                      <span className="block text-[11px] text-slate-500 truncate">
+                        {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
+                      </span>
+                    ) : null}
+                    <span className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-500 truncate">
+                        {isSentFolder ? `To ${who}` : `From ${who}`} · Office note
+                      </span>
+                      <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                        {formatWhen(m.createdAt)}
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              </Card>
+            );
+          })}
           {threads.map((t) => {
             const thread = messages[t.invoiceId] || [];
             const { subject, preview } = splitMessage(t.lastBody);

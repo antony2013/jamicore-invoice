@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { invoiceMessages, invoices } from "@/db/schema";
+import { invoiceMessages, invoices, staff } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 import { buildInvoiceConditions, combineConditions, parseInvoiceFilters } from "@/lib/invoice-filters";
@@ -55,10 +55,14 @@ export async function GET(request: Request) {
         invCreatedAt: invoices.createdAt,
         invNo: sql<string | null>`${invoices.ocrData}->>'invoiceNo'`,
         invAmount: sql<string | null>`${invoices.ocrData}->>'amount'`,
+        invJobNumber: invoices.jobNumber,
         clientId: invoices.clientId,
+        staffId: staff.id,
+        staffName: staff.name,
       })
       .from(invoiceMessages)
       .innerJoin(invoices, eq(invoiceMessages.invoiceId, invoices.id))
+      .leftJoin(staff, eq(invoices.assignedTo, staff.id))
       .where(and(...msgConds, ...(combineConditions(conditions) ? [combineConditions(conditions)!] : [])))
       .orderBy(desc(invoiceMessages.createdAt), desc(invoiceMessages.id))
       .limit(500);
@@ -112,12 +116,14 @@ export async function GET(request: Request) {
       const client = clientByInvoice.get(r.invoiceId) ?? { id: "", name: "Unknown" };
       threads.push({
         invoiceId: r.invoiceId,
+        jobNumber: r.invJobNumber,
         status: r.invStatus,
         category: r.invCategory,
         invoiceNo: r.invNo,
         amount: r.invAmount,
         createdAt: r.invCreatedAt,
         client,
+        assignedStaff: r.staffId ? { id: r.staffId, name: r.staffName ?? "Staff" } : null,
         lastBody: r.body,
         lastSenderType: r.senderType,
         lastSenderName: r.senderName,
@@ -134,12 +140,14 @@ export async function GET(request: Request) {
         const client = clientByInvoice.get(invoiceId) ?? { id: "", name: "Unknown" };
         threads.push({
           invoiceId,
+          jobNumber: null,
           status: null,
           category: null,
           invoiceNo: null,
           amount: null,
           createdAt: null,
           client,
+          assignedStaff: null,
           lastBody: null,
           lastSenderType: "client",
           lastSenderName: null,

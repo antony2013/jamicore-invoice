@@ -32,6 +32,7 @@ export default function AppShell({
     role === "admin"
       ? [
           { href: "/admin/dashboard", label: "Dashboard" },
+          { href: "/admin/messages", label: "Messages" },
           { href: "/admin/history", label: "History" },
           { href: "/admin/clients", label: "Clients" },
           { href: "/admin/staff", label: "Staff" },

@@ -346,6 +346,24 @@ export const chatMessages = pgTable(
   (t) => [index("chat_messages_scope_idx").on(t.scopeType, t.scopeId, t.createdAt)]
 );
 
+// 8d. Staff Direct Messages — internal office notes addressed to a staff
+// member (admin Compose "To: Staff"). These never touch a client thread.
+export const staffMessages = pgTable(
+  "staff_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    senderId: uuid("sender_id").references(() => staff.id, { onDelete: "cascade" }).notNull(),
+    recipientId: uuid("recipient_id").references(() => staff.id, { onDelete: "cascade" }).notNull(),
+    body: text("body").notNull(),
+    isRead: boolean("is_read").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("staff_messages_recipient_idx").on(t.recipientId, t.createdAt),
+    index("staff_messages_sender_idx").on(t.senderId, t.createdAt),
+  ]
+);
+
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
