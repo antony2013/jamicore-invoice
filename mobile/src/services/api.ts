@@ -412,6 +412,16 @@ export type InvoiceMessage = {
   createdAt: string;
 };
 
+/** General office <-> client message (not tied to any invoice). */
+export type GeneralMessage = {
+  id: string;
+  senderType: string;
+  senderName: string;
+  body: string;
+  mine: boolean;
+  createdAt: string;
+};
+
 /**
  * 14. Office Excel report for one of my invoices (download URL, 5-min TTL).
  */
@@ -502,6 +512,39 @@ export async function requestInvoiceReport(id: string): Promise<InvoiceMessage> 
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || "Failed to request report.");
+  }
+  return data.message;
+}
+
+/**
+ * 15b. General office mailbox — not tied to any invoice.
+ */
+export async function getGeneralMessages(): Promise<{
+  messages: GeneralMessage[];
+  unread: number;
+}> {
+  const token = requireAuth();
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-general-messages`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to fetch messages.");
+  }
+  return { messages: data.messages ?? [], unread: data.unread ?? 0 };
+}
+
+export async function sendGeneralMessage(body: string): Promise<GeneralMessage> {
+  const token = requireAuth();
+  const response = await apiFetch(`${currentApiBaseUrl}/api/client-general-messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ body }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to send message.");
   }
   return data.message;
 }

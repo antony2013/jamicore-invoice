@@ -364,6 +364,28 @@ export const staffMessages = pgTable(
   ]
 );
 
+// 8e. Client Direct Messages — general office↔client notes that do not
+// belong to any invoice (Compose "To: Client"). Invoice threads stay in
+// invoice_messages; this is common communication only.
+export const clientMessages = pgTable(
+  "client_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    senderType: text("sender_type").notNull().default("staff"), // "staff" | "client"
+    senderId: text("sender_id").notNull(),
+    senderName: text("sender_name").notNull(),
+    body: text("body").notNull(),
+    isReadByStaff: boolean("is_read_by_staff").notNull().default(false),
+    isReadByClient: boolean("is_read_by_client").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("client_messages_client_idx").on(t.clientId, t.createdAt),
+    index("client_messages_sender_idx").on(t.senderType, t.createdAt),
+  ]
+);
+
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),

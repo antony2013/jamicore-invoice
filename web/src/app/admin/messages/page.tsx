@@ -23,20 +23,35 @@ const TAB_OPTIONS = [
 
 const UNASSIGNED = "__unassigned__";
 
-type Thread = {
+type EmailMessage = {
+  id: string;
   invoiceId: string;
-  jobNumber: string | null;
-  status: string | null;
-  category: string | null;
-  invoiceNo: string | null;
-  amount: string | null;
-  createdAt: string | null;
+  senderType: string;
+  senderName: string;
+  body: string;
+  createdAt: string;
+  isReadByStaff: boolean;
+  isReadByClient: boolean;
+  invoice: {
+    id: string;
+    invoiceNo: string | null;
+    jobNumber: string | null;
+    status: string | null;
+  };
   client: { id: string; name: string };
   assignedStaff: { id: string; name: string } | null;
-  lastBody: string | null;
-  lastSenderType: string | null;
-  lastAt: string | null;
-  unread: number;
+};
+
+type GeneralMessage = {
+  id: string;
+  clientId: string;
+  client: { id: string; name: string };
+  senderType: string;
+  senderName: string;
+  body: string;
+  createdAt: string;
+  isReadByStaff: boolean;
+  general: true;
 };
 
 type Draft = {
@@ -67,7 +82,7 @@ type StaffDirectMessage = {
 };
 
 type RecipientRow =
-  | { kind: "client"; id: string; name: string; detail: string | null; deliverable: boolean }
+  | { kind: "client"; id: string; name: string; detail: string | null }
   | { kind: "staff"; id: string; name: string };
 
 /** Excel-style recipient picker: search, select all, tick list, done. */
@@ -201,18 +216,18 @@ function CheckFilter({
 
 export default function AdminMessagesPage() {
   const [folder, setFolder] = useState("inbox");
-  const [threads, setThreads] = useState<Thread[]>([]);
+  const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
   const [staffInbox, setStaffInbox] = useState<StaffDirectMessage[]>([]);
   const [staffSent, setStaffSent] = useState<StaffDirectMessage[]>([]);
   const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
+  const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
+  const [expandedGeneralId, setExpandedGeneralId] = useState<string | null>(null);
+  const [generalMessages, setGeneralMessages] = useState<GeneralMessage[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Record<string, any[]>>({});
-  const [threadBusy, setThreadBusy] = useState<string | null>(null);
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<string | null>(null);
 
@@ -277,11 +292,10 @@ export default function AdminMessagesPage() {
     return confirmData.report as { fileName: string };
   }
 
-  function threadQuery(): string {
+  function mailQuery(): string {
     const p = new URLSearchParams();
     p.set("folder", folder === "sent" ? "sent" : "inbox");
-    if (search.trim()) p.set("q", search.trim());
-    p.set("limit", "50");
+    p.set("limit", "100");
     return p.toString();
   }
 
@@ -295,26 +309,37 @@ export default function AdminMessagesPage() {
         if (!res.ok) throw new Error(data.error || "Failed to load drafts");
         setDrafts(data.drafts);
       } else {
-        const [threadRes, staffRes] = await Promise.all([
-          fetch(`/api/threads?${threadQuery()}`),
+        const [mailRes, generalRes, staffRes] = await Promise.all([
+          fetch(`/api/messages?${mailQuery()}`),
+          fetch(`/api/client-messages?${mailQuery()}`),
           fetch("/api/staff-messages"),
         ]);
-        const data = await threadRes.json();
-        if (!threadRes.ok) throw new Error(data.error || "Failed to load threads");
-        setThreads(data.threads);
+        const data = await mailRes.json();
+        if (!mailRes.ok) throw new Error(data.error || "Failed to load messages");
+        setEmails(data.messages ?? []);
+
+        const generalData = await generalRes.json().catch(() => null);
+        setGeneralMessages(
+          generalRes.ok && generalData?.success ? generalData.messages ?? [] : []
+        );
 
         const staffData = await staffRes.json().catch(() => null);
         if (staffRes.ok && staffData?.success) {
           setStaffInbox(staffData.inbox ?? []);
           setStaffSent(staffData.sent ?? []);
-          setTotalUnread((data.totalUnread ?? 0) + (staffData.unread ?? 0));
+          setTotalUnread(
+            (data.totalUnread ?? 0) +
+              (generalData?.totalUnread ?? 0) +
+              (staffData.unread ?? 0)
+          );
         } else {
           setStaffInbox([]);
           setStaffSent([]);
-          setTotalUnread(data.totalUnread ?? 0);
+          setTotalUnread((data.totalUnread ?? 0) + (generalData?.totalUnread ?? 0));
         }
       }
-      setExpandedId(null);
+      setExpandedEmailId(null);
+      setExpandedGeneralId(null);
       setExpandedStaffId(null);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load messages.");
@@ -323,31 +348,69 @@ export default function AdminMessagesPage() {
     }
   }
 
-  async function toggleExpand(invoiceId: string) {
-    if (expandedId === invoiceId) {
-      setExpandedId(null);
+  /** Open one email; a client email marks itself read. */
+  async function toggleEmail(m: EmailMessage) {
+    if (expandedEmailId === m.id) {
+      setExpandedEmailId(null);
       return;
     }
-    setExpandedId(invoiceId);
-    if (messages[invoiceId] !== undefined) return;
-    setThreadBusy(invoiceId);
-    try {
-      const res = await fetch(`/api/invoices/${invoiceId}/messages`);
-      const data = await res.json();
-      setMessages((prev) => ({ ...prev, [invoiceId]: data.success ? data.messages : [] }));
-      if (data.success) {
-        const readCount = threads.find((t) => t.invoiceId === invoiceId)?.unread ?? 0;
-        if (readCount > 0) {
-          setThreads((prev) =>
-            prev.map((t) => (t.invoiceId === invoiceId ? { ...t, unread: 0 } : t))
+    setExpandedEmailId(m.id);
+    if (m.senderType === "client" && !m.isReadByStaff) {
+      try {
+        const res = await fetch(`/api/messages/${m.id}`, { method: "PATCH" });
+        if (res.ok) {
+          setEmails((prev) =>
+            prev.map((x) => (x.id === m.id ? { ...x, isReadByStaff: true } : x))
           );
-          setTotalUnread((prev) => Math.max(0, prev - readCount));
+          setTotalUnread((prev) => Math.max(0, prev - 1));
         }
+      } catch {
+        // Leaving it unread is safe: the next load re-fetches the flag.
       }
-    } catch {
-      setMessages((prev) => ({ ...prev, [invoiceId]: [] }));
+    }
+  }
+
+  /** Open one general (invoice-free) email; a client email marks itself read. */
+  async function toggleGeneral(m: GeneralMessage) {
+    if (expandedGeneralId === m.id) {
+      setExpandedGeneralId(null);
+      return;
+    }
+    setExpandedGeneralId(m.id);
+    if (m.senderType === "client" && !m.isReadByStaff) {
+      try {
+        const res = await fetch(`/api/client-messages/${m.id}`, { method: "PATCH" });
+        if (res.ok) {
+          setGeneralMessages((prev) =>
+            prev.map((x) => (x.id === m.id ? { ...x, isReadByStaff: true } : x))
+          );
+          setTotalUnread((prev) => Math.max(0, prev - 1));
+        }
+      } catch {
+        // Leaving it unread is safe: the next load re-fetches the flag.
+      }
+    }
+  }
+
+  /** Email-style reply to a general message — no invoice needed. */
+  async function sendGeneralReply(m: GeneralMessage) {
+    const note = (replies[m.id] || "").trim();
+    if (!note) return;
+    setSending(m.id);
+    try {
+      const res = await fetch("/api/client-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientIds: [m.clientId], body: note }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setReplies((prev) => ({ ...prev, [m.id]: "" }));
+      await load();
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to send message.");
     } finally {
-      setThreadBusy(null);
+      setSending(null);
     }
   }
 
@@ -372,11 +435,13 @@ export default function AdminMessagesPage() {
     }
   }
 
-  async function sendReply(invoiceId: string, draftId?: string) {
-    const note = (replies[invoiceId] || "").trim();
-    const file = replyFiles[invoiceId] || null;
+  async function sendReply(invoiceId: string, draftId?: string, slot?: string) {
+    // Reply boxes are per email row (slot = message id); the send stays invoice-based.
+    const key = slot || invoiceId;
+    const note = (replies[key] || "").trim();
+    const file = replyFiles[key] || null;
     if (!note && !file) return;
-    setSending(invoiceId);
+    setSending(key);
     try {
       let body = note;
       if (file) {
@@ -390,16 +455,13 @@ export default function AdminMessagesPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send");
-      setMessages((prev) => ({ ...prev, [invoiceId]: [...(prev[invoiceId] || []), data.message] }));
-      setReplies((prev) => ({ ...prev, [invoiceId]: "" }));
-      setReplyFiles((prev) => ({ ...prev, [invoiceId]: null }));
+      setReplies((prev) => ({ ...prev, [key]: "" }));
+      setReplyFiles((prev) => ({ ...prev, [key]: null }));
       if (draftId) {
         await fetch(`/api/drafts/${draftId}`, { method: "DELETE" });
         setDrafts((prev) => prev.filter((d) => d.id !== draftId));
       }
-      // The thread now awaits the client's reply, so it leaves Inbox.
-      setFolder("sent");
-      load();
+      await load();
     } catch (err: any) {
       setLoadError(err.message || "Failed to send message.");
     } finally {
@@ -477,52 +539,11 @@ export default function AdminMessagesPage() {
         name,
         staffName: inv?.assignedStaff?.name ?? null,
         staffId: inv?.assignedStaff?.id ?? UNASSIGNED,
-        deliverable: !!inv,
       };
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [clients, latestByClient]);
 
-  /** Which clients have any invoice handled by each staff member. */
-  const clientsByStaff = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const inv of invoiceOptions) {
-      const clientId = inv.client?.id;
-      if (!clientId) continue;
-      const staffId = inv.assignedStaff?.id ?? UNASSIGNED;
-      const set = map.get(staffId) ?? new Set<string>();
-      set.add(clientId);
-      map.set(staffId, set);
-    }
-    return map;
-  }, [invoiceOptions]);
-
-  /** Picking a staff member ticks every client they handle. */
-  const staffPickedClients = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    const owned = new Set<string>();
-    for (const staffId of composeStaffSel) {
-      for (const clientId of clientsByStaff.get(staffId) ?? []) owned.add(clientId);
-    }
-    const previous = staffPickedClients.current;
-    staffPickedClients.current = owned;
-    setComposeClientSel((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const id of previous) {
-        if (!owned.has(id) && next.delete(id)) changed = true;
-      }
-      for (const id of owned) {
-        if (!next.has(id)) {
-          next.add(id);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [clientsByStaff, composeStaffSel]);
-
-  /** The To list shows exactly what is ticked (clients, or a picked staff's clients). */
+  /** The To list shows exactly what is ticked — clients and staff are independent. */
   const selectedRecipients = useMemo(
     () => composeRecipients.filter((c) => composeClientSel.has(c.id)),
     [composeRecipients, composeClientSel]
@@ -542,7 +563,6 @@ export default function AdminMessagesPage() {
           id: c.id,
           name: c.name,
           detail: c.staffName,
-          deliverable: c.deliverable,
         })
       ),
       ...selectedStaffRows.map(
@@ -598,31 +618,31 @@ export default function AdminMessagesPage() {
     }
   }
 
-  /** Common message: clients get it on their invoice thread, staff as a direct note. */
+  /** Clients get a general email (no invoice needed); staff get a direct note. */
   async function sendCompose() {
     const note = composeBody.trim();
     if (recipientRows.length === 0 || !note) return;
-    const targets = composeTargets();
+    const clientTargets = selectedRecipients.map((c) => c.id);
     const staffTargets = selectedStaffRows;
-    if (targets.length === 0 && staffTargets.length === 0) {
-      setComposeError("The selected clients have no invoice yet, so there is no thread to send on.");
-      return;
-    }
     setComposeBusy(true);
     setComposeError(null);
     let sent = 0;
     const failed: string[] = [];
-    for (const inv of targets) {
+    if (clientTargets.length > 0) {
       try {
-        const res = await fetch(`/api/invoices/${inv.id}/messages`, {
+        const res = await fetch("/api/client-messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ body: note }),
+          body: JSON.stringify({ clientIds: clientTargets, body: note }),
         });
-        if (!res.ok) throw new Error("failed");
-        sent += 1;
-      } catch {
-        failed.push(inv.client?.name || "client");
+        if (!res.ok) throw new Error((await res.json()).error || "failed");
+        sent += clientTargets.length;
+      } catch (err: any) {
+        failed.push(
+          `${selectedRecipients.map((c) => c.name).join(", ")}${
+            err?.message ? ` (${err.message})` : ""
+          }`
+        );
       }
     }
     if (staffTargets.length > 0) {
@@ -685,16 +705,6 @@ export default function AdminMessagesPage() {
     }
   }
 
-  function continueDraft(d: Draft) {
-    if (!d.invoice) return;
-    setReplies((prev) => ({ ...prev, [d.invoice!.id]: d.body }));
-    setExpandedId(d.invoice.id);
-    setTimeout(() => {
-      document.getElementById(`thread-${d.invoice!.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      document.getElementById(`reply-${d.invoice!.id}`)?.focus();
-    }, 100);
-  }
-
   async function saveDraftEdit(d: Draft) {
     const body = (draftEdits[d.id] ?? d.body).trim();
     if (!body || !d.invoice || body === d.body) return;
@@ -721,14 +731,6 @@ export default function AdminMessagesPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folder]);
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (search.trim()) load();
-    }, 400);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -776,14 +778,38 @@ export default function AdminMessagesPage() {
     return `${d.client?.name || ""} ${d.invoice?.invoiceNo || ""} ${d.body}`.toLowerCase().includes(q);
   });
 
+  const q = search.trim().toLowerCase();
+
+  const visibleEmails = emails.filter((m) => {
+    if (!q) return true;
+    const text = `${m.client.name} ${m.senderName} ${m.body} ${m.invoice.invoiceNo || ""} ${
+      m.invoice.jobNumber || ""
+    } ${m.assignedStaff?.name || ""}`;
+    return text.toLowerCase().includes(q);
+  });
+
   const visibleStaffMessages = (folder === "sent" ? staffSent : staffInbox).filter((m) => {
-    const q = search.trim().toLowerCase();
     if (!q) return true;
     const who = folder === "sent" ? m.recipient?.name : m.sender?.name;
     return `${who || ""} ${m.body}`.toLowerCase().includes(q);
   });
 
-  const totalRows = threads.length + visibleStaffMessages.length;
+  const visibleGeneral = generalMessages.filter((m) => {
+    if (!q) return true;
+    return `${m.client.name} ${m.senderName} ${m.body}`.toLowerCase().includes(q);
+  });
+
+  const rows: Array<
+    | { kind: "email"; at: string; email: EmailMessage }
+    | { kind: "general"; at: string; general: GeneralMessage }
+    | { kind: "staff"; at: string; staff: StaffDirectMessage }
+  > = [
+    ...visibleEmails.map((email) => ({ kind: "email" as const, at: email.createdAt, email })),
+    ...visibleGeneral.map((general) => ({ kind: "general" as const, at: general.createdAt, general })),
+    ...visibleStaffMessages.map((staff) => ({ kind: "staff" as const, at: staff.createdAt, staff })),
+  ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+
+  const totalRows = rows.length;
 
   return (
     <AppShell
@@ -868,9 +894,7 @@ export default function AdminMessagesPage() {
                 ) : (
                   <div
                     key={r.id}
-                    className={`flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-xs last:border-b-0 ${
-                      r.deliverable ? "" : "opacity-50"
-                    }`}
+                    className="flex w-full items-center gap-2 border-b border-slate-100 px-3 py-2 text-xs last:border-b-0"
                   >
                     <span className="min-w-0 flex-1 truncate font-medium text-slate-800">
                       {r.name}
@@ -900,9 +924,9 @@ export default function AdminMessagesPage() {
           <div className="flex items-center gap-2 mt-2">
             <button
               onClick={saveComposeDraft}
-              disabled={composeBusy || !composeBody.trim() || selectedRecipients.length === 0}
+              disabled={composeBusy || !composeBody.trim() || composeTargets().length === 0}
               title={
-                selectedRecipients.length === 0
+                composeTargets().length === 0
                   ? "Drafts need at least one client invoice."
                   : undefined
               }
@@ -989,13 +1013,6 @@ export default function AdminMessagesPage() {
                   Send
                 </button>
                 <button
-                  onClick={() => continueDraft(d)}
-                  disabled={!d.invoice}
-                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium disabled:opacity-50"
-                >
-                  Continue in thread
-                </button>
-                <button
                   onClick={() => deleteDraft(d.id)}
                   className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-xs font-medium"
                 >
@@ -1019,196 +1036,295 @@ export default function AdminMessagesPage() {
           </div>
           {totalRows === 0 && !loading && (
             <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
-              <p className="text-sm font-medium text-slate-600">No threads found.</p>
+              <p className="text-sm font-medium text-slate-600">No emails found.</p>
               <p className="mt-1 text-xs text-slate-400">
-                Messages with clients appear here, newest first.
+                {folder === "sent"
+                  ? "Messages you send appear here, newest first."
+                  : "Client messages appear here, newest first."}
               </p>
             </div>
           )}
           {loading && totalRows === 0 && (
             <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
-              <p className="text-sm font-medium text-slate-500">Loading threads…</p>
+              <p className="text-sm font-medium text-slate-500">Loading emails…</p>
             </div>
           )}
-          {visibleStaffMessages.map((m) => {
+          {rows.map((row) => {
+            if (row.kind === "general") {
+              const m = row.general;
+              const isSentFolder = folder === "sent";
+              const unread = !isSentFolder && !m.isReadByStaff;
+              const { subject, preview } = splitMessage(m.body);
+              const open = expandedGeneralId === m.id;
+              const sender = m.senderName || m.client.name;
+              return (
+                <Card
+                  key={`general-${m.id}`}
+                  className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                >
+                  <button
+                    onClick={() => toggleGeneral(m)}
+                    className="w-full flex items-start gap-3 p-4 text-left"
+                  >
+                    <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0 text-[12px] font-bold uppercase">
+                      {(isSentFolder ? m.client.name : sender).slice(0, 1) || "?"}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 truncate text-[12px] font-semibold text-slate-700">
+                          {isSentFolder ? `To ${m.client.name}` : sender}
+                        </span>
+                        {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
+                        <span className="ml-auto whitespace-nowrap text-[11px] text-slate-400">
+                          {formatWhen(m.createdAt)}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block text-[13px] font-bold text-slate-900 truncate">
+                        {subject}
+                      </span>
+                      {!open && preview ? (
+                        <span className="block text-[11px] text-slate-500 truncate">
+                          {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
+                        </span>
+                      ) : null}
+                      <span className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-400">
+                        <span>General message</span>
+                        <span>· {m.client.name}</span>
+                      </span>
+                    </span>
+                    <span className="mt-1 text-slate-400">
+                      {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </span>
+                  </button>
+                  {open && (
+                    <div className="border-t border-slate-100 px-4 py-3">
+                      <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                        {m.body}
+                      </p>
+                      <p className="mt-2 text-[11px] text-slate-400">
+                        {isSentFolder ? "Sent" : "Received"} {new Date(m.createdAt).toLocaleString()}
+                      </p>
+
+                      {!isSentFolder && (
+                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                          <textarea
+                            value={replies[m.id] || ""}
+                            onChange={(e) =>
+                              setReplies((prev) => ({ ...prev, [m.id]: e.target.value }))
+                            }
+                            placeholder="Reply to this email…"
+                            rows={2}
+                            maxLength={500}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none"
+                          />
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              onClick={() => sendGeneralReply(m)}
+                              disabled={sending === m.id || !(replies[m.id] || "").trim()}
+                              className="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {sending === m.id ? "Sending…" : "Reply"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              );
+            }
+
+            if (row.kind === "staff") {
+              const m = row.staff;
+              const isSentFolder = folder === "sent";
+              const who = isSentFolder ? m.recipient?.name : m.sender?.name;
+              const unread = !isSentFolder && m.isRead === false;
+              const { subject, preview } = splitMessage(m.body);
+              const open = expandedStaffId === m.id;
+              return (
+                <Card
+                  key={`staff-${m.id}`}
+                  className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                >
+                  <button
+                    onClick={() => toggleStaffMessage(m)}
+                    className="w-full flex items-start gap-3 p-4 text-left"
+                  >
+                    <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center flex-shrink-0">
+                      <User className="w-4 h-4" />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[12px] font-semibold text-slate-700 truncate">
+                          {isSentFolder ? `To ${who || "Staff"}` : who || "Staff"}
+                        </span>
+                        <Badge className="bg-slate-200 text-slate-700">Staff</Badge>
+                        {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
+                        <span className="ml-auto text-[11px] text-slate-400 whitespace-nowrap">
+                          {formatWhen(m.createdAt)}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block text-[13px] font-bold text-slate-900 truncate">
+                        {subject}
+                      </span>
+                      {!open && preview ? (
+                        <span className="block text-[11px] text-slate-500 truncate">
+                          {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
+                        </span>
+                      ) : null}
+                      <span className="mt-1 block text-[11px] text-slate-400">
+                        Office note {isSentFolder ? "sent" : "received"}
+                      </span>
+                    </span>
+                    <span className="mt-1 text-slate-400">
+                      {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </span>
+                  </button>
+                  {open && (
+                    <div className="border-t border-slate-100 px-4 py-3">
+                      <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                        {m.body}
+                      </p>
+                      <p className="mt-2 text-[11px] text-slate-400">
+                        {isSentFolder ? `To ${who || "Staff"}` : `From ${who || "Staff"}`} ·{" "}
+                        {new Date(m.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                </Card>
+              );
+            }
+
+            const m = row.email;
             const isSentFolder = folder === "sent";
-            const who = isSentFolder ? m.recipient?.name : m.sender?.name;
-            const unread = !isSentFolder && m.isRead === false;
+            const unread = !isSentFolder && !m.isReadByStaff;
             const { subject, preview } = splitMessage(m.body);
-            const open = expandedStaffId === m.id;
+            const open = expandedEmailId === m.id;
+            const sender = m.senderName || m.client.name;
+            const meta =
+              m.invoice.jobNumber || m.invoice.invoiceNo || shortInvoiceId({ id: m.invoiceId });
             return (
               <Card
                 key={m.id}
                 className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
               >
                 <button
-                  onClick={() => toggleStaffMessage(m)}
+                  onClick={() => toggleEmail(m)}
                   className="w-full flex items-start gap-3 p-4 text-left"
                 >
-                  <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center flex-shrink-0">
-                    <User className="w-4 h-4" />
+                  <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0 text-[12px] font-bold uppercase">
+                    {(isSentFolder ? m.client.name : sender).slice(0, 1) || "?"}
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-semibold text-slate-700 truncate">
-                        {who || "Staff"}
+                    <span className="flex items-center gap-2">
+                      <span className="min-w-0 truncate text-[12px] font-semibold text-slate-700">
+                        {isSentFolder ? `To ${m.client.name}` : sender}
                       </span>
-                      <Badge className="bg-slate-200 text-slate-700">Staff</Badge>
                       {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
-                    </span>
-                    <span className="block text-[13px] font-bold text-slate-900 truncate">
-                      {subject}
-                    </span>
-                    {open ? (
-                      <span className="block whitespace-pre-wrap text-[11px] text-slate-600">
-                        {m.body}
-                      </span>
-                    ) : preview ? (
-                      <span className="block text-[11px] text-slate-500 truncate">
-                        {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
-                      </span>
-                    ) : null}
-                    <span className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-slate-500 truncate">
-                        {isSentFolder ? `To ${who}` : `From ${who}`} · Office note
-                      </span>
-                      <span className="text-[11px] text-slate-400 whitespace-nowrap">
+                      <span className="ml-auto whitespace-nowrap text-[11px] text-slate-400">
                         {formatWhen(m.createdAt)}
                       </span>
                     </span>
-                  </span>
-                </button>
-              </Card>
-            );
-          })}
-          {threads.map((t) => {
-            const thread = messages[t.invoiceId] || [];
-            const { subject, preview } = splitMessage(t.lastBody);
-            const unread = t.unread > 0;
-            return (
-              <Card
-                key={t.invoiceId}
-                id={`thread-${t.invoiceId}`}
-                className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
-              >
-                <button
-                  onClick={() => toggleExpand(t.invoiceId)}
-                  className="w-full flex items-start gap-3 p-4 text-left"
-                >
-                  <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center flex-shrink-0">
-                    <User className="w-4 h-4" />
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-semibold text-slate-700 truncate">
-                        {t.client.name || "Unknown client"}
-                      </span>
-                      {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
-                    </span>
-                    <span className="block text-[13px] font-bold text-slate-900 truncate">
+                    <span className="mt-0.5 block text-[13px] font-bold text-slate-900 truncate">
                       {subject}
                     </span>
-                    {preview ? (
+                    {!open && preview ? (
                       <span className="block text-[11px] text-slate-500 truncate">
                         {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
                       </span>
                     ) : null}
-                    <span className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-slate-500 truncate">
-                        <span className="dc-mono">{t.jobNumber || t.invoiceNo || shortInvoiceId({ id: t.invoiceId })}</span>
-                        {t.assignedStaff?.name ? ` · ${t.assignedStaff.name}` : ""}
-                      </span>
-                      <span className="text-[11px] text-slate-400 whitespace-nowrap">{formatWhen(t.lastAt)}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-400">
+                      <span className="dc-mono">{meta}</span>
+                      <span>· {m.client.name}</span>
+                      {isSentFolder && m.senderName ? <span>· {m.senderName}</span> : null}
                     </span>
                   </span>
                   <span className="mt-1 text-slate-400">
-                    {expandedId === t.invoiceId ? (
+                    {open ? (
                       <ChevronDown className="h-4 w-4" />
                     ) : (
                       <ChevronRight className="h-4 w-4" />
                     )}
                   </span>
                 </button>
-                {expandedId === t.invoiceId && (
-                  <div className="px-4 pb-4">
-                    {threadBusy === t.invoiceId ? (
-                      <p className="text-xs text-slate-400">Loading thread…</p>
-                    ) : thread.length === 0 ? (
-                      <p className="text-xs text-slate-400">No messages yet.</p>
-                    ) : (
-                      <div className="space-y-2 mb-3 max-h-64 overflow-y-auto">
-                        {thread.map((m: any) => (
-                          <div
-                            key={m.id}
-                            className={`p-2.5 rounded-lg text-xs max-w-[90%] ${
-                              m.senderType === "staff"
-                                ? "ml-auto bg-blue-600 text-white"
-                                : "bg-slate-100 text-slate-800"
-                            }`}
-                          >
-                            <div className={`font-bold mb-0.5 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-500"}`}>
-                              {m.senderName || (m.senderType === "staff" ? "Staff" : "Client")}
-                            </div>
-                            <div>{m.body}</div>
-                            <div className={`text-[11px] mt-1 ${m.senderType === "staff" ? "text-blue-100" : "text-slate-400"}`}>
-                              {m.createdAt ? new Date(m.createdAt).toLocaleString() : ""}
-                            </div>
+                {open && (
+                  <div className="border-t border-slate-100 px-4 py-3">
+                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                      {m.body}
+                    </p>
+                    <p className="mt-2 text-[11px] text-slate-400">
+                      {isSentFolder ? "Sent" : "Received"} {new Date(m.createdAt).toLocaleString()}
+                      {m.assignedStaff?.name ? ` · Assigned to ${m.assignedStaff.name}` : ""}
+                    </p>
+
+                    {!isSentFolder && (
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                        {replyFiles[m.id] && (
+                          <div className="mb-2 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700">
+                            <Paperclip className="h-3 w-3" /> {replyFiles[m.id]!.name}
+                            <button
+                              onClick={() =>
+                                setReplyFiles((prev) => ({ ...prev, [m.id]: null }))
+                              }
+                              className="text-slate-500 hover:text-slate-800"
+                              aria-label="Remove attachment"
+                            >
+                              ×
+                            </button>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                    {replyFiles[t.invoiceId] && (
-                      <div className="mb-2 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-[11px] text-slate-700">
-                        <Paperclip className="h-3 w-3" /> {replyFiles[t.invoiceId]!.name}
-                        <button
-                          onClick={() => setReplyFiles((prev) => ({ ...prev, [t.invoiceId]: null }))}
-                          className="text-slate-500 hover:text-slate-800"
-                          aria-label="Remove attachment"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <label
-                        className="inline-flex items-center justify-center w-9 h-9 border border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 flex-shrink-0"
-                        title="Attach report (.xlsx)"
-                      >
-                        <Paperclip className="h-4 w-4 text-slate-500" />
-                        <input
-                          type="file"
-                          accept=".xlsx"
-                          className="hidden"
-                          onChange={(e) => {
-                            const picked = e.target.files?.[0] ?? null;
-                            setReplyFiles((prev) => ({ ...prev, [t.invoiceId]: picked }));
-                            e.target.value = "";
-                          }}
+                        )}
+                        <textarea
+                          id={`reply-${m.id}`}
+                          value={replies[m.id] || ""}
+                          onChange={(e) =>
+                            setReplies((prev) => ({ ...prev, [m.id]: e.target.value }))
+                          }
+                          placeholder={
+                            replyFiles[m.id]
+                              ? "Add a note with the report…"
+                              : "Reply to this email…"
+                          }
+                          rows={2}
+                          maxLength={500}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none"
                         />
-                      </label>
-                      <input
-                        id={`reply-${t.invoiceId}`}
-                        value={replies[t.invoiceId] || ""}
-                        onChange={(e) => setReplies((prev) => ({ ...prev, [t.invoiceId]: e.target.value }))}
-                        placeholder={replyFiles[t.invoiceId] ? "Add a note with the report…" : "Reply to client…"}
-                        maxLength={500}
-                        className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs outline-none"
-                      />
-                      <button
-                        onClick={() => sendReply(t.invoiceId)}
-                        disabled={
-                          sending === t.invoiceId ||
-                          (!(replies[t.invoiceId] || "").trim() && !replyFiles[t.invoiceId])
-                        }
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap"
-                      >
-                        {sending === t.invoiceId
-                          ? "Sending…"
-                          : replyFiles[t.invoiceId]
-                            ? "Send report"
-                            : "Send"}
-                      </button>
-                    </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <label
+                            className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700"
+                            title="Attach report (.xlsx)"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            <span>
+                              {replyFiles[m.id] ? "Change report" : "Attach report (.xlsx)"}
+                            </span>
+                            <input
+                              type="file"
+                              accept=".xlsx"
+                              className="hidden"
+                              onChange={(e) => {
+                                const picked = e.target.files?.[0] ?? null;
+                                setReplyFiles((prev) => ({ ...prev, [m.id]: picked }));
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                          <button
+                            onClick={() => sendReply(m.invoiceId, undefined, m.id)}
+                            disabled={
+                              sending === m.id ||
+                              (!(replies[m.id] || "").trim() && !replyFiles[m.id])
+                            }
+                            className="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {sending === m.id
+                              ? "Sending…"
+                              : replyFiles[m.id]
+                                ? "Send report"
+                                : "Reply"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>

@@ -44,12 +44,14 @@ import {
   getInvoiceMessages,
   sendInvoiceMessage,
   requestInvoiceReport,
+  getGeneralMessages,
+  sendGeneralMessage,
   getChat,
   sendChatMessage,
   getChatAttachmentUrl,
   CATEGORY_LABELS,
 } from "./src/services/api";
-import type { InvoiceCategory, InvoiceMessage, Outlet, TeamMember, ChatMessage } from "./src/services/api";
+import type { InvoiceCategory, InvoiceMessage, Outlet, TeamMember, ChatMessage, GeneralMessage } from "./src/services/api";
 
 /* ------------------------------------------------------------------ */
 /* Liquid Glass design language (iOS 26 inspired, built with expo-blur */
@@ -259,7 +261,7 @@ function GlassButton({
 export default function App() {
   // Navigation: login -> outlet gate (if 2+ outlets) -> scan/history/team/branches
   // + detail (invoice view/edit) + account (password/PIN)
-  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account" | "team" | "branches" | "chat">("login");
+  const [screen, setScreen] = useState<"login" | "outlet" | "scan" | "success" | "history" | "detail" | "account" | "team" | "branches" | "chat" | "mail">("login");
   // Admin-provided credentials (no OTP)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -332,6 +334,12 @@ export default function App() {
   const [chatImage, setChatImage] = useState<{ uri: string; name?: string; mimeType?: string } | null>(null);
   const [chatScope, setChatScope] = useState<{ type: "outlet" | "invoice"; id: string; title: string } | null>(null);
   const [chatReturn, setChatReturn] = useState<"branches" | "detail">("branches");
+  // General office mailbox (not tied to any invoice)
+  const [mailMessages, setMailMessages] = useState<GeneralMessage[]>([]);
+  const [mailText, setMailText] = useState("");
+  const [mailLoading, setMailLoading] = useState(false);
+  const [mailSending, setMailSending] = useState(false);
+  const [mailError, setMailError] = useState<string | null>(null);
   // Branch-screen info: which outlets actually hold invoices (for chat targets)
   const [branchBusyId, setBranchBusyId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -417,6 +425,10 @@ export default function App() {
   const dropToLogin = async () => {
     await logout();
     setClient(null);
+    // Never leave another account's mailbox on screen after a session drop.
+    setMailMessages([]);
+    setMailText("");
+    setMailError(null);
     setScreen("login");
   };
   const handleApiError = async (err: any, title: string) => {
@@ -499,6 +511,9 @@ export default function App() {
     setNewPw("");
     setConfirmPw("");
     setPwMsg(null);
+    setMailMessages([]);
+    setMailText("");
+    setMailError(null);
     setScreen("login");
   };
 
@@ -1012,6 +1027,36 @@ export default function App() {
     }
   };
 
+  // General office mailbox — common communication, no invoice needed.
+  const handleLoadMail = async () => {
+    setMailLoading(true);
+    setMailError(null);
+    try {
+      const { messages } = await getGeneralMessages();
+      setMailMessages(messages);
+      setScreen("mail");
+    } catch (err: any) {
+      await handleApiError(err, "Messages Failed");
+    } finally {
+      setMailLoading(false);
+    }
+  };
+
+  const handleSendMail = async () => {
+    const body = mailText.trim();
+    if (!body || mailSending) return;
+    setMailSending(true);
+    try {
+      const sent = await sendGeneralMessage(body);
+      setMailMessages((prev) => [sent, ...prev]);
+      setMailText("");
+    } catch (err: any) {
+      await handleApiError(err, "Send Failed");
+    } finally {
+      setMailSending(false);
+    }
+  };
+
   /** Withdrawal allowed within 1h of upload (server enforces; UI mirrors). */
   const canWithdraw = (inv: HistoryInvoice | null) => {
     if (!inv) return false;
@@ -1237,19 +1282,20 @@ export default function App() {
               </View>
             </View>
 
-            {/* Segmented Scan | History | Team | Branches (glass container).
-                Team tab is owner-only; Branches for everyone. */}
-            {loggedIn && (screen === "scan" || screen === "history" || screen === "team" || screen === "branches") && (
+            {/* Segmented Scan | History | Team | Branches | Mail (glass container).
+                Team tab is owner-only; Branches/Mail for everyone. */}
+            {loggedIn && (screen === "scan" || screen === "history" || screen === "team" || screen === "branches" || screen === "mail") && (
               <View style={styles.segmentOuter}>
                 <BlurView intensity={36} tint="dark" style={StyleSheet.absoluteFill} />
                 <View style={styles.segmentInner}>
-                  {(isOwner ? (["scan", "history", "team", "branches"] as const) : (["scan", "history", "branches"] as const)).map((tab) => {
+                  {(isOwner ? (["scan", "history", "team", "branches", "mail"] as const) : (["scan", "history", "branches", "mail"] as const)).map((tab) => {
                     const active = screen === tab;
-                    const label = tab === "scan" ? "◉  Scan" : tab === "history" ? "◔  History" : tab === "team" ? "👥  Team" : "🏪  Branches";
+                    const label = tab === "scan" ? "◉  Scan" : tab === "history" ? "◔  History" : tab === "team" ? "👥  Team" : tab === "branches" ? "🏪  Branches" : "✉  Mail";
                     const go = () => {
                       if (tab === "history") handleLoadHistory();
                       else if (tab === "team") handleLoadTeam();
                       else if (tab === "branches") handleLoadBranches();
+                      else if (tab === "mail") handleLoadMail();
                       else setScreen("scan");
                     };
                     return (
@@ -2213,6 +2259,57 @@ export default function App() {
                 />
               </GlassCard>
             )}
+            {screen === "mail" && (
+              <GlassCard>
+                <Text style={styles.cardTitle}>✉ Messages</Text>
+                <Text style={styles.instruction}>
+                  Common messages with the office. No invoice needed.
+                </Text>
+                {mailError ? (
+                  <Text style={styles.historyMeta}>{mailError}</Text>
+                ) : null}
+                {mailLoading ? (
+                  <ActivityIndicator color="#FBBF24" style={{ marginVertical: 16 }} />
+                ) : mailMessages.length === 0 ? (
+                  <Text style={styles.instruction}>No messages yet — write to the office below.</Text>
+                ) : (
+                  mailMessages.map((m) => (
+                    <View key={m.id} style={styles.mailRow}>
+                      <View style={styles.mailHead}>
+                        <Text style={styles.teamName}>
+                          {m.mine ? "You" : m.senderName || "Office"}
+                        </Text>
+                        <Text style={styles.historyMeta}>
+                          {new Date(m.createdAt).toLocaleString([], {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </Text>
+                      </View>
+                      <Text style={styles.mailBody}>{m.body}</Text>
+                    </View>
+                  ))
+                )}
+                <TextInput
+                  style={[styles.input, styles.mailInput]}
+                  placeholder="Write a message to the office…"
+                  placeholderTextColor="#64748B"
+                  value={mailText}
+                  onChangeText={(t) => setMailText(t.slice(0, 500))}
+                  multiline
+                  maxLength={500}
+                />
+                <GlassButton
+                  title="Send message"
+                  onPress={handleSendMail}
+                  disabled={mailSending || !mailText.trim()}
+                  loading={mailSending}
+                />
+                <GlassButton title="← Back to Scan" onPress={() => setScreen("scan")} />
+              </GlassCard>
+            )}
             {screen === "branches" && (
               <GlassCard>
                 <Text style={styles.cardTitle}>🏪 Branches</Text>
@@ -3072,6 +3169,31 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     marginBottom: 8,
+  },
+  mailRow: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+  },
+  mailHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 4,
+  },
+  mailBody: {
+    fontSize: 14,
+    color: "#E2E8F0",
+    lineHeight: 20,
+  },
+  mailInput: {
+    marginTop: 10,
+    minHeight: 72,
+    textAlignVertical: "top",
   },
   teamName: {
     fontSize: 15,
