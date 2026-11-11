@@ -62,6 +62,11 @@ export async function GET(request: Request) {
       .where(
         and(
           eq(invoiceMessages.senderType, folder === "sent" ? "staff" : "client"),
+          // Sent is personal for staff: the admin's outgoing invoice messages
+          // must not appear in a staff member's Sent Items.
+          ...(me.role !== "admin" && folder === "sent"
+            ? [eq(invoiceMessages.senderId, me.id)]
+            : []),
           ...(scope ? [scope] : [])
         )
       )

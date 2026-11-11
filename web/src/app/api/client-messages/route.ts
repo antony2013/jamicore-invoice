@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { clientMessages, clients, invoices } from "@/db/schema";
+import { clientMessages, clients, invoices, staffMessages } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 import { staffInvoiceScope } from "@/lib/invoice-access";
@@ -53,6 +53,11 @@ export async function GET(request: Request) {
     }
     if (me.role !== "admin") {
       conditions.push(inArray(clientMessages.clientId, visibleClientIds(me.id)));
+      // Sent is personal: another staff member's (or the admin's) message must
+      // never show up in this staff member's Sent folder.
+      if (folder === "sent") {
+        conditions.push(eq(clientMessages.senderId, me.id));
+      }
     }
 
     const rows = await db
@@ -139,7 +144,11 @@ export async function POST(request: Request) {
     }
 
     const existing = await db
-      .select({ id: clients.id })
+      .select({
+        id: clients.id,
+        name: clients.name,
+        assignedStaffId: clients.assignedStaffId,
+      })
       .from(clients)
       .where(inArray(clients.id, clientIds));
     if (existing.length !== clientIds.length) {
@@ -161,7 +170,56 @@ export async function POST(request: Request) {
       )
       .returning({ id: clientMessages.id, clientId: clientMessages.clientId });
 
-    return NextResponse.json({ success: true, messages: rows }, { status: 201 });
+    // An admin writing to a client also informs the staff member who owns that
+    // client (clients.assignedStaffId, falling back to the newest invoice's
+    // assignee). The copy is an internal staff note, never a client message, so
+    // the client still receives exactly one message.
+    let staffCopies: Array<{ id: string }> = [];
+    if (me.role === "admin") {
+      const nameById = new Map(existing.map((c) => [c.id, c.name]));
+      const staffByClient = new Map<string, string>();
+      for (const c of existing) {
+        if (c.assignedStaffId && c.assignedStaffId !== me.id) {
+          staffByClient.set(c.id, c.assignedStaffId);
+        }
+      }
+      const unassigned = existing
+        .filter((c) => !staffByClient.has(c.id))
+        .map((c) => c.id);
+      if (unassigned.length > 0) {
+        const latest = await db
+          .select({
+            clientId: invoices.clientId,
+            assignedTo: invoices.assignedTo,
+            createdAt: invoices.createdAt,
+          })
+          .from(invoices)
+          .where(inArray(invoices.clientId, unassigned))
+          .orderBy(desc(invoices.createdAt));
+        for (const inv of latest) {
+          if (staffByClient.has(inv.clientId)) continue;
+          if (inv.assignedTo && inv.assignedTo !== me.id) {
+            staffByClient.set(inv.clientId, inv.assignedTo);
+          }
+        }
+      }
+      const copies = Array.from(staffByClient, ([clientId, recipientId]) => ({
+        senderId: me.id,
+        recipientId,
+        body: `Client message · ${nameById.get(clientId) ?? "Client"}\n${parsed.data.body}`,
+      }));
+      if (copies.length > 0) {
+        staffCopies = await db
+          .insert(staffMessages)
+          .values(copies)
+          .returning({ id: staffMessages.id });
+      }
+    }
+
+    return NextResponse.json(
+      { success: true, messages: rows, staffCopies: staffCopies.length },
+      { status: 201 }
+    );
   } catch (error: any) {
     console.error("Error in POST /api/client-messages:", error);
     return NextResponse.json({ error: "Failed to send client message" }, { status: 500 });

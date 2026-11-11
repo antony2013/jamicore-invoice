@@ -3,6 +3,7 @@ import { shortInvoiceId } from "@/lib/utils";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
   ChevronRight,
@@ -84,6 +85,14 @@ type StaffDirectMessage = {
 type RecipientRow =
   | { kind: "client"; id: string; name: string; detail: string | null }
   | { kind: "staff"; id: string; name: string };
+
+type MailboxRow =
+  | { kind: "email"; at: string; email: EmailMessage }
+  | { kind: "general"; at: string; general: GeneralMessage }
+  | { kind: "staff"; at: string; staff: StaffDirectMessage };
+
+/** Which single message is open in the separate detail view. */
+type ViewingMessage = { kind: "email" | "general" | "staff"; id: string };
 
 /** Excel-style recipient picker: search, select all, tick list, done. */
 function CheckFilter({
@@ -220,9 +229,7 @@ export default function AdminMessagesPage() {
   const [totalUnread, setTotalUnread] = useState(0);
   const [staffInbox, setStaffInbox] = useState<StaffDirectMessage[]>([]);
   const [staffSent, setStaffSent] = useState<StaffDirectMessage[]>([]);
-  const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
-  const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
-  const [expandedGeneralId, setExpandedGeneralId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<ViewingMessage | null>(null);
   const [generalMessages, setGeneralMessages] = useState<GeneralMessage[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [search, setSearch] = useState("");
@@ -338,9 +345,6 @@ export default function AdminMessagesPage() {
           setTotalUnread((data.totalUnread ?? 0) + (generalData?.totalUnread ?? 0));
         }
       }
-      setExpandedEmailId(null);
-      setExpandedGeneralId(null);
-      setExpandedStaffId(null);
     } catch (err: any) {
       setLoadError(err.message || "Failed to load messages.");
     } finally {
@@ -348,13 +352,9 @@ export default function AdminMessagesPage() {
     }
   }
 
-  /** Open one email; a client email marks itself read. */
-  async function toggleEmail(m: EmailMessage) {
-    if (expandedEmailId === m.id) {
-      setExpandedEmailId(null);
-      return;
-    }
-    setExpandedEmailId(m.id);
+  /** Open one email in its own detail view; a client email marks itself read. */
+  async function openEmail(m: EmailMessage) {
+    setViewing({ kind: "email", id: m.id });
     if (m.senderType === "client" && !m.isReadByStaff) {
       try {
         const res = await fetch(`/api/messages/${m.id}`, { method: "PATCH" });
@@ -370,13 +370,9 @@ export default function AdminMessagesPage() {
     }
   }
 
-  /** Open one general (invoice-free) email; a client email marks itself read. */
-  async function toggleGeneral(m: GeneralMessage) {
-    if (expandedGeneralId === m.id) {
-      setExpandedGeneralId(null);
-      return;
-    }
-    setExpandedGeneralId(m.id);
+  /** Open one general (invoice-free) email in its own detail view. */
+  async function openGeneral(m: GeneralMessage) {
+    setViewing({ kind: "general", id: m.id });
     if (m.senderType === "client" && !m.isReadByStaff) {
       try {
         const res = await fetch(`/api/client-messages/${m.id}`, { method: "PATCH" });
@@ -414,12 +410,8 @@ export default function AdminMessagesPage() {
     }
   }
 
-  async function toggleStaffMessage(m: StaffDirectMessage) {
-    if (expandedStaffId === m.id) {
-      setExpandedStaffId(null);
-      return;
-    }
-    setExpandedStaffId(m.id);
+  async function openStaffMessage(m: StaffDirectMessage) {
+    setViewing({ kind: "staff", id: m.id });
     if (m.isRead === false) {
       try {
         const res = await fetch(`/api/staff-messages/${m.id}`, { method: "PATCH" });
@@ -432,6 +424,28 @@ export default function AdminMessagesPage() {
       } catch {
         // Leaving it unread is safe: the next load re-fetches the flag.
       }
+    }
+  }
+
+  /** Reply to a staff note. It stays staff-only and never reaches a client. */
+  async function sendStaffReply(m: StaffDirectMessage, toId?: string) {
+    const note = (replies[m.id] || "").trim();
+    if (!note || !toId) return;
+    setSending(m.id);
+    try {
+      const res = await fetch("/api/staff-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientIds: [toId], body: note }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setReplies((prev) => ({ ...prev, [m.id]: "" }));
+      await load();
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to send message.");
+    } finally {
+      setSending(null);
     }
   }
 
@@ -728,6 +742,7 @@ export default function AdminMessagesPage() {
   }
 
   useEffect(() => {
+    setViewing(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folder]);
@@ -799,16 +814,40 @@ export default function AdminMessagesPage() {
     return `${m.client.name} ${m.senderName} ${m.body}`.toLowerCase().includes(q);
   });
 
-  const rows: Array<
-    | { kind: "email"; at: string; email: EmailMessage }
-    | { kind: "general"; at: string; general: GeneralMessage }
-    | { kind: "staff"; at: string; staff: StaffDirectMessage }
-  > = [
+  const rows: MailboxRow[] = [
     ...visibleEmails.map((email) => ({ kind: "email" as const, at: email.createdAt, email })),
     ...visibleGeneral.map((general) => ({ kind: "general" as const, at: general.createdAt, general })),
     ...visibleStaffMessages.map((staff) => ({ kind: "staff" as const, at: staff.createdAt, staff })),
   ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
+  const isViewingRow = (row: MailboxRow): boolean => {
+    if (!viewing) return false;
+    if (row.kind === "email") {
+      return viewing.kind === "email" && viewing.id === row.email.id;
+    }
+    if (row.kind === "general") {
+      return viewing.kind === "general" && viewing.id === row.general.id;
+    }
+    return viewing.kind === "staff" && viewing.id === row.staff.id;
+  };
+
+  // Resolve the open message from the raw lists so typing in search while the
+  // detail view is open cannot blank the screen.
+  const viewedRows: MailboxRow[] = useMemo(() => {
+    if (!viewing) return [];
+    if (viewing.kind === "email") {
+      const email = emails.find((x) => x.id === viewing.id);
+      return email ? [{ kind: "email" as const, at: email.createdAt, email }] : [];
+    }
+    if (viewing.kind === "general") {
+      const general = generalMessages.find((x) => x.id === viewing.id);
+      return general ? [{ kind: "general" as const, at: general.createdAt, general }] : [];
+    }
+    const staff = (folder === "sent" ? staffSent : staffInbox).find((x) => x.id === viewing.id);
+    return staff ? [{ kind: "staff" as const, at: staff.createdAt, staff }] : [];
+  }, [viewing, emails, generalMessages, folder, staffInbox, staffSent]);
+
+  const shownRows = viewing ? viewedRows : rows;
   const totalRows = rows.length;
 
   return (
@@ -1024,38 +1063,51 @@ export default function AdminMessagesPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[16px] font-bold text-slate-900">
-              {folder === "sent" ? "Sent" : "Inbox"}
-            </h2>
-            <span className="text-[12px] text-slate-500">
-              {loading && totalRows === 0
-                ? "…"
-                : `${totalRows} email${totalRows === 1 ? "" : "s"}`}
-            </span>
-          </div>
-          {totalRows === 0 && !loading && (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
-              <p className="text-sm font-medium text-slate-600">No emails found.</p>
-              <p className="mt-1 text-xs text-slate-400">
-                {folder === "sent"
-                  ? "Messages you send appear here, newest first."
-                  : "Client messages appear here, newest first."}
-              </p>
-            </div>
+          {viewing ? (
+            <button
+              type="button"
+              onClick={() => setViewing(null)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to {folder === "sent" ? "Sent" : "Inbox"}
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <h2 className="text-[16px] font-bold text-slate-900">
+                  {folder === "sent" ? "Sent" : "Inbox"}
+                </h2>
+                <span className="text-[12px] text-slate-500">
+                  {loading && totalRows === 0
+                    ? "…"
+                    : `${totalRows} email${totalRows === 1 ? "" : "s"}`}
+                </span>
+              </div>
+              {totalRows === 0 && !loading && (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+                  <p className="text-sm font-medium text-slate-600">No emails found.</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {folder === "sent"
+                      ? "Messages you send appear here, newest first."
+                      : "Client messages appear here, newest first."}
+                  </p>
+                </div>
+              )}
+              {loading && totalRows === 0 && (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+                  <p className="text-sm font-medium text-slate-500">Loading emails…</p>
+                </div>
+              )}
+            </>
           )}
-          {loading && totalRows === 0 && (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
-              <p className="text-sm font-medium text-slate-500">Loading emails…</p>
-            </div>
-          )}
-          {rows.map((row) => {
+          {shownRows.map((row) => {
             if (row.kind === "general") {
               const m = row.general;
               const isSentFolder = folder === "sent";
               const unread = !isSentFolder && !m.isReadByStaff;
               const { subject, preview } = splitMessage(m.body);
-              const open = expandedGeneralId === m.id;
+              const open = isViewingRow(row);
               const sender = m.senderName || m.client.name;
               return (
                 <Card
@@ -1063,7 +1115,7 @@ export default function AdminMessagesPage() {
                   className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
                 >
                   <button
-                    onClick={() => toggleGeneral(m)}
+                    onClick={() => openGeneral(m)}
                     className="w-full flex items-start gap-3 p-4 text-left"
                   >
                     <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0 text-[12px] font-bold uppercase">
@@ -1098,36 +1150,50 @@ export default function AdminMessagesPage() {
                   </button>
                   {open && (
                     <div className="border-t border-slate-100 px-4 py-3">
-                      <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">From</span>
+                          <span className="min-w-0 break-words">
+                            {isSentFolder ? m.senderName || "Office" : sender}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">To</span>
+                          <span className="min-w-0 break-words">
+                            {isSentFolder ? m.client.name : "Office"}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">Date</span>
+                          <span>{new Date(m.createdAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <p className="mt-3 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
                         {m.body}
                       </p>
-                      <p className="mt-2 text-[11px] text-slate-400">
-                        {isSentFolder ? "Sent" : "Received"} {new Date(m.createdAt).toLocaleString()}
-                      </p>
 
-                      {!isSentFolder && (
-                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                          <textarea
-                            value={replies[m.id] || ""}
-                            onChange={(e) =>
-                              setReplies((prev) => ({ ...prev, [m.id]: e.target.value }))
-                            }
-                            placeholder="Reply to this email…"
-                            rows={2}
-                            maxLength={500}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none"
-                          />
-                          <div className="mt-2 flex items-center gap-2">
-                            <button
-                              onClick={() => sendGeneralReply(m)}
-                              disabled={sending === m.id || !(replies[m.id] || "").trim()}
-                              className="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                            >
-                              {sending === m.id ? "Sending…" : "Reply"}
-                            </button>
-                          </div>
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                        <textarea
+                          value={replies[m.id] || ""}
+                          onChange={(e) =>
+                            setReplies((prev) => ({ ...prev, [m.id]: e.target.value }))
+                          }
+                          placeholder="Reply to this email…"
+                          rows={2}
+                          maxLength={500}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none"
+                        />
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            onClick={() => sendGeneralReply(m)}
+                            disabled={sending === m.id || !(replies[m.id] || "").trim()}
+                            className="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {sending === m.id ? "Sending…" : "Reply"}
+                          </button>
                         </div>
-                      )}
+                      </div>
                     </div>
                   )}
                 </Card>
@@ -1140,14 +1206,14 @@ export default function AdminMessagesPage() {
               const who = isSentFolder ? m.recipient?.name : m.sender?.name;
               const unread = !isSentFolder && m.isRead === false;
               const { subject, preview } = splitMessage(m.body);
-              const open = expandedStaffId === m.id;
+              const open = isViewingRow(row);
               return (
                 <Card
                   key={`staff-${m.id}`}
                   className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
                 >
                   <button
-                    onClick={() => toggleStaffMessage(m)}
+                    onClick={() => openStaffMessage(m)}
                     className="w-full flex items-start gap-3 p-4 text-left"
                   >
                     <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center flex-shrink-0">
@@ -1182,13 +1248,59 @@ export default function AdminMessagesPage() {
                   </button>
                   {open && (
                     <div className="border-t border-slate-100 px-4 py-3">
-                      <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">From</span>
+                          <span className="min-w-0 break-words">
+                            {isSentFolder ? "You" : m.sender?.name || "Staff"}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">To</span>
+                          <span className="min-w-0 break-words">
+                            {isSentFolder ? m.recipient?.name || "Staff" : "You"}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">Date</span>
+                          <span>{new Date(m.createdAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <p className="mt-3 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
                         {m.body}
                       </p>
-                      <p className="mt-2 text-[11px] text-slate-400">
-                        {isSentFolder ? `To ${who || "Staff"}` : `From ${who || "Staff"}`} ·{" "}
-                        {new Date(m.createdAt).toLocaleString()}
-                      </p>
+
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                        <textarea
+                          value={replies[m.id] || ""}
+                          onChange={(e) =>
+                            setReplies((prev) => ({ ...prev, [m.id]: e.target.value }))
+                          }
+                          placeholder="Reply to this staff note…"
+                          rows={2}
+                          maxLength={500}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none"
+                        />
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              sendStaffReply(
+                                m,
+                                isSentFolder ? m.recipient?.id : m.sender?.id
+                              )
+                            }
+                            disabled={
+                              sending === m.id ||
+                              !(replies[m.id] || "").trim() ||
+                              !(isSentFolder ? m.recipient?.id : m.sender?.id)
+                            }
+                            className="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {sending === m.id ? "Sending…" : "Reply"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </Card>
@@ -1199,7 +1311,7 @@ export default function AdminMessagesPage() {
             const isSentFolder = folder === "sent";
             const unread = !isSentFolder && !m.isReadByStaff;
             const { subject, preview } = splitMessage(m.body);
-            const open = expandedEmailId === m.id;
+            const open = isViewingRow(row);
             const sender = m.senderName || m.client.name;
             const meta =
               m.invoice.jobNumber || m.invoice.invoiceNo || shortInvoiceId({ id: m.invoiceId });
@@ -1209,7 +1321,7 @@ export default function AdminMessagesPage() {
                 className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
               >
                 <button
-                  onClick={() => toggleEmail(m)}
+                  onClick={() => openEmail(m)}
                   className="w-full flex items-start gap-3 p-4 text-left"
                 >
                   <span className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0 text-[12px] font-bold uppercase">
@@ -1249,16 +1361,37 @@ export default function AdminMessagesPage() {
                 </button>
                 {open && (
                   <div className="border-t border-slate-100 px-4 py-3">
-                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                      <div className="flex gap-1.5">
+                        <span className="w-10 shrink-0 font-semibold text-slate-500">From</span>
+                        <span className="min-w-0 break-words">
+                          {isSentFolder ? m.senderName || "Office" : sender}
+                        </span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <span className="w-10 shrink-0 font-semibold text-slate-500">To</span>
+                        <span className="min-w-0 break-words">
+                          {isSentFolder ? m.client.name : "Office"}
+                          {!isSentFolder && m.assignedStaff?.name
+                            ? ` · ${m.assignedStaff.name}`
+                            : ""}
+                        </span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <span className="w-10 shrink-0 font-semibold text-slate-500">Ref</span>
+                        <span className="dc-mono min-w-0 break-words">{meta}</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <span className="w-10 shrink-0 font-semibold text-slate-500">Date</span>
+                        <span>{new Date(m.createdAt).toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    <p className="mt-3 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
                       {m.body}
                     </p>
-                    <p className="mt-2 text-[11px] text-slate-400">
-                      {isSentFolder ? "Sent" : "Received"} {new Date(m.createdAt).toLocaleString()}
-                      {m.assignedStaff?.name ? ` · Assigned to ${m.assignedStaff.name}` : ""}
-                    </p>
 
-                    {!isSentFolder && (
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                         {replyFiles[m.id] && (
                           <div className="mb-2 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700">
                             <Paperclip className="h-3 w-3" /> {replyFiles[m.id]!.name}
@@ -1323,8 +1456,7 @@ export default function AdminMessagesPage() {
                                 : "Reply"}
                           </button>
                         </div>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 )}
               </Card>
