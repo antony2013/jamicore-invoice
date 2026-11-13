@@ -10,6 +10,12 @@ import { isValidTransition } from "@/lib/status-flow";
 import { transitionInvoice } from "@/lib/invoice-transitions";
 import { handleRouteError } from "@/lib/http-errors";
 import { writeAudit, getClientIp } from "@/lib/audit";
+import {
+  BILLING_TYPES,
+  BUSINESS_TYPES,
+  CLIENT_STATUSES,
+  PRIMARY_SERVICES,
+} from "@/lib/client-profile";
 
 const phoneSchema = z
   .string()
@@ -31,6 +37,17 @@ const updateClientSchema = z.object({
   phone: phoneSchema.nullable().optional(),
   email: z.string().email("Invalid email address").toLowerCase().trim().nullable().optional(),
   address: z.string().trim().max(500, "Address is too long").nullable().optional(),
+  contactPerson: z.string().trim().max(100).nullable().optional(),
+  businessType: z.enum(BUSINESS_TYPES).optional(),
+  registrationNumber: z.string().trim().max(100).nullable().optional(),
+  primaryService: z.enum(PRIMARY_SERVICES).nullable().optional(),
+  serviceStartDate: z.string().trim().max(10).nullable().optional(),
+  status: z.enum(CLIENT_STATUSES).optional(),
+  billingType: z.enum(BILLING_TYPES).optional(),
+  baseFee: z.coerce.number().min(0).max(999_999_999).optional(),
+  paymentTerms: z.string().trim().max(100).nullable().optional(),
+  extraWorkAllowed: z.boolean().optional(),
+  internalNotes: z.string().trim().max(2000).nullable().optional(),
   // Default staff for this client (all invoices route here). Null clears it.
   assignedStaffId: z.string().uuid("Invalid staff ID").nullable().optional(),
   // Archive switch: archived clients cannot log in and their tokens die.
@@ -61,7 +78,27 @@ export async function PATCH(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const { name, username, password, phone, email, address, assignedStaffId, archived } = result.data;
+    const {
+      name,
+      username,
+      password,
+      phone,
+      email,
+      address,
+      assignedStaffId,
+      archived,
+      contactPerson,
+      businessType,
+      registrationNumber,
+      primaryService,
+      serviceStartDate,
+      status,
+      billingType,
+      baseFee,
+      paymentTerms,
+      extraWorkAllowed,
+      internalNotes,
+    } = result.data;
 
     // Duplicate check for changed unique fields (usernames span owners + team)
     if (username && username !== (current as any).username) {
@@ -96,6 +133,17 @@ export async function PATCH(
     if (phone !== undefined) (patch as any).phone = phone;
     if (email !== undefined) (patch as any).email = email;
     if (address !== undefined) (patch as any).address = address || null;
+    if (contactPerson !== undefined) (patch as any).contactPerson = contactPerson || null;
+    if (businessType !== undefined) (patch as any).businessType = businessType;
+    if (registrationNumber !== undefined) (patch as any).registrationNumber = registrationNumber || null;
+    if (primaryService !== undefined) (patch as any).primaryService = primaryService || null;
+    if (serviceStartDate !== undefined) (patch as any).serviceStartDate = serviceStartDate || null;
+    if (status !== undefined) (patch as any).status = status;
+    if (billingType !== undefined) (patch as any).billingType = billingType;
+    if (baseFee !== undefined) (patch as any).baseFee = String(baseFee);
+    if (paymentTerms !== undefined) (patch as any).paymentTerms = paymentTerms || null;
+    if (extraWorkAllowed !== undefined) (patch as any).extraWorkAllowed = extraWorkAllowed;
+    if (internalNotes !== undefined) (patch as any).internalNotes = internalNotes || null;
     if (assignedStaffId !== undefined) {
       if (assignedStaffId !== null) {
         const target = await db.query.staff.findFirst({ where: eq(staff.id, assignedStaffId) });
@@ -193,6 +241,19 @@ export async function PATCH(
         phone: (updated as any).phone ?? null,
         email: (updated as any).email ?? null,
         address: (updated as any).address ?? null,
+        contactPerson: updated.contactPerson,
+        businessType: updated.businessType,
+        registrationNumber: updated.registrationNumber,
+        primaryService: updated.primaryService,
+        serviceStartDate: updated.serviceStartDate,
+        status: updated.status,
+        billingType: updated.billingType,
+        baseFee: updated.baseFee,
+        paymentTerms: updated.paymentTerms,
+        extraWorkAllowed: updated.extraWorkAllowed,
+        internalNotes: updated.internalNotes,
+        assignedStaffId: (updated as any).assignedStaffId ?? null,
+        archivedAt: (updated as any).archivedAt ?? null,
       },
       swept,
     });

@@ -183,6 +183,27 @@
       "when": 1793700000000,
       "tag": "0025_client-messages",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793800000000,
+      "tag": "0026_client-profile-fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793900000000,
+      "tag": "0027_client-records",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0028_message-batches",
+      "breakpoints": true
     }
   ]
 }

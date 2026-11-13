@@ -52,6 +52,7 @@ type GeneralMessage = {
   body: string;
   createdAt: string;
   isReadByStaff: boolean;
+  batchId?: string | null;
   general: true;
 };
 
@@ -80,19 +81,33 @@ type StaffDirectMessage = {
   createdAt: string;
   sender?: { id: string; name: string };
   recipient?: { id: string; name: string };
+  batchId?: string | null;
+  /** "direct" office note | "client_copy" copy of a staff → client message. */
+  source?: string;
+  clientId?: string | null;
 };
 
 type RecipientRow =
   | { kind: "client"; id: string; name: string; detail: string | null }
   | { kind: "staff"; id: string; name: string };
 
+/** One Compose send: every recipient row shares this batch. */
+type SentBatch = {
+  key: string;
+  at: string;
+  body: string;
+  clients: Array<{ id: string; name: string }>;
+  staff: Array<{ id: string; name: string }>;
+};
+
 type MailboxRow =
   | { kind: "email"; at: string; email: EmailMessage }
   | { kind: "general"; at: string; general: GeneralMessage }
-  | { kind: "staff"; at: string; staff: StaffDirectMessage };
+  | { kind: "staff"; at: string; staff: StaffDirectMessage }
+  | { kind: "batch"; at: string; batch: SentBatch };
 
 /** Which single message is open in the separate detail view. */
-type ViewingMessage = { kind: "email" | "general" | "staff"; id: string };
+type ViewingMessage = { kind: "email" | "general" | "staff" | "batch"; id: string };
 
 /** Excel-style recipient picker: search, select all, tick list, done. */
 function CheckFilter({
@@ -449,6 +464,60 @@ export default function AdminMessagesPage() {
     }
   }
 
+  /** Reply to a whole sent batch — clients and staff each get a new copy. */
+  async function sendBatchReply(batch: SentBatch) {
+    const note = (replies[batch.key] || "").trim();
+    if (!note) return;
+    setSending(batch.key);
+    const batchId = crypto.randomUUID();
+    try {
+      if (batch.clients.length > 0) {
+        const res = await fetch("/api/client-messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientIds: batch.clients.map((c) => c.id), body: note, batchId }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to send");
+      }
+      if (batch.staff.length > 0) {
+        const res = await fetch("/api/staff-messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipientIds: batch.staff.map((s) => s.id), body: note, batchId }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || "Failed to send");
+      }
+      setReplies((prev) => ({ ...prev, [batch.key]: "" }));
+      await load();
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to send message.");
+    } finally {
+      setSending(null);
+    }
+  }
+
+  /** A staff → client copy is answered to the client, never to the staff. */
+  async function sendClientCopyReply(m: StaffDirectMessage) {
+    const note = (replies[m.id] || "").trim();
+    if (!note || !m.clientId) return;
+    setSending(m.id);
+    try {
+      const res = await fetch("/api/client-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientIds: [m.clientId], body: note }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setReplies((prev) => ({ ...prev, [m.id]: "" }));
+      await load();
+    } catch (err: any) {
+      setLoadError(err.message || "Failed to send message.");
+    } finally {
+      setSending(null);
+    }
+  }
+
   async function sendReply(invoiceId: string, draftId?: string, slot?: string) {
     // Reply boxes are per email row (slot = message id); the send stays invoice-based.
     const key = slot || invoiceId;
@@ -638,6 +707,9 @@ export default function AdminMessagesPage() {
     if (recipientRows.length === 0 || !note) return;
     const clientTargets = selectedRecipients.map((c) => c.id);
     const staffTargets = selectedStaffRows;
+    // One Compose send = one batch, so Sent shows a single row with every
+    // recipient instead of one row per client/staff member.
+    const batchId = crypto.randomUUID();
     setComposeBusy(true);
     setComposeError(null);
     let sent = 0;
@@ -647,7 +719,7 @@ export default function AdminMessagesPage() {
         const res = await fetch("/api/client-messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientIds: clientTargets, body: note }),
+          body: JSON.stringify({ clientIds: clientTargets, body: note, batchId }),
         });
         if (!res.ok) throw new Error((await res.json()).error || "failed");
         sent += clientTargets.length;
@@ -664,7 +736,11 @@ export default function AdminMessagesPage() {
         const res = await fetch("/api/staff-messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recipientIds: staffTargets.map((s) => s.id), body: note }),
+          body: JSON.stringify({
+            recipientIds: staffTargets.map((s) => s.id),
+            body: note,
+            batchId,
+          }),
         });
         if (!res.ok) throw new Error("failed");
         sent += staffTargets.length;
@@ -803,10 +879,50 @@ export default function AdminMessagesPage() {
     return text.toLowerCase().includes(q);
   });
 
-  const visibleStaffMessages = (folder === "sent" ? staffSent : staffInbox).filter((m) => {
+  // Sent is grouped by batch: one Compose send stays one row no matter how
+  // many clients/staff it went to. Staff → client copies are not "sent" rows.
+  const sentBatches = useMemo(() => {
+    type Accumulator = {
+      batch: SentBatch;
+      clientIds: Set<string>;
+      staffIds: Set<string>;
+    };
+    const map = new Map<string, Accumulator>();
+    const ensure = (key: string, at: string, body: string): Accumulator => {
+      let acc = map.get(key);
+      if (!acc) {
+        acc = {
+          batch: { key, at, body, clients: [], staff: [] },
+          clientIds: new Set(),
+          staffIds: new Set(),
+        };
+        map.set(key, acc);
+      }
+      if (new Date(at) < new Date(acc.batch.at)) acc.batch.at = at;
+      return acc;
+    };
+
+    for (const m of generalMessages) {
+      const acc = ensure(m.batchId || m.id, m.createdAt, m.body);
+      if (!acc.clientIds.has(m.client.id)) {
+        acc.clientIds.add(m.client.id);
+        acc.batch.clients.push(m.client);
+      }
+    }
+    for (const m of staffSent) {
+      if (m.source === "client_copy" || !m.recipient) continue;
+      const acc = ensure(m.batchId || m.id, m.createdAt, m.body);
+      if (!acc.staffIds.has(m.recipient.id)) {
+        acc.staffIds.add(m.recipient.id);
+        acc.batch.staff.push(m.recipient);
+      }
+    }
+    return Array.from(map.values()).map((a) => a.batch);
+  }, [generalMessages, staffSent]);
+
+  const visibleStaffMessages = (folder === "sent" ? [] : staffInbox).filter((m) => {
     if (!q) return true;
-    const who = folder === "sent" ? m.recipient?.name : m.sender?.name;
-    return `${who || ""} ${m.body}`.toLowerCase().includes(q);
+    return `${m.sender?.name || ""} ${m.body}`.toLowerCase().includes(q);
   });
 
   const visibleGeneral = generalMessages.filter((m) => {
@@ -814,10 +930,32 @@ export default function AdminMessagesPage() {
     return `${m.client.name} ${m.senderName} ${m.body}`.toLowerCase().includes(q);
   });
 
+  const visibleSentBatches = sentBatches.filter((b) => {
+    if (!q) return true;
+    const text = [
+      b.body,
+      ...b.clients.map((c) => c.name),
+      ...b.staff.map((s) => s.name),
+    ].join(" ");
+    return text.toLowerCase().includes(q);
+  });
+
   const rows: MailboxRow[] = [
     ...visibleEmails.map((email) => ({ kind: "email" as const, at: email.createdAt, email })),
-    ...visibleGeneral.map((general) => ({ kind: "general" as const, at: general.createdAt, general })),
-    ...visibleStaffMessages.map((staff) => ({ kind: "staff" as const, at: staff.createdAt, staff })),
+    ...(folder === "sent"
+      ? visibleSentBatches.map((batch) => ({ kind: "batch" as const, at: batch.at, batch }))
+      : [
+          ...visibleGeneral.map((general) => ({
+            kind: "general" as const,
+            at: general.createdAt,
+            general,
+          })),
+          ...visibleStaffMessages.map((staff) => ({
+            kind: "staff" as const,
+            at: staff.createdAt,
+            staff,
+          })),
+        ]),
   ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
   const isViewingRow = (row: MailboxRow): boolean => {
@@ -827,6 +965,9 @@ export default function AdminMessagesPage() {
     }
     if (row.kind === "general") {
       return viewing.kind === "general" && viewing.id === row.general.id;
+    }
+    if (row.kind === "batch") {
+      return viewing.kind === "batch" && viewing.id === row.batch.key;
     }
     return viewing.kind === "staff" && viewing.id === row.staff.id;
   };
@@ -843,9 +984,13 @@ export default function AdminMessagesPage() {
       const general = generalMessages.find((x) => x.id === viewing.id);
       return general ? [{ kind: "general" as const, at: general.createdAt, general }] : [];
     }
+    if (viewing.kind === "batch") {
+      const batch = sentBatches.find((x) => x.key === viewing.id);
+      return batch ? [{ kind: "batch" as const, at: batch.at, batch }] : [];
+    }
     const staff = (folder === "sent" ? staffSent : staffInbox).find((x) => x.id === viewing.id);
     return staff ? [{ kind: "staff" as const, at: staff.createdAt, staff }] : [];
-  }, [viewing, emails, generalMessages, folder, staffInbox, staffSent]);
+  }, [viewing, emails, generalMessages, folder, staffInbox, staffSent, sentBatches]);
 
   const shownRows = viewing ? viewedRows : rows;
   const totalRows = rows.length;
@@ -1102,6 +1247,115 @@ export default function AdminMessagesPage() {
             </>
           )}
           {shownRows.map((row) => {
+            if (row.kind === "batch") {
+              const b = row.batch;
+              const names = [
+                ...b.clients.map((c) => c.name),
+                ...b.staff.map((s) => s.name),
+              ];
+              const open = isViewingRow(row);
+              const { subject, preview } = splitMessage(b.body);
+              const headline =
+                names.length === 0
+                  ? "No recipients"
+                  : names.length <= 2
+                    ? `To ${names.join(", ")}`
+                    : `To ${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+              return (
+                <Card
+                  key={`batch-${b.key}`}
+                  className={`overflow-hidden border-l-4 bg-white ${
+                    b.clients.length > 0 ? "border-l-blue-500" : "border-l-amber-500"
+                  }`}
+                >
+                  <button
+                    onClick={() => setViewing({ kind: "batch", id: b.key })}
+                    className="w-full flex items-start gap-3 p-4 text-left"
+                  >
+                    <span className="w-9 h-9 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center flex-shrink-0 text-[12px] font-bold uppercase">
+                      {(b.clients[0]?.name || b.staff[0]?.name || "?").slice(0, 1)}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="min-w-0 truncate text-[12px] font-semibold text-slate-700">
+                          {headline}
+                        </span>
+                        <Badge className="bg-slate-200 text-slate-700">
+                          {names.length} recipient{names.length === 1 ? "" : "s"}
+                        </Badge>
+                        <span className="ml-auto whitespace-nowrap text-[11px] text-slate-400">
+                          {formatWhen(b.at)}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block text-[13px] font-bold text-slate-900 truncate">
+                        {subject}
+                      </span>
+                      {!open && preview ? (
+                        <span className="block text-[11px] text-slate-500 truncate">
+                          {preview.length > 140 ? `${preview.slice(0, 140)}…` : preview}
+                        </span>
+                      ) : null}
+                      <span className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[11px] text-slate-400">
+                        <span>
+                          Sent to {b.clients.length} client{b.clients.length === 1 ? "" : "s"}
+                        </span>
+                        {b.staff.length > 0 ? <span>· {b.staff.length} staff</span> : null}
+                      </span>
+                    </span>
+                    <span className="mt-1 text-slate-400">
+                      {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </span>
+                  </button>
+                  {open && (
+                    <div className="border-t border-slate-100 px-4 py-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">From</span>
+                          <span className="min-w-0 break-words">You</span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">To</span>
+                          <span className="min-w-0 break-words">
+                            {names.length > 0 ? names.join(", ") : "—"}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <span className="w-10 shrink-0 font-semibold text-slate-500">Date</span>
+                          <span>{new Date(b.at).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <p className="mt-3 whitespace-pre-wrap text-[12px] leading-relaxed text-slate-700">
+                        {b.body}
+                      </p>
+
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                        <textarea
+                          value={replies[b.key] || ""}
+                          onChange={(e) =>
+                            setReplies((prev) => ({ ...prev, [b.key]: e.target.value }))
+                          }
+                          placeholder="Reply to all recipients…"
+                          rows={2}
+                          maxLength={500}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none"
+                        />
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            onClick={() => sendBatchReply(b)}
+                            disabled={sending === b.key || !(replies[b.key] || "").trim()}
+                            className="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {sending === b.key ? "Sending…" : "Reply all"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            }
+
             if (row.kind === "general") {
               const m = row.general;
               const isSentFolder = folder === "sent";
@@ -1112,7 +1366,9 @@ export default function AdminMessagesPage() {
               return (
                 <Card
                   key={`general-${m.id}`}
-                  className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                  className={`overflow-hidden border-l-4 border-l-blue-500 ${
+                    unread ? "bg-[#F5F9FF]" : "bg-white"
+                  }`}
                 >
                   <button
                     onClick={() => openGeneral(m)}
@@ -1205,12 +1461,17 @@ export default function AdminMessagesPage() {
               const isSentFolder = folder === "sent";
               const who = isSentFolder ? m.recipient?.name : m.sender?.name;
               const unread = !isSentFolder && m.isRead === false;
+              // A staff → client message lands here as a copy; answering it
+              // must go back to the client, not to the staff member.
+              const isClientCopy = !isSentFolder && m.source === "client_copy" && !!m.clientId;
               const { subject, preview } = splitMessage(m.body);
               const open = isViewingRow(row);
               return (
                 <Card
                   key={`staff-${m.id}`}
-                  className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                  className={`overflow-hidden border-l-4 ${
+                    isClientCopy ? "border-l-emerald-500" : "border-l-amber-500"
+                  } ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
                 >
                   <button
                     onClick={() => openStaffMessage(m)}
@@ -1224,7 +1485,15 @@ export default function AdminMessagesPage() {
                         <span className="text-[12px] font-semibold text-slate-700 truncate">
                           {isSentFolder ? `To ${who || "Staff"}` : who || "Staff"}
                         </span>
-                        <Badge className="bg-slate-200 text-slate-700">Staff</Badge>
+                        <Badge
+                          className={
+                            isClientCopy
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-slate-200 text-slate-700"
+                          }
+                        >
+                          {isClientCopy ? "Client message" : "Staff"}
+                        </Badge>
                         {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
                         <span className="ml-auto text-[11px] text-slate-400 whitespace-nowrap">
                           {formatWhen(m.createdAt)}
@@ -1239,7 +1508,9 @@ export default function AdminMessagesPage() {
                         </span>
                       ) : null}
                       <span className="mt-1 block text-[11px] text-slate-400">
-                        Office note {isSentFolder ? "sent" : "received"}
+                        {isClientCopy
+                          ? "Copy of a message sent to a client"
+                          : `Office note ${isSentFolder ? "sent" : "received"}`}
                       </span>
                     </span>
                     <span className="mt-1 text-slate-400">
@@ -1277,27 +1548,39 @@ export default function AdminMessagesPage() {
                           onChange={(e) =>
                             setReplies((prev) => ({ ...prev, [m.id]: e.target.value }))
                           }
-                          placeholder="Reply to this staff note…"
+                          placeholder={
+                            isClientCopy ? "Reply to the client…" : "Reply to this staff note…"
+                          }
                           rows={2}
                           maxLength={500}
                           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none"
                         />
                         <div className="mt-2 flex items-center gap-2">
                           <button
-                            onClick={() =>
+                            onClick={() => {
+                              if (isClientCopy) {
+                                sendClientCopyReply(m);
+                                return;
+                              }
                               sendStaffReply(
                                 m,
                                 isSentFolder ? m.recipient?.id : m.sender?.id
-                              )
-                            }
+                              );
+                            }}
                             disabled={
                               sending === m.id ||
                               !(replies[m.id] || "").trim() ||
-                              !(isSentFolder ? m.recipient?.id : m.sender?.id)
+                              (isClientCopy
+                                ? !m.clientId
+                                : !(isSentFolder ? m.recipient?.id : m.sender?.id))
                             }
                             className="ml-auto rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                           >
-                            {sending === m.id ? "Sending…" : "Reply"}
+                            {sending === m.id
+                              ? "Sending…"
+                              : isClientCopy
+                                ? "Reply to client"
+                                : "Reply"}
                           </button>
                         </div>
                       </div>
@@ -1318,7 +1601,9 @@ export default function AdminMessagesPage() {
             return (
               <Card
                 key={m.id}
-                className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                className={`overflow-hidden border-l-4 border-l-slate-300 ${
+                  unread ? "bg-[#F5F9FF]" : "bg-white"
+                }`}
               >
                 <button
                   onClick={() => openEmail(m)}

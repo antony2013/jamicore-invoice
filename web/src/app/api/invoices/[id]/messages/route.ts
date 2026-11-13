@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { invoiceMessages } from "@/db/schema";
+import { clients, invoiceMessages } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { officeInvoiceOr404 } from "@/lib/invoice-access";
+import { copyClientMessageToAdmins } from "@/lib/client-message-copy";
 
 /**
  * Office side of the per-invoice client↔staff thread.
@@ -91,6 +92,29 @@ export async function POST(
         isReadByClient: false,
       })
       .returning();
+
+    // Staff replies also reach every admin's inbox as a copy. Admin replies do
+    // not need one: the admin is the sender.
+    if (me.role !== "admin") {
+      try {
+        const client = await db.query.clients.findFirst({
+          where: eq(clients.id, found.invoice.clientId),
+          columns: { name: true },
+        });
+        await copyClientMessageToAdmins({
+          senderId: me.id,
+          clientId: found.invoice.clientId,
+          clientName: client?.name ?? "Client",
+          body: result.data.body,
+          reference:
+            found.invoice.jobNumber || found.invoice.ocrData?.invoiceNo || null,
+        });
+      } catch (copyError) {
+        // The client message is already sent; a failed copy must not fail it.
+        console.error("Failed to copy client message to admins:", copyError);
+      }
+    }
+
     return NextResponse.json({ success: true, message: toPublic(created) }, { status: 201 });
   } catch (error: any) {
     console.error("Error in POST /api/invoices/[id]/messages:", error);

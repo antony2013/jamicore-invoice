@@ -13,6 +13,8 @@ import { touchPresence } from "@/lib/presence";
 const sendSchema = z.object({
   recipientIds: z.array(z.string().uuid()).min(1).max(50),
   body: z.string().trim().min(1).max(500),
+  /** Shared by every recipient row so one send groups as one mailbox row. */
+  batchId: z.string().uuid().optional(),
 });
 
 export async function GET() {
@@ -29,6 +31,9 @@ export async function GET() {
         createdAt: staffMessages.createdAt,
         senderId: staffMessages.senderId,
         senderName: staff.name,
+        batchId: staffMessages.batchId,
+        source: staffMessages.source,
+        clientId: staffMessages.clientId,
       })
       .from(staffMessages)
       .innerJoin(staff, eq(staff.id, staffMessages.senderId))
@@ -43,6 +48,9 @@ export async function GET() {
         createdAt: staffMessages.createdAt,
         recipientId: staffMessages.recipientId,
         recipientName: staff.name,
+        batchId: staffMessages.batchId,
+        source: staffMessages.source,
+        clientId: staffMessages.clientId,
       })
       .from(staffMessages)
       .innerJoin(staff, eq(staff.id, staffMessages.recipientId))
@@ -58,12 +66,18 @@ export async function GET() {
         isRead: m.isRead,
         createdAt: m.createdAt,
         sender: { id: m.senderId, name: m.senderName },
+        batchId: m.batchId,
+        source: m.source,
+        clientId: m.clientId,
       })),
       sent: sent.map((m) => ({
         id: m.id,
         body: m.body,
         createdAt: m.createdAt,
         recipient: { id: m.recipientId, name: m.recipientName },
+        batchId: m.batchId,
+        source: m.source,
+        clientId: m.clientId,
       })),
       unread: inbox.filter((m) => !m.isRead).length,
     });
@@ -94,6 +108,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Pick at least one other staff member." }, { status: 400 });
     }
 
+    const batchId = parsed.data.batchId ?? crypto.randomUUID();
+
     const rows = await db
       .insert(staffMessages)
       .values(
@@ -101,11 +117,12 @@ export async function POST(request: Request) {
           senderId: me.id,
           recipientId,
           body: parsed.data.body,
+          batchId,
         }))
       )
       .returning({ id: staffMessages.id });
 
-    return NextResponse.json({ success: true, messages: rows }, { status: 201 });
+    return NextResponse.json({ success: true, messages: rows, batchId }, { status: 201 });
   } catch (error: any) {
     console.error("Error in POST /api/staff-messages:", error);
     return NextResponse.json({ error: "Failed to send staff message" }, { status: 500 });

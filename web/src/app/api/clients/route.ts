@@ -8,6 +8,12 @@ import { requireAdmin } from "@/lib/session";
 import { safeStaff } from "@/lib/safe-columns";
 import { writeAudit, getClientIp } from "@/lib/audit";
 import { touchPresence } from "@/lib/presence";
+import {
+  BILLING_TYPES,
+  BUSINESS_TYPES,
+  CLIENT_STATUSES,
+  PRIMARY_SERVICES,
+} from "@/lib/client-profile";
 
 const phoneSchema = z
   .string()
@@ -22,6 +28,7 @@ const usernameSchema = z
   .max(50)
   .regex(/^[a-z0-9._-]+$/, "User ID may contain letters, numbers, dots, underscores and hyphens");
 
+// Client management profile vocabularies (shared with the edit API).
 const createClientSchema = z
   .object({
     name: z.string().min(2, "Name must be at least 2 characters").max(100),
@@ -30,6 +37,17 @@ const createClientSchema = z
     phone: phoneSchema.optional(),
     email: z.string().email("Invalid email address").toLowerCase().trim().optional(),
     address: z.string().trim().max(500, "Address is too long").optional(),
+    contactPerson: z.string().trim().max(100).optional(),
+    businessType: z.enum(BUSINESS_TYPES).optional(),
+    registrationNumber: z.string().trim().max(100).optional(),
+    primaryService: z.enum(PRIMARY_SERVICES).optional(),
+    serviceStartDate: z.string().trim().max(10).optional(),
+    status: z.enum(CLIENT_STATUSES).optional(),
+    billingType: z.enum(BILLING_TYPES).optional(),
+    baseFee: z.coerce.number().min(0).max(999_999_999).optional(),
+    paymentTerms: z.string().trim().max(100).optional(),
+    extraWorkAllowed: z.boolean().optional(),
+    internalNotes: z.string().trim().max(2000).optional(),
   })
   .refine((d) => d.phone || d.email, {
     message: "Either phone (E.164) or email is required",
@@ -43,6 +61,17 @@ function toPublicClient(c: typeof clients.$inferSelect) {
     phone: (c as { phone?: string | null }).phone ?? null,
     email: (c as { email?: string | null }).email ?? null,
     address: (c as { address?: string | null }).address ?? null,
+    contactPerson: c.contactPerson,
+    businessType: c.businessType,
+    registrationNumber: c.registrationNumber,
+    primaryService: c.primaryService,
+    serviceStartDate: c.serviceStartDate,
+    status: c.status,
+    billingType: c.billingType,
+    baseFee: c.baseFee,
+    paymentTerms: c.paymentTerms,
+    extraWorkAllowed: c.extraWorkAllowed,
+    internalNotes: c.internalNotes,
     createdAt: c.createdAt,
   };
 }
@@ -68,6 +97,17 @@ export async function GET() {
       phone: (c as { phone?: string | null }).phone ?? null,
       email: (c as { email?: string | null }).email ?? null,
       address: (c as { address?: string | null }).address ?? null,
+      contactPerson: c.contactPerson,
+      businessType: c.businessType,
+      registrationNumber: c.registrationNumber,
+      primaryService: c.primaryService,
+      serviceStartDate: c.serviceStartDate,
+      status: c.status,
+      billingType: c.billingType,
+      baseFee: c.baseFee,
+      paymentTerms: c.paymentTerms,
+      extraWorkAllowed: c.extraWorkAllowed,
+      internalNotes: c.internalNotes,
       assignedStaffId: (c as { assignedStaffId?: string | null }).assignedStaffId ?? null,
       assignedStaffName: (c as any).assignedStaff?.name ?? null,
       archivedAt: (c as { archivedAt?: Date | null }).archivedAt ?? null,
@@ -99,7 +139,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, username, password, phone, email, address } = result.data;
+    const {
+      name,
+      username,
+      password,
+      phone,
+      email,
+      address,
+      contactPerson,
+      businessType,
+      registrationNumber,
+      primaryService,
+      serviceStartDate,
+      status,
+      billingType,
+      baseFee,
+      paymentTerms,
+      extraWorkAllowed,
+      internalNotes,
+    } = result.data;
 
     // Duplicate check on username, phone and/or email.
     // Usernames must ALSO be unique across team staff (single login field).
@@ -128,6 +186,17 @@ export async function POST(request: Request) {
           phone: phone ?? null,
           email: email ?? null,
           address: address || null,
+          contactPerson: contactPerson || null,
+          ...(businessType ? { businessType } : {}),
+          registrationNumber: registrationNumber || null,
+          ...(primaryService ? { primaryService } : {}),
+          serviceStartDate: serviceStartDate || null,
+          ...(status ? { status } : {}),
+          ...(billingType ? { billingType } : {}),
+          ...(baseFee !== undefined ? { baseFee: String(baseFee) } : {}),
+          paymentTerms: paymentTerms || null,
+          ...(extraWorkAllowed !== undefined ? { extraWorkAllowed } : {}),
+          internalNotes: internalNotes || null,
         })
         .returning();
       await writeAudit(tx, {

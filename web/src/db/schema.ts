@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, unique, uuid, integer, jsonb, boolean, pgEnum, primaryKey } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, unique, uuid, integer, jsonb, boolean, pgEnum, primaryKey, date, numeric } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // Enums
@@ -33,6 +33,21 @@ export const clients = pgTable("clients", {
   // Business address printed/kept on the client account (admin-maintained,
   // optional). Outlets carry their own address for branch-level detail.
   address: text("address"),
+  // Admin-maintained client profile (client management screen). These are
+  // business/contract details only - login state stays on archivedAt.
+  contactPerson: text("contact_person"),
+  businessType: text("business_type").notNull().default("company"), // company | individual | partnership | other
+  registrationNumber: text("registration_number"),
+  primaryService: text("primary_service"), // administration | accounting | documentation | data_entry | other
+  serviceStartDate: date("service_start_date"),
+  // Business status shown in admin lists. Separate from archivedAt (login).
+  status: text("status").notNull().default("active"), // active | inactive | suspended
+  billingType: text("billing_type").notNull().default("monthly"),
+  // KWD keeps 3 decimals, hence scale 3. Stored as numeric, returned as text.
+  baseFee: numeric("base_fee", { precision: 12, scale: 3 }).notNull().default("0"),
+  paymentTerms: text("payment_terms"),
+  extraWorkAllowed: boolean("extra_work_allowed").notNull().default(true),
+  internalNotes: text("internal_notes"),
   // Default staff for this client: ALL of their invoices (current backlog
   // via bulk-assign, new ones via default-staff auto-assign at upload) route
   // to this person. Null = manual assignment per invoice.
@@ -356,11 +371,19 @@ export const staffMessages = pgTable(
     recipientId: uuid("recipient_id").references(() => staff.id, { onDelete: "cascade" }).notNull(),
     body: text("body").notNull(),
     isRead: boolean("is_read").notNull().default(false),
+    // One Compose send shares a batch id across every recipient.
+    batchId: uuid("batch_id").defaultRandom().notNull(),
+    // "direct" office note | "client_copy" delivered copy of a client message.
+    source: text("source").notNull().default("direct"),
+    // For client_copy rows: the client the copied message was addressed to.
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index("staff_messages_recipient_idx").on(t.recipientId, t.createdAt),
     index("staff_messages_sender_idx").on(t.senderId, t.createdAt),
+    index("staff_messages_batch_idx").on(t.batchId),
+    index("staff_messages_client_idx").on(t.clientId),
   ]
 );
 
@@ -378,11 +401,39 @@ export const clientMessages = pgTable(
     body: text("body").notNull(),
     isReadByStaff: boolean("is_read_by_staff").notNull().default(false),
     isReadByClient: boolean("is_read_by_client").notNull().default(false),
+    // One Compose send shares a batch id across every recipient.
+    batchId: uuid("batch_id").defaultRandom().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index("client_messages_client_idx").on(t.clientId, t.createdAt),
     index("client_messages_sender_idx").on(t.senderType, t.createdAt),
+    index("client_messages_batch_idx").on(t.batchId),
+  ]
+);
+
+// 5d. Client Records - generic client-scoped entries for the admin client
+// profile (services, tasks, documents, billing, payments, meetings,
+// notifications). Invoices/reports/messages keep their dedicated tables.
+export const clientRecords = pgTable(
+  "client_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    type: text("type").notNull(), // service | task | document | billing | payment | meeting | notification
+    title: text("title").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 3 }).notNull().default("0"),
+    recordDate: date("record_date"),
+    status: text("status").notNull().default("pending"), // pending | active | paid | completed | overdue | cancelled
+    assignedTo: text("assigned_to"),
+    description: text("description"),
+    // Staff id of the admin who created the row (plain text, no FK).
+    createdById: text("created_by_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("client_records_client_type_idx").on(t.clientId, t.type),
+    index("client_records_date_idx").on(t.recordDate),
   ]
 );
 
@@ -391,9 +442,17 @@ export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
   outlets: many(outlets),
   team: many(clientStaff),
+  records: many(clientRecords),
   assignedStaff: one(staff, {
     fields: [clients.assignedStaffId],
     references: [staff.id],
+  }),
+}));
+
+export const clientRecordsRelations = relations(clientRecords, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientRecords.clientId],
+    references: [clients.id],
   }),
 }));
 

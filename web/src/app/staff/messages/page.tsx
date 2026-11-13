@@ -52,6 +52,10 @@ type StaffDirectMessage = {
   createdAt: string;
   sender?: { id: string; name: string };
   recipient?: { id: string; name: string };
+  batchId?: string | null;
+  /** "direct" office note | "client_copy" copy of a client message. */
+  source?: string;
+  clientId?: string | null;
 };
 
 type Draft = {
@@ -828,7 +832,9 @@ export default function StaffMessagesPage() {
               return (
                 <Card
                   key={`general-${m.id}`}
-                  className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                  className={`overflow-hidden border-l-4 border-l-blue-500 ${
+                    unread ? "bg-[#F5F9FF]" : "bg-white"
+                  }`}
                 >
                   <button
                     onClick={() => openGeneral(m)}
@@ -921,12 +927,17 @@ export default function StaffMessagesPage() {
               const isSentFolder = folder === "sent";
               const who = isSentFolder ? m.recipient?.name : m.sender?.name;
               const unread = !isSentFolder && m.isRead === false;
+              // Copied client messages are green so they never read as a
+              // direct office note (orange).
+              const isClientCopy = m.source === "client_copy";
               const { subject, preview } = splitMessage(m.body);
               const open = isViewingRow(row);
               return (
                 <Card
                   key={`staff-${m.id}`}
-                  className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                  className={`overflow-hidden border-l-4 ${
+                    isClientCopy ? "border-l-emerald-500" : "border-l-amber-500"
+                  } ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
                 >
                   <button
                     onClick={() => openStaffMessage(m)}
@@ -940,7 +951,15 @@ export default function StaffMessagesPage() {
                         <span className="text-[12px] font-semibold text-slate-700 truncate">
                           {isSentFolder ? `To ${who || "Staff"}` : who || "Staff"}
                         </span>
-                        <Badge className="bg-slate-200 text-slate-700">Staff</Badge>
+                        <Badge
+                          className={
+                            isClientCopy
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-slate-200 text-slate-700"
+                          }
+                        >
+                          {isClientCopy ? "Client message" : "Staff"}
+                        </Badge>
                         {unread && <Badge className="bg-blue-600 text-white">New</Badge>}
                         <span className="ml-auto text-[11px] text-slate-400 whitespace-nowrap">
                           {formatWhen(m.createdAt)}
@@ -1034,7 +1053,9 @@ export default function StaffMessagesPage() {
             return (
               <Card
                 key={m.id}
-                className={`overflow-hidden ${unread ? "bg-[#F5F9FF]" : "bg-white"}`}
+                className={`overflow-hidden border-l-4 border-l-slate-300 ${
+                  unread ? "bg-[#F5F9FF]" : "bg-white"
+                }`}
               >
                 <button
                   onClick={() => openEmail(m)}

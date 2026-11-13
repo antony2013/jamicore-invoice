@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { clientMessages, clients, invoices, staffMessages } from "@/db/schema";
+import { clientMessages, clients, invoices } from "@/db/schema";
 import { requireOffice } from "@/lib/session";
 import { touchPresence } from "@/lib/presence";
 import { staffInvoiceScope } from "@/lib/invoice-access";
+import { copyClientMessageToAdmins } from "@/lib/client-message-copy";
 
 /**
  * General office <-> client messages (Compose "To: Client"). These are plain
@@ -21,6 +22,8 @@ import { staffInvoiceScope } from "@/lib/invoice-access";
 const sendSchema = z.object({
   clientIds: z.array(z.string().uuid()).min(1).max(50),
   body: z.string().trim().min(1).max(500),
+  /** Shared by every recipient row so one send groups as one mailbox row. */
+  batchId: z.string().uuid().optional(),
 });
 
 function visibleClientIds(staffId: string) {
@@ -70,6 +73,7 @@ export async function GET(request: Request) {
         createdAt: clientMessages.createdAt,
         isReadByStaff: clientMessages.isReadByStaff,
         isReadByClient: clientMessages.isReadByClient,
+        batchId: clientMessages.batchId,
         clientName: clients.name,
       })
       .from(clientMessages)
@@ -106,6 +110,7 @@ export async function GET(request: Request) {
         createdAt: r.createdAt,
         isReadByStaff: r.isReadByStaff,
         isReadByClient: r.isReadByClient,
+        batchId: r.batchId,
         general: true,
       })),
       totalUnread: Number(unreadRow?.n ?? 0),
@@ -147,13 +152,14 @@ export async function POST(request: Request) {
       .select({
         id: clients.id,
         name: clients.name,
-        assignedStaffId: clients.assignedStaffId,
       })
       .from(clients)
       .where(inArray(clients.id, clientIds));
     if (existing.length !== clientIds.length) {
       return NextResponse.json({ error: "Client not found." }, { status: 404 });
     }
+
+    const batchId = parsed.data.batchId ?? crypto.randomUUID();
 
     const rows = await db
       .insert(clientMessages)
@@ -166,58 +172,33 @@ export async function POST(request: Request) {
           body: parsed.data.body,
           isReadByStaff: true,
           isReadByClient: false,
+          batchId,
         }))
       )
       .returning({ id: clientMessages.id, clientId: clientMessages.clientId });
 
-    // An admin writing to a client also informs the staff member who owns that
-    // client (clients.assignedStaffId, falling back to the newest invoice's
-    // assignee). The copy is an internal staff note, never a client message, so
-    // the client still receives exactly one message.
-    let staffCopies: Array<{ id: string }> = [];
-    if (me.role === "admin") {
+    // A staff member writing to a client also lands a copy in every admin's
+    // inbox. Admins see their own client messages already, so admin sends do
+    // not create a copy. The client still receives exactly one message.
+    let copyCount = 0;
+    if (me.role !== "admin") {
       const nameById = new Map(existing.map((c) => [c.id, c.name]));
-      const staffByClient = new Map<string, string>();
-      for (const c of existing) {
-        if (c.assignedStaffId && c.assignedStaffId !== me.id) {
-          staffByClient.set(c.id, c.assignedStaffId);
-        }
-      }
-      const unassigned = existing
-        .filter((c) => !staffByClient.has(c.id))
-        .map((c) => c.id);
-      if (unassigned.length > 0) {
-        const latest = await db
-          .select({
-            clientId: invoices.clientId,
-            assignedTo: invoices.assignedTo,
-            createdAt: invoices.createdAt,
+      const copied = await Promise.all(
+        clientIds.map((clientId) =>
+          copyClientMessageToAdmins({
+            senderId: me.id,
+            clientId,
+            clientName: nameById.get(clientId) ?? "Client",
+            body: parsed.data.body,
+            batchId,
           })
-          .from(invoices)
-          .where(inArray(invoices.clientId, unassigned))
-          .orderBy(desc(invoices.createdAt));
-        for (const inv of latest) {
-          if (staffByClient.has(inv.clientId)) continue;
-          if (inv.assignedTo && inv.assignedTo !== me.id) {
-            staffByClient.set(inv.clientId, inv.assignedTo);
-          }
-        }
-      }
-      const copies = Array.from(staffByClient, ([clientId, recipientId]) => ({
-        senderId: me.id,
-        recipientId,
-        body: `Client message · ${nameById.get(clientId) ?? "Client"}\n${parsed.data.body}`,
-      }));
-      if (copies.length > 0) {
-        staffCopies = await db
-          .insert(staffMessages)
-          .values(copies)
-          .returning({ id: staffMessages.id });
-      }
+        )
+      );
+      copyCount = copied.reduce((sum, n) => sum + n, 0);
     }
 
     return NextResponse.json(
-      { success: true, messages: rows, staffCopies: staffCopies.length },
+      { success: true, messages: rows, batchId, adminCopies: copyCount },
       { status: 201 }
     );
   } catch (error: any) {
