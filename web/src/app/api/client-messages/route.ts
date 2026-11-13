@@ -54,13 +54,13 @@ export async function GET(request: Request) {
     if (clientFilter) {
       conditions.push(eq(clientMessages.clientId, clientFilter));
     }
+    // Sent is always personal: only what this user sent. Without this an admin
+    // Sent folder also listed every staff member's client messages.
+    if (folder === "sent") {
+      conditions.push(eq(clientMessages.senderId, me.id));
+    }
     if (me.role !== "admin") {
       conditions.push(inArray(clientMessages.clientId, visibleClientIds(me.id)));
-      // Sent is personal: another staff member's (or the admin's) message must
-      // never show up in this staff member's Sent folder.
-      if (folder === "sent") {
-        conditions.push(eq(clientMessages.senderId, me.id));
-      }
     }
 
     const rows = await db
