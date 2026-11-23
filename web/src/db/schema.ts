@@ -427,6 +427,12 @@ export const clientRecords = pgTable(
     status: text("status").notNull().default("pending"), // pending | active | paid | completed | overdue | cancelled
     assignedTo: text("assigned_to"),
     description: text("description"),
+    // Work-details line items (Add Service side panel).
+    workCategory: text("work_category"),
+    quantity: numeric("quantity", { precision: 12, scale: 3 }).default("0").notNull(),
+    rate: numeric("rate", { precision: 12, scale: 3 }).default("0").notNull(),
+    discountPercent: numeric("discount_percent", { precision: 5, scale: 2 }).default("0").notNull(),
+    taxPercent: numeric("tax_percent", { precision: 5, scale: 2 }).default("5").notNull(),
     // Staff id of the admin who created the row (plain text, no FK).
     createdById: text("created_by_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

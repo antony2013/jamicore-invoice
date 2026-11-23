@@ -28,8 +28,9 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const defaultItems =
-    role === "admin"
+  const baseItems =
+    nav ??
+    (role === "admin"
       ? [
           { href: "/admin/dashboard", label: "Dashboard" },
           { href: "/admin/messages", label: "Messages" },
@@ -44,8 +45,18 @@ export default function AppShell({
           { href: "/staff/dashboard", label: "Dashboard" },
           { href: "/staff/history", label: "History" },
           { href: "/staff/clients", label: "Client" },
-        ];
-  const items = nav ?? defaultItems;
+        ]);
+
+  // Inside a single client, expose its Payment page in the side menu.
+  const clientId = pathname.match(/^\/admin\/clients\/([^/]+)/)?.[1];
+  const items =
+    !nav && role === "admin" && clientId
+      ? [
+          ...baseItems.slice(0, 4),
+          { href: `/admin/clients/${clientId}/payment`, label: "Payment" },
+          ...baseItems.slice(4),
+        ]
+      : baseItems;
 
   // One active item only: the deepest matching path wins, so /reports/trash
   // does not also light up /reports. Query strings are ignored here.

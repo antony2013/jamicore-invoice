@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import CustomCycleInput from "@/components/CustomCycleInput";
+import WorkDetailsDrawer from "@/components/WorkDetailsDrawer";
 import {
   CLIENT_RECORD_STATUSES,
   CLIENT_RECORD_STATUS_LABELS,
@@ -101,6 +102,7 @@ export default function AdminClientDetailPage({
   });
   const [records, setRecords] = useState<any[]>([]);
   const [recordTypeFilter, setRecordTypeFilter] = useState<string>("service");
+  const [showWorkDrawer, setShowWorkDrawer] = useState(false);
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [savingRecord, setSavingRecord] = useState(false);
@@ -468,6 +470,12 @@ export default function AdminClientDetailPage({
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
   const pendingTotal = paymentRecords
     .filter((r) => r.status === "pending" || r.status === "overdue")
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+
+  // Work billed to this client (the side-panel Work Details page shows the
+  // full breakdown).
+  const workGrandTotal = records
+    .filter((r) => r.type === "service" && r.status !== "cancelled")
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
   return (
@@ -1189,13 +1197,19 @@ export default function AdminClientDetailPage({
             <button
               type="button"
               onClick={() => {
-                setShowRecordForm((v) => !v);
                 setRecordError(null);
+                if (recordTypeFilter === "service") {
+                  setShowWorkDrawer(true);
+                  return;
+                }
+                setShowRecordForm((v) => !v);
               }}
               className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
             >
               <Plus className="h-3.5 w-3.5" />
-              Add {CLIENT_RECORD_TYPE_LABELS[recordTypeFilter] ?? "Record"}
+              {recordTypeFilter === "service"
+                ? "Add work"
+                : `Add ${CLIENT_RECORD_TYPE_LABELS[recordTypeFilter] ?? "Record"}`}
             </button>
           )}
         </div>
@@ -1456,6 +1470,14 @@ export default function AdminClientDetailPage({
           </Link>
         )}
       </div>
+      <WorkDetailsDrawer
+        clientId={id}
+        open={showWorkDrawer}
+        onClose={() => setShowWorkDrawer(false)}
+        onSaved={load}
+        savedGrandTotal={workGrandTotal}
+        amountPaid={paidTotal}
+      />
     </AppShell>
   );
 }

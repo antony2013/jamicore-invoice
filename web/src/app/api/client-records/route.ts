@@ -17,6 +17,12 @@ const createRecordSchema = z.object({
   status: z.enum(CLIENT_RECORD_STATUSES).optional(),
   assignedTo: z.string().trim().max(200).nullable().optional(),
   description: z.string().trim().max(2000).nullable().optional(),
+  // Work Details line-item fields (service records).
+  workCategory: z.string().trim().max(100).nullable().optional(),
+  quantity: z.coerce.number().min(0).max(999_999).optional(),
+  rate: z.coerce.number().min(0).max(999_999_999).optional(),
+  discountPercent: z.coerce.number().min(0).max(100).optional(),
+  taxPercent: z.coerce.number().min(0).max(100).optional(),
 });
 
 export async function GET(request: Request) {
@@ -64,8 +70,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const { clientId, type, title, amount, recordDate, status, assignedTo, description } =
-      result.data;
+    const {
+      clientId,
+      type,
+      title,
+      amount,
+      recordDate,
+      status,
+      assignedTo,
+      description,
+      workCategory,
+      quantity,
+      rate,
+      discountPercent,
+      taxPercent,
+    } = result.data;
     const client = await db.query.clients.findFirst({
       where: eq(clients.id, clientId),
       columns: { id: true, name: true },
@@ -86,6 +105,11 @@ export async function POST(request: Request) {
           ...(status ? { status } : {}),
           assignedTo: assignedTo || null,
           description: description || null,
+          workCategory: workCategory || null,
+          quantity: String(quantity ?? 0),
+          rate: String(rate ?? 0),
+          discountPercent: String(discountPercent ?? 0),
+          taxPercent: String(taxPercent ?? 5),
           createdById: me.id,
         })
         .returning();
