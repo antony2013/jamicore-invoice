@@ -443,6 +443,20 @@ export const clientRecords = pgTable(
   ]
 );
 
+export const clientPaymentReminders = pgTable("client_payment_reminders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .references(() => clients.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+  enabled: boolean("enabled").default(true).notNull(),
+  daysBefore: integer("days_before").default(3).notNull(),
+  /** Due date (YYYY-MM-DD) the reminder was last sent for — guards duplicates. */
+  lastSentKey: text("last_sent_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Relations
 export const clientsRelations = relations(clients, ({ many, one }) => ({
   invoices: many(invoices),
