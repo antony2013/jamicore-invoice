@@ -60,6 +60,16 @@ export default function AdminDashboard() {
     return qs ? `/api/invoices/stats?${qs}` : "/api/invoices/stats";
   }
 
+  // A 401 means the JWT session is gone (expired, revoked, or the DB was
+  // unreachable during re-validation). Send the user to /login with a deep
+  // link back instead of surfacing a raw "Unauthorized" console error.
+  function redirectIfUnauthorized(res: Response): boolean {
+    if (res.status !== 401) return false;
+    const callbackUrl = window.location.pathname;
+    window.location.assign(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    return true;
+  }
+
   async function loadData() {
     setLoading(true);
     try {
@@ -70,6 +80,8 @@ export default function AdminDashboard() {
         fetch(statsParams()),
         fetch("/api/staff"),
       ]);
+
+      if (redirectIfUnauthorized(invRes)) return;
 
       const invData = await invRes.json();
       const statsData = await statsRes.json();
@@ -98,6 +110,7 @@ export default function AdminDashboard() {
     try {
       const qs = listParams(nextCursor);
       const res = await fetch(`/api/invoices?${qs}`);
+      if (redirectIfUnauthorized(res)) return;
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Failed to load more");
       setInvoices((prev) => [...prev, ...data.invoices]);
