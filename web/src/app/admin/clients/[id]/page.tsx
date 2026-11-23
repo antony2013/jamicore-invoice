@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import CustomCycleInput from "@/components/CustomCycleInput";
 import {
   CLIENT_RECORD_STATUSES,
   CLIENT_RECORD_STATUS_LABELS,
@@ -34,10 +35,21 @@ import {
   CLIENT_STATUSES,
   PAYMENT_TERMS,
   PRIMARY_SERVICES,
+  resolveBillingType,
+  resolvePaymentTerms,
+  splitBillingType,
+  splitPaymentTerms,
+  type CustomCycleRow,
 } from "@/lib/client-profile";
 
 // Invoice statuses that still count as a running job for an outlet.
 const RUNNING_STATUSES = new Set<string>(["uploaded", "assigned", "in_review", "needs_info"]);
+
+/** Client money is booked in KWD with three decimals. */
+function formatMoney(value: number) {
+  const safe = Number.isFinite(value) ? value : 0;
+  return `${safe.toLocaleString("en-US", { maximumFractionDigits: 3 })} KWD`;
+}
 
 export default function AdminClientDetailPage({
   params,
@@ -79,8 +91,10 @@ export default function AdminClientDetailPage({
     serviceStartDate: "",
     status: "active",
     billingType: "monthly",
+    billingTypeRows: [{ amount: "", unit: "months" }] as CustomCycleRow[],
     baseFee: "0",
     paymentTerms: "10_days_after_approval",
+    paymentTermsRows: [{ amount: "", unit: "days" }] as CustomCycleRow[],
     extraWorkAllowed: true,
     internalNotes: "",
     assignedStaffId: "",
@@ -265,6 +279,8 @@ export default function AdminClientDetailPage({
   function startEditProfile() {
     if (!client) return;
     setDetailError(null);
+    const billing = splitBillingType(client.billingType);
+    const terms = splitPaymentTerms(client.paymentTerms);
     setProfileDraft({
       name: client.name ?? "",
       phone: client.phone ?? "",
@@ -275,9 +291,11 @@ export default function AdminClientDetailPage({
       primaryService: client.primaryService ?? "administration",
       serviceStartDate: client.serviceStartDate ?? "",
       status: client.status ?? "active",
-      billingType: client.billingType ?? "monthly",
+      billingType: billing.select,
+      billingTypeRows: billing.rows.length ? billing.rows : [{ amount: "", unit: "months" }],
       baseFee: String(client.baseFee ?? "0"),
-      paymentTerms: client.paymentTerms ?? "10_days_after_approval",
+      paymentTerms: terms.select,
+      paymentTermsRows: terms.rows.length ? terms.rows : [{ amount: "", unit: "days" }],
       extraWorkAllowed: client.extraWorkAllowed !== false,
       internalNotes: client.internalNotes ?? "",
       assignedStaffId: client.assignedStaffId ?? "",
@@ -312,9 +330,9 @@ export default function AdminClientDetailPage({
           primaryService: profileDraft.primaryService,
           serviceStartDate: profileDraft.serviceStartDate || null,
           status: profileDraft.status,
-          billingType: profileDraft.billingType,
+          billingType: resolveBillingType(profileDraft.billingType, profileDraft.billingTypeRows),
           baseFee: feeNumber,
-          paymentTerms: profileDraft.paymentTerms,
+          paymentTerms: resolvePaymentTerms(profileDraft.paymentTerms, profileDraft.paymentTermsRows),
           extraWorkAllowed: profileDraft.extraWorkAllowed,
           internalNotes: profileDraft.internalNotes.trim() || null,
           assignedStaffId: profileDraft.assignedStaffId || null,
@@ -423,13 +441,13 @@ export default function AdminClientDetailPage({
       subtitle: "Upload and view documents",
     },
     {
-      href: "/admin/clients",
+      href: `/admin/messages?client=${id}&name=${encodeURIComponent(client?.name || "Client")}`,
       icon: MessageSquare,
       title: "Messages",
       subtitle: "Communicate with client",
     },
     {
-      href: "/admin/clients",
+      href: "#client-details",
       icon: Settings2,
       title: "Account details",
       subtitle: "Business and contact settings",
@@ -443,9 +461,18 @@ export default function AdminClientDetailPage({
     return acc;
   }, {});
 
+  // Payments stat cards: booked payment records for this client only.
+  const paymentRecords = records.filter((r) => r.type === "payment");
+  const paidTotal = paymentRecords
+    .filter((r) => r.status === "paid")
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const pendingTotal = paymentRecords
+    .filter((r) => r.status === "pending" || r.status === "overdue")
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+
   return (
     <AppShell role="admin" title={client ? client.name : "Client"} hideHeader>
-      <div className="w-full max-w-4xl">
+      <div className="w-full">
         <Link
           href="/admin/clients"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800"
@@ -579,7 +606,7 @@ export default function AdminClientDetailPage({
           </form>
         )}
 
-        <div className="mt-5 grid grid-cols-2 gap-3">
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="text-[11px] text-slate-500">Outlets</div>
             <div className="mt-1 text-xl font-bold text-slate-900">{outlets.length}</div>
@@ -590,21 +617,38 @@ export default function AdminClientDetailPage({
               {reports.length}{reportsCapped ? "+" : ""}
             </div>
           </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-[11px] text-slate-500">Payments</div>
+            <div className="mt-1 text-xl font-bold text-slate-900">
+              {formatMoney(paidTotal)}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-[11px] text-slate-500">Pending</div>
+            <div className="mt-1 text-xl font-bold text-slate-900">
+              {formatMoney(pendingTotal)}
+            </div>
+          </div>
         </div>
 
-        <div className="mt-6 mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900">Client details</h3>
-          {client && !editingProfile && (
-            <button
-              type="button"
-              onClick={startEditProfile}
-              className="text-[11px] font-medium text-blue-600 hover:underline"
-            >
-              Edit client
-            </button>
-          )}
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mt-6 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+          <div
+            id="client-details"
+            className="order-1 min-w-0 scroll-mt-4 rounded-xl lg:order-2 lg:col-span-2"
+          >
+            <div className="mt-6 mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-bold text-slate-900">Client details</h3>
+              {client && !editingProfile && (
+                <button
+                  type="button"
+                  onClick={startEditProfile}
+                  className="text-[11px] font-medium text-blue-600 hover:underline"
+                >
+                  Edit client
+                </button>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
           {detailError && (
             <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">
               {detailError}
@@ -724,6 +768,16 @@ export default function AdminClientDetailPage({
                       <option key={v} value={v}>{BILLING_TYPE_LABELS[v]}</option>
                     ))}
                   </select>
+                  {profileDraft.billingType === "custom" && (
+                    <div className="mt-1.5">
+                      <CustomCycleInput
+                        rows={profileDraft.billingTypeRows}
+                        onChange={(rows) => setProfileDraft((p) => ({ ...p, billingTypeRows: rows }))}
+                        size="sm"
+                        label="Custom billing cycle"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-semibold text-slate-700">Base Service Fee (KWD)</label>
@@ -747,6 +801,16 @@ export default function AdminClientDetailPage({
                       <option key={v} value={v}>{PAYMENT_TERMS_LABELS[v]}</option>
                     ))}
                   </select>
+                  {profileDraft.paymentTerms === "custom" && (
+                    <div className="mt-1.5">
+                      <CustomCycleInput
+                        rows={profileDraft.paymentTermsRows}
+                        onChange={(rows) => setProfileDraft((p) => ({ ...p, paymentTermsRows: rows }))}
+                        size="sm"
+                        label="Custom payment terms"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-[11px] font-semibold text-slate-700">Extra Work Charges Allowed</label>
@@ -947,21 +1011,47 @@ export default function AdminClientDetailPage({
               </div>
             </div>
           )}
-        </div>
+            </div>
+          </div>
 
-        <h3 className="mt-6 mb-2 text-sm font-bold text-slate-900">Client workspace</h3>
+          <div className="order-2 min-w-0 lg:order-1 lg:col-span-1">
+            <h3 className="mb-2 text-sm font-bold text-slate-900">Client workspace</h3>
         <div className="grid grid-cols-2 gap-3">
           {workspaceTiles.map((tile) => {
             const Icon = tile.icon;
-            return (
-              <Link
-                key={tile.title}
-                href={tile.href}
-                className="rounded-xl border border-slate-200 bg-white p-4 transition hover:shadow-md"
-              >
+            const body = (
+              <>
                 <Icon className="h-5 w-5 text-blue-600" />
                 <div className="mt-3 text-sm font-bold text-slate-900">{tile.title}</div>
                 <div className="mt-0.5 text-[11px] text-slate-500">{tile.subtitle}</div>
+              </>
+            );
+            const tileClass =
+              "rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:shadow-md";
+            // Account details lives on this page: jump to the client's own
+            // details card and flash it instead of leaving for the clients list.
+            if (tile.href.startsWith("#")) {
+              return (
+                <button
+                  key={tile.title}
+                  type="button"
+                  onClick={() => {
+                    const targetId = tile.href.slice(1);
+                    const el = document.getElementById(targetId);
+                    if (!el) return;
+                    el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    el.classList.add("dc-jump-highlight");
+                    window.setTimeout(() => el.classList.remove("dc-jump-highlight"), 1800);
+                  }}
+                  className={tileClass}
+                >
+                  {body}
+                </button>
+              );
+            }
+            return (
+              <Link key={tile.title} href={tile.href} className={tileClass}>
+                {body}
               </Link>
             );
           })}
@@ -1087,8 +1177,13 @@ export default function AdminClientDetailPage({
             </div>
           )}
         </div>
+        </div>
+        </div>
 
-        <div className="mt-6 mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div
+          id="client-records"
+          className="mt-6 mb-2 flex scroll-mt-4 flex-wrap items-center justify-between gap-2"
+        >
           <h3 className="text-sm font-bold text-slate-900">Client records</h3>
           {client && (
             <button

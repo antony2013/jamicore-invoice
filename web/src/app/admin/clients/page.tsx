@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Download, RefreshCw, Search, UserPlus } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import CustomCycleInput from "@/components/CustomCycleInput";
 import {
   BILLING_TYPE_LABELS,
   BUSINESS_TYPE_LABELS,
@@ -17,6 +18,9 @@ import {
   CLIENT_STATUSES,
   PAYMENT_TERMS,
   PRIMARY_SERVICES,
+  resolveBillingType,
+  resolvePaymentTerms,
+  type CustomCycleRow,
 } from "@/lib/client-profile";
 
 export default function AdminClientsPage() {
@@ -37,8 +41,14 @@ export default function AdminClientsPage() {
   const [serviceStartDate, setServiceStartDate] = useState("");
   const [clientStatus, setClientStatus] = useState<string>("active");
   const [billingType, setBillingType] = useState<string>("monthly");
+  const [billingTypeRows, setBillingTypeRows] = useState<CustomCycleRow[]>([
+    { amount: "", unit: "months" },
+  ]);
   const [baseFee, setBaseFee] = useState("0");
   const [paymentTerms, setPaymentTerms] = useState<string>("10_days_after_approval");
+  const [paymentTermsRows, setPaymentTermsRows] = useState<CustomCycleRow[]>([
+    { amount: "", unit: "days" },
+  ]);
   const [extraWorkAllowed, setExtraWorkAllowed] = useState(true);
   const [internalNotes, setInternalNotes] = useState("");
   const [search, setSearch] = useState("");
@@ -119,9 +129,9 @@ export default function AdminClientsPage() {
           primaryService,
           ...(serviceStartDate ? { serviceStartDate } : {}),
           status: clientStatus,
-          billingType,
+          billingType: resolveBillingType(billingType, billingTypeRows),
           baseFee: feeNumber,
-          paymentTerms,
+          paymentTerms: resolvePaymentTerms(paymentTerms, paymentTermsRows),
           extraWorkAllowed,
           ...(internalNotes.trim() ? { internalNotes: internalNotes.trim() } : {}),
         }),
@@ -142,8 +152,10 @@ export default function AdminClientsPage() {
       setServiceStartDate("");
       setClientStatus("active");
       setBillingType("monthly");
+      setBillingTypeRows([{ amount: "", unit: "months" }]);
       setBaseFee("0");
       setPaymentTerms("10_days_after_approval");
+      setPaymentTermsRows([{ amount: "", unit: "days" }]);
       setExtraWorkAllowed(true);
       setInternalNotes("");
       setShowForm(false);
@@ -238,21 +250,56 @@ export default function AdminClientsPage() {
       title="Clients"
       subtitle="Manage client accounts, outlets, staff, reports and communications."
       actions={
-        <div className="flex items-center gap-2">
-          <button onClick={exportCsv} className="dc-btn" type="button" title="Export client list as CSV">
-            <Download className="h-3.5 w-3.5" />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            onClick={exportCsv}
+            className="dc-btn dc-action-square"
+            type="button"
+            title="Export client list as CSV"
+          >
+            <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
             <span className="ml-1 hidden sm:inline">CSV</span>
           </button>
-          <button onClick={() => setShowForm((v) => !v)} className="dc-btn dc-btn-pri" type="button">
-            <UserPlus className="mr-1 inline h-3.5 w-3.5" /> Add Client
-          </button>
-          <button onClick={load} className="dc-btn" type="button" title="Reload clients">
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          <button
+            onClick={load}
+            className="dc-btn dc-action-square"
+            type="button"
+            title="Reload clients"
+          >
+            <RefreshCw className={`h-4 w-4 sm:h-3.5 sm:w-3.5 ${loading ? "animate-spin" : ""}`} />
             <span className="ml-1 hidden sm:inline">Refresh</span>
+          </button>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="dc-btn dc-btn-pri whitespace-nowrap"
+            type="button"
+          >
+            <UserPlus className="mr-1 inline h-4 w-4 sm:h-3.5 sm:w-3.5" /> Add Client
           </button>
         </div>
       }
     >
+        {/* Summary first: always visible at the top, even while the add form is open. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] text-slate-500">Total Clients</div>
+            <div className="mt-1 text-xl font-bold text-slate-900">{clients.length}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] text-slate-500">Active Clients</div>
+            <div className="mt-1 text-xl font-bold text-slate-900">{activeCount}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] text-slate-500">Inactive Clients</div>
+            <div className="mt-1 text-xl font-bold text-slate-900">{inactiveCount}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-[11px] text-slate-500">Monthly Service Fees</div>
+            <div className="mt-1 text-xl font-bold text-slate-900">{monthlyFeeTotal.toFixed(3)}</div>
+            <div className="text-[11px] text-slate-400">KWD</div>
+          </div>
+        </div>
+
         {success && (
           <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
             {success}
@@ -418,6 +465,15 @@ export default function AdminClientsPage() {
                       <option key={v} value={v}>{BILLING_TYPE_LABELS[v]}</option>
                     ))}
                   </select>
+                  {billingType === "custom" && (
+                    <div className="mt-2">
+                      <CustomCycleInput
+                        rows={billingTypeRows}
+                        onChange={setBillingTypeRows}
+                        label="Custom billing cycle"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Base Service Fee (KWD)</label>
@@ -441,6 +497,15 @@ export default function AdminClientsPage() {
                       <option key={v} value={v}>{PAYMENT_TERMS_LABELS[v]}</option>
                     ))}
                   </select>
+                  {paymentTerms === "custom" && (
+                    <div className="mt-2">
+                      <CustomCycleInput
+                        rows={paymentTermsRows}
+                        onChange={setPaymentTermsRows}
+                        label="Custom payment terms"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Extra Work Charges Allowed</label>
@@ -486,26 +551,6 @@ export default function AdminClientsPage() {
         )}
 
         {/* Client accounts */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] text-slate-500">Total Clients</div>
-            <div className="mt-1 text-xl font-bold text-slate-900">{clients.length}</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] text-slate-500">Active Clients</div>
-            <div className="mt-1 text-xl font-bold text-slate-900">{activeCount}</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] text-slate-500">Inactive Clients</div>
-            <div className="mt-1 text-xl font-bold text-slate-900">{inactiveCount}</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="text-[11px] text-slate-500">Monthly Service Fees</div>
-            <div className="mt-1 text-xl font-bold text-slate-900">{monthlyFeeTotal.toFixed(3)}</div>
-            <div className="text-[11px] text-slate-400">KWD</div>
-          </div>
-        </div>
-
         <div id="client-accounts" className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-bold text-slate-900">Client accounts</h2>
           <div className="flex flex-wrap items-center gap-2">

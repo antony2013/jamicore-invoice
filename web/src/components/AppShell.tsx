@@ -124,7 +124,7 @@ export default function AppShell({
               {subtitle ? <p className="mt-1 text-sm text-[#475467]">{subtitle}</p> : null}
             </div>
           )}
-          <div className="dc-header-actions flex items-center gap-3">
+          <div className="dc-header-actions">
             <NotificationBell />
             {actions}
           </div>

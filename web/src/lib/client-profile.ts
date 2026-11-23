@@ -75,3 +75,68 @@ export const PAYMENT_TERMS_LABELS: Record<string, string> = {
   after_completion: "After Completion",
   custom: "Custom",
 };
+
+// "Custom" stores the manually picked cycle (e.g. "6 months 5 days").
+// These helpers split a stored value into the dropdown choice + amount/unit rows,
+// and resolve the rows back into the value saved on the client.
+
+export const CUSTOM_CYCLE_UNITS = ["hours", "days", "weeks", "months", "years"] as const;
+
+export const CUSTOM_CYCLE_UNIT_LABELS: Record<string, string> = {
+  hours: "Hours",
+  days: "Days",
+  weeks: "Weeks",
+  months: "Months",
+  years: "Years",
+};
+
+export type CustomCycleRow = { amount: string; unit: string };
+
+// One or more "6 months 5 days" style segments, commas optional.
+const CYCLE_PATTERN = /^(?:\d+(?:\.\d+)?\s*(?:hour|day|week|month|year)s?\s*,?\s*)+$/i;
+const CYCLE_SEGMENT = /(\d+(?:\.\d+)?)\s*(hour|day|week|month|year)s?/gi;
+
+export function splitCustomCycle(value?: string | null): CustomCycleRow[] {
+  const text = value?.trim();
+  if (!text || !CYCLE_PATTERN.test(text)) return [];
+  const rows: CustomCycleRow[] = [];
+  for (const match of text.matchAll(CYCLE_SEGMENT)) {
+    rows.push({ amount: match[1], unit: `${match[2].toLowerCase()}s` });
+  }
+  return rows;
+}
+
+function joinCycle(rows: CustomCycleRow[]): string {
+  const parts = rows
+    .map(({ amount, unit }) => {
+      const trimmed = amount.trim();
+      const numeric = Number(trimmed);
+      if (!trimmed || !Number.isFinite(numeric) || numeric <= 0) return null;
+      const safeUnit = (CUSTOM_CYCLE_UNITS as readonly string[]).includes(unit) ? unit : "months";
+      return `${trimmed} ${numeric === 1 ? safeUnit.replace(/s$/, "") : safeUnit}`;
+    })
+    .filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" ") : "custom";
+}
+
+export function splitBillingType(value?: string | null): { select: string; rows: CustomCycleRow[] } {
+  if (!value || (BILLING_TYPES as readonly string[]).includes(value)) {
+    return { select: value || "monthly", rows: [] };
+  }
+  return { select: "custom", rows: splitCustomCycle(value) };
+}
+
+export function splitPaymentTerms(value?: string | null): { select: string; rows: CustomCycleRow[] } {
+  if (!value || (PAYMENT_TERMS as readonly string[]).includes(value)) {
+    return { select: value || "10_days_after_approval", rows: [] };
+  }
+  return { select: "custom", rows: splitCustomCycle(value) };
+}
+
+export function resolveBillingType(select: string, rows: CustomCycleRow[]): string {
+  return select === "custom" ? joinCycle(rows) : select;
+}
+
+export function resolvePaymentTerms(select: string, rows: CustomCycleRow[]): string {
+  return select === "custom" ? joinCycle(rows) : select;
+}

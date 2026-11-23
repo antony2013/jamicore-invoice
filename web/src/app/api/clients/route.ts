@@ -9,7 +9,6 @@ import { safeStaff } from "@/lib/safe-columns";
 import { writeAudit, getClientIp } from "@/lib/audit";
 import { touchPresence } from "@/lib/presence";
 import {
-  BILLING_TYPES,
   BUSINESS_TYPES,
   CLIENT_STATUSES,
   PRIMARY_SERVICES,
@@ -43,7 +42,8 @@ const createClientSchema = z
     primaryService: z.enum(PRIMARY_SERVICES).optional(),
     serviceStartDate: z.string().trim().max(10).optional(),
     status: z.enum(CLIENT_STATUSES).optional(),
-    billingType: z.enum(BILLING_TYPES).optional(),
+    // Custom billing cycles are stored as typed text (e.g. "6 months").
+    billingType: z.string().trim().min(1).max(100).optional(),
     baseFee: z.coerce.number().min(0).max(999_999_999).optional(),
     paymentTerms: z.string().trim().max(100).optional(),
     extraWorkAllowed: z.boolean().optional(),

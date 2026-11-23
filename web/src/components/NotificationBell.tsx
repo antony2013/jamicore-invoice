@@ -131,7 +131,7 @@ export default function NotificationBell() {
         <Button
           variant="outline"
           size="icon"
-          className="relative h-10 w-10 rounded-full border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+          className="relative h-11 w-11 rounded-lg border-slate-300 bg-white hover:bg-slate-50"
           aria-label={unread > 0 ? `Notifications (${unread} unread)` : "Notifications"}
         >
           <Bell className="h-[18px] w-[18px] text-slate-700" />

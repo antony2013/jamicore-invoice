@@ -1,7 +1,9 @@
 "use client";
 import { shortInvoiceId } from "@/lib/utils";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Check,
@@ -239,6 +241,20 @@ function CheckFilter({
 }
 
 export default function AdminMessagesPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminMailbox />
+    </Suspense>
+  );
+}
+
+function AdminMailbox() {
+  // Client workspace opens this mailbox scoped to one client:
+  // /admin/messages?client=<id>&name=<client name>
+  const searchParams = useSearchParams();
+  const clientFilter = searchParams?.get("client")?.trim() || "";
+  const clientFilterName = searchParams?.get("name")?.trim() || "";
+
   const [folder, setFolder] = useState("inbox");
   const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
@@ -318,6 +334,7 @@ export default function AdminMessagesPage() {
     const p = new URLSearchParams();
     p.set("folder", folder === "sent" ? "sent" : "inbox");
     p.set("limit", "100");
+    if (clientFilter) p.set("client", clientFilter);
     return p.toString();
   }
 
@@ -334,7 +351,8 @@ export default function AdminMessagesPage() {
         const [mailRes, generalRes, staffRes] = await Promise.all([
           fetch(`/api/messages?${mailQuery()}`),
           fetch(`/api/client-messages?${mailQuery()}`),
-          fetch("/api/staff-messages"),
+          // Staff ↔ admin notes are not client-scoped, so a client view hides them.
+          clientFilter ? Promise.resolve(null) : fetch("/api/staff-messages"),
         ]);
         const data = await mailRes.json();
         if (!mailRes.ok) throw new Error(data.error || "Failed to load messages");
@@ -345,8 +363,8 @@ export default function AdminMessagesPage() {
           generalRes.ok && generalData?.success ? generalData.messages ?? [] : []
         );
 
-        const staffData = await staffRes.json().catch(() => null);
-        if (staffRes.ok && staffData?.success) {
+        const staffData = staffRes ? await staffRes.json().catch(() => null) : null;
+        if (staffRes?.ok && staffData?.success) {
           setStaffInbox(staffData.inbox ?? []);
           setStaffSent(staffData.sent ?? []);
           setTotalUnread(
@@ -555,6 +573,8 @@ export default function AdminMessagesPage() {
   async function openComposer() {
     setComposing(true);
     setComposeError(null);
+    // Inside a client workspace the recipient is already known.
+    if (clientFilter) setComposeClientSel(new Set([clientFilter]));
     const missing: Promise<void>[] = [];
     if (clients.length === 0) {
       missing.push(
@@ -821,7 +841,12 @@ export default function AdminMessagesPage() {
     setViewing(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [folder]);
+  }, [folder, clientFilter]);
+
+  // Drafts belong to the full mailbox, not to a single client conversation.
+  useEffect(() => {
+    if (clientFilter && folder === "drafts") setFolder("inbox");
+  }, [clientFilter, folder]);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -1133,8 +1158,20 @@ export default function AdminMessagesPage() {
         </Card>
       )}
 
-      <div className="grid grid-cols-3 gap-2">
-        {TAB_OPTIONS.map((o) => (
+      {clientFilter ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+          <span>
+            Messages with{" "}
+            <span className="font-semibold">{clientFilterName || "this client"}</span>
+          </span>
+          <Link href="/admin/messages" className="font-medium underline underline-offset-2">
+            Show all messages
+          </Link>
+        </div>
+      ) : null}
+
+      <div className={`grid gap-2 ${clientFilter ? "grid-cols-2" : "grid-cols-3"}`}>
+        {(clientFilter ? TAB_OPTIONS.filter((o) => o.value !== "drafts") : TAB_OPTIONS).map((o) => (
           <button
             key={o.value}
             onClick={() => setFolder(o.value)}
