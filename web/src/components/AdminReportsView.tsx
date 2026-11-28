@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Download, Eye, FileSpreadsheet, RotateCcw, Trash2, Upload } from "lucide-react";
+import { FileSpreadsheet, RotateCcw, Trash2, Upload } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
-import ReportDeleteDialog from "@/components/ReportDeleteDialog";
 
 type ReportEntry = {
   id: string;
@@ -40,10 +39,6 @@ export default function AdminReportsView({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ReportEntry | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [fetchingUrl, setFetchingUrl] = useState<string | null>(null);
 
   const tab = initialTab;
   const [trash, setTrash] = useState<ReportEntry[]>([]);
@@ -107,53 +102,6 @@ export default function AdminReportsView({
       setLoadError(err.message || "Failed to load trash.");
     } finally {
       setTrashLoading(false);
-    }
-  }
-
-  async function openReport(rep: ReportEntry, download: boolean) {
-    if (!rep.invoice) return;
-    setFetchingUrl(rep.id);
-    try {
-      const res = await fetch(`/api/invoices/${rep.invoice.id}/report`);
-      const data = await res.json();
-      if (!res.ok || !data.report?.downloadUrl) throw new Error(data.error || "No file available");
-      if (download) {
-        const a = document.createElement("a");
-        a.href = data.report.downloadUrl;
-        a.download = rep.fileName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } else {
-        window.open(data.report.downloadUrl, "_blank", "noopener");
-      }
-    } catch (err: any) {
-      setLoadError(err.message || "Failed to open report.");
-    } finally {
-      setFetchingUrl(null);
-    }
-  }
-
-  async function confirmDelete(reason: string) {
-    if (!deleteTarget) return;
-    const rep = deleteTarget;
-    setDeletingId(rep.id);
-    setDeleteError(null);
-    try {
-      const res = await fetch(`/api/reports/${rep.id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to delete report");
-      setReports((prev) => prev.filter((r) => r.id !== rep.id));
-      setDeleteTarget(null);
-      if (tab === "trash") await loadTrash();
-    } catch (err: any) {
-      setDeleteError(err.message || "Failed to delete report.");
-    } finally {
-      setDeletingId(null);
     }
   }
 
@@ -338,38 +286,6 @@ export default function AdminReportsView({
                   >
                     {paid ? "Paid" : "Unpaid"}
                   </span>
-                  <div className="flex flex-shrink-0 items-center gap-1">
-                    <button
-                      onClick={() => openReport(rep, false)}
-                      disabled={fetchingUrl === rep.id}
-                      title="View report"
-                      aria-label="View report"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => openReport(rep, true)}
-                      disabled={fetchingUrl === rep.id}
-                      title="Download report"
-                      aria-label="Download report"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDeleteError(null);
-                        setDeleteTarget(rep);
-                      }}
-                      disabled={deletingId === rep.id}
-                      title="Delete report"
-                      aria-label="Delete report"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
                 </div>
               </Card>
             );
@@ -384,18 +300,6 @@ export default function AdminReportsView({
           </button>
         </div>
       )}
-
-      <ReportDeleteDialog
-        report={deleteTarget}
-        busy={deletingId !== null}
-        error={deleteError}
-        onCancel={() => {
-          if (deletingId) return;
-          setDeleteTarget(null);
-          setDeleteError(null);
-        }}
-        onConfirm={confirmDelete}
-      />
     </AppShell>
   );
 }
