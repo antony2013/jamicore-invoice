@@ -298,44 +298,64 @@ export default function AdminReportsView({
               <p className="text-sm font-medium text-slate-500">Loading library…</p>
             </div>
           )}
-          {reports.map((rep) => (
-            <Card key={rep.id} className="p-4">
-              <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
-                  <FileSpreadsheet className="h-5 w-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold text-slate-900 truncate">{rep.fileName}</div>
-                  <div className="text-[11px] text-slate-500">
-                    {rep.client?.name || "Unknown"} ·{" "}
-                    {rep.createdAt
-                      ? new Date(rep.createdAt).toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : ""}
+          {reports.map((rep) => {
+            // One report per row: the date leads, then the invoice amount and
+            // its paid state, so the library reads like a ledger.
+            const dateLabel = rep.createdAt
+              ? new Date(rep.createdAt).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
+                })
+              : "";
+            const amountLabel = rep.invoice?.amount
+              ? `${Number(rep.invoice.amount).toFixed(3)} KWD`
+              : "—";
+            const paid = rep.invoice?.status === "collected";
+            return (
+              <Card key={rep.id} className="p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
+                    <FileSpreadsheet className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold text-slate-900">
+                      {dateLabel || rep.fileName}
+                    </div>
+                    <div className="truncate text-[11px] text-slate-500">
+                      {rep.fileName} · {rep.client?.name || "Unknown"}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <div className="w-32 text-right text-sm font-semibold tabular-nums text-slate-900">
+                    {amountLabel}
+                  </div>
+                  <span
+                    className={`inline-flex flex-shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                      paid
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {paid ? "Paid" : "Unpaid"}
+                  </span>
+                  <div className="flex flex-shrink-0 items-center gap-1">
                     <button
                       onClick={() => openReport(rep, false)}
                       disabled={fetchingUrl === rep.id}
-                      className="dc-btn inline-flex items-center gap-1.5 disabled:opacity-50"
+                      title="View report"
+                      aria-label="View report"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
                     >
-                      {fetchingUrl === rep.id ? (
-                        "Opening…"
-                      ) : (
-                        <>
-                          <Eye className="h-4 w-4" /> View
-                        </>
-                      )}
+                      <Eye className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => openReport(rep, true)}
                       disabled={fetchingUrl === rep.id}
-                      className="dc-btn inline-flex items-center gap-1.5 disabled:opacity-50"
+                      title="Download report"
+                      aria-label="Download report"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
                     >
-                      <Download className="h-4 w-4" /> Download
+                      <Download className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => {
@@ -343,21 +363,17 @@ export default function AdminReportsView({
                         setDeleteTarget(rep);
                       }}
                       disabled={deletingId === rep.id}
-                      className="inline-flex h-11 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                      title="Delete report"
+                      aria-label="Delete report"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
                     >
-                      {deletingId === rep.id ? (
-                        "Moving…"
-                      ) : (
-                        <>
-                          <Trash2 className="h-4 w-4" /> Delete
-                        </>
-                      )}
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
 

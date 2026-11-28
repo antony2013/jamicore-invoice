@@ -12,6 +12,7 @@ type WorkLine = {
   quantity: string;
   rate: string;
   discountPercent: string;
+  taxPercent: string;
 };
 
 const WORK_CATEGORIES = [
@@ -21,8 +22,6 @@ const WORK_CATEGORIES = [
   "Consulting",
   "Other",
 ];
-
-const TAX_PERCENT = 5;
 
 function money(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
@@ -37,6 +36,7 @@ function newLine(): WorkLine {
     quantity: "1",
     rate: "0",
     discountPercent: "0",
+    taxPercent: "0",
   };
 }
 
@@ -44,9 +44,10 @@ function lineTotals(line: WorkLine) {
   const qty = Math.max(0, Number(line.quantity) || 0);
   const rate = Math.max(0, Number(line.rate) || 0);
   const discountPct = Math.min(100, Math.max(0, Number(line.discountPercent) || 0));
+  const taxPct = Math.min(100, Math.max(0, Number(line.taxPercent) || 0));
   const subtotal = qty * rate;
   const discount = (subtotal * discountPct) / 100;
-  const tax = ((subtotal - discount) * TAX_PERCENT) / 100;
+  const tax = ((subtotal - discount) * taxPct) / 100;
   return { subtotal, discount, tax, amount: subtotal - discount + tax };
 }
 
@@ -71,6 +72,7 @@ export default function WorkDetailsDrawer({
 }) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [lines, setLines] = useState<WorkLine[]>([newLine()]);
+  const [overallDiscount, setOverallDiscount] = useState("0");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +86,15 @@ export default function WorkDetailsDrawer({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Each opening starts with a fresh, tax-free line and no overall discount.
+  useEffect(() => {
+    if (!open) return;
+    setLines([newLine()]);
+    setOverallDiscount("0");
+    setNotes("");
+    setError(null);
+  }, [open]);
+
   const totals = lines.reduce(
     (acc, line) => {
       const t = lineTotals(line);
@@ -95,7 +106,21 @@ export default function WorkDetailsDrawer({
     },
     { subtotal: 0, discount: 0, tax: 0, amount: 0 }
   );
-  const projectedGrand = savedGrandTotal + totals.amount;
+  // Overall discount: one rate for the whole batch, on top of the per-line
+  // discounts. Tax stays per line, so tax is not discounted again here.
+  const overallPct = Math.min(100, Math.max(0, Number(overallDiscount) || 0));
+  // What each line actually costs after its own discount, its tax and this
+  // line's share of the overall discount — the Amount column must add up to
+  // the batch grand total.
+  const lineNetAmount = (line: WorkLine) => {
+    const t = lineTotals(line);
+    return (t.subtotal - t.discount) * (1 - overallPct / 100) + t.tax;
+  };
+  const netAfterLineDiscount = Math.max(0, totals.subtotal - totals.discount);
+  const overallDiscountAmount = (netAfterLineDiscount * overallPct) / 100;
+  const discountTotal = totals.discount + overallDiscountAmount;
+  const batchGrand = Math.max(0, totals.subtotal - discountTotal + totals.tax);
+  const projectedGrand = savedGrandTotal + batchGrand;
   const balanceDue = Math.max(0, projectedGrand - amountPaid);
   const paymentStatus =
     projectedGrand <= 0
@@ -122,7 +147,6 @@ export default function WorkDetailsDrawer({
     setError(null);
     try {
       for (const line of filled) {
-        const t = lineTotals(line);
         const res = await fetch("/api/client-records", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -130,14 +154,15 @@ export default function WorkDetailsDrawer({
             clientId,
             type: "service",
             title: line.description.trim().slice(0, 200),
-            amount: Number(t.amount.toFixed(3)),
+            amount: Number(lineNetAmount(line).toFixed(3)),
             recordDate: date || null,
             status: "active",
             workCategory: line.category,
             quantity: Number(line.quantity) || 0,
             rate: Number(line.rate) || 0,
             discountPercent: Number(line.discountPercent) || 0,
-            taxPercent: TAX_PERCENT,
+            overallDiscountPercent: overallPct,
+            taxPercent: Number(line.taxPercent) || 0,
             description: notes.trim() || null,
           }),
         });
@@ -145,6 +170,7 @@ export default function WorkDetailsDrawer({
         if (!res.ok) throw new Error(data.error || "Could not save work details.");
       }
       setLines([newLine()]);
+      setOverallDiscount("0");
       setNotes("");
       onSaved();
       onClose();
@@ -193,7 +219,7 @@ export default function WorkDetailsDrawer({
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full min-w-[560px] text-xs">
+          <table className="w-full min-w-[660px] text-xs">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-2 py-2 text-left font-semibold">Work Category</th>
@@ -201,13 +227,13 @@ export default function WorkDetailsDrawer({
                 <th className="w-16 px-1 py-2 text-right font-semibold">Qty / Hours</th>
                 <th className="w-20 px-1 py-2 text-right font-semibold">Rate (KWD)</th>
                 <th className="w-16 px-1 py-2 text-right font-semibold">Discount %</th>
+                <th className="w-14 px-1 py-2 text-right font-semibold">Tax %</th>
                 <th className="w-20 px-1 py-2 text-right font-semibold">Amount</th>
                 <th className="w-8 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {lines.map((line) => {
-                const t = lineTotals(line);
                 return (
                   <tr key={line.key} className="align-top">
                     <td className="px-2 py-1.5">
@@ -260,8 +286,19 @@ export default function WorkDetailsDrawer({
                         className="w-full rounded border border-slate-200 px-1 py-1 text-right text-[11px] outline-none"
                       />
                     </td>
+                    <td className="px-1 py-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={line.taxPercent}
+                        onChange={(e) => updateLine(line.key, { taxPercent: e.target.value })}
+                        className="w-full rounded border border-slate-200 px-1 py-1 text-right text-[11px] outline-none"
+                      />
+                    </td>
                     <td className="px-2 py-2.5 text-right font-semibold text-slate-800">
-                      {t.amount.toFixed(3)}
+                      {lineNetAmount(line).toFixed(3)}
                     </td>
                     <td className="py-1.5 text-center">
                       <button
@@ -284,13 +321,34 @@ export default function WorkDetailsDrawer({
           </table>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setLines((prev) => [...prev, newLine()])}
-          className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add Work Item
-        </button>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLines((prev) => [...prev, newLine()])}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add Work Item
+          </button>
+          <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1.5 text-[11px] font-medium text-slate-700">
+            Total Discount
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={overallDiscount}
+              onChange={(e) => setOverallDiscount(e.target.value)}
+              aria-label="Total discount percent"
+              className="w-14 rounded border border-slate-200 px-1 py-0.5 text-right text-[11px] outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            %
+          </label>
+          {overallPct > 0 && (
+            <span className="text-[11px] text-slate-500">
+              −{money(overallDiscountAmount)} on the whole work
+            </span>
+          )}
+        </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -321,10 +379,10 @@ export default function WorkDetailsDrawer({
             </div>
             <div className="flex items-center justify-between py-0.5">
               <span className="text-slate-600">Discount Total</span>
-              <span className="font-medium text-slate-900">−{money(totals.discount)}</span>
+              <span className="font-medium text-slate-900">−{money(discountTotal)}</span>
             </div>
             <div className="flex items-center justify-between py-0.5">
-              <span className="text-slate-600">Tax Total (5%)</span>
+              <span className="text-slate-600">Tax Total</span>
               <span className="font-medium text-slate-900">{money(totals.tax)}</span>
             </div>
             <div className="my-1.5 flex items-center justify-between border-y border-slate-200 py-1.5">

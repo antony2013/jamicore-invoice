@@ -126,9 +126,37 @@ export function splitBillingType(value?: string | null): { select: string; rows:
   return { select: "custom", rows: splitCustomCycle(value) };
 }
 
-export function splitPaymentTerms(value?: string | null): { select: string; rows: CustomCycleRow[] } {
-  if (!value || (PAYMENT_TERMS as readonly string[]).includes(value)) {
-    return { select: value || "10_days_after_approval", rows: [] };
+// A custom payment term is stored as `custom:<days>|<url-encoded name>`, e.g.
+// `custom:45|Net%2045`. The name is free text, so encode it before storing.
+const CUSTOM_TERM_PREFIX = "custom:";
+
+export function splitPaymentTerms(value?: string | null): {
+  select: string;
+  rows: CustomCycleRow[];
+  name?: string;
+} {
+  const text = value?.trim();
+  if (text?.startsWith(CUSTOM_TERM_PREFIX)) {
+    const raw = text.slice(CUSTOM_TERM_PREFIX.length);
+    const cut = raw.indexOf("|");
+    const days = Number(cut >= 0 ? raw.slice(0, cut) : raw);
+    let name = "";
+    if (cut >= 0) {
+      try {
+        name = decodeURIComponent(raw.slice(cut + 1));
+      } catch {
+        name = raw.slice(cut + 1);
+      }
+    }
+    const safeDays = Number.isFinite(days) && days > 0 ? days : 0;
+    return {
+      select: "custom",
+      rows: safeDays ? [{ amount: String(safeDays), unit: "days" }] : [],
+      name,
+    };
+  }
+  if (!text || (PAYMENT_TERMS as readonly string[]).includes(text)) {
+    return { select: text || "10_days_after_approval", rows: [] };
   }
   return { select: "custom", rows: splitCustomCycle(value) };
 }
@@ -137,6 +165,24 @@ export function resolveBillingType(select: string, rows: CustomCycleRow[]): stri
   return select === "custom" ? joinCycle(rows) : select;
 }
 
-export function resolvePaymentTerms(select: string, rows: CustomCycleRow[]): string {
-  return select === "custom" ? joinCycle(rows) : select;
+export function resolvePaymentTerms(
+  select: string,
+  rows: CustomCycleRow[],
+  name?: string
+): string {
+  if (select !== "custom") return select;
+  const raw = rows.find((row) => row.unit === "days")?.amount ?? rows[0]?.amount;
+  const days = Number(raw);
+  const safeDays = Number.isFinite(days) && days > 0 ? days : 0;
+  const cleanName = (name || "").trim() || "Custom";
+  return `${CUSTOM_TERM_PREFIX}${safeDays}|${encodeURIComponent(cleanName)}`;
+}
+
+/** Human-readable payment term for tables and detail views. */
+export function formatPaymentTerms(value?: string | null): string {
+  const { select, rows, name } = splitPaymentTerms(value);
+  if (select !== "custom") return PAYMENT_TERMS_LABELS[select] ?? value ?? "—";
+  const label = (name || "").trim() || "Custom";
+  const days = Number(rows.find((row) => row.unit === "days")?.amount ?? 0);
+  return days > 0 ? `${label} · ${days} days` : label;
 }

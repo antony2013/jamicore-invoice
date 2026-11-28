@@ -7,10 +7,12 @@ import { useRouter } from "next/navigation";
 import { Download, RefreshCw, Search, UserPlus } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import CustomCycleInput from "@/components/CustomCycleInput";
+import PaymentTermDialog from "@/components/PaymentTermDialog";
 import {
   BILLING_TYPE_LABELS,
   BUSINESS_TYPE_LABELS,
   CLIENT_STATUS_LABELS,
+  formatPaymentTerms,
   PAYMENT_TERMS_LABELS,
   PRIMARY_SERVICE_LABELS,
   BILLING_TYPES,
@@ -49,6 +51,8 @@ export default function AdminClientsPage() {
   const [paymentTermsRows, setPaymentTermsRows] = useState<CustomCycleRow[]>([
     { amount: "", unit: "days" },
   ]);
+  const [paymentTermName, setPaymentTermName] = useState("");
+  const [paymentTermDialogOpen, setPaymentTermDialogOpen] = useState(false);
   const [extraWorkAllowed, setExtraWorkAllowed] = useState(true);
   const [internalNotes, setInternalNotes] = useState("");
   const [search, setSearch] = useState("");
@@ -131,7 +135,7 @@ export default function AdminClientsPage() {
           status: clientStatus,
           billingType: resolveBillingType(billingType, billingTypeRows),
           baseFee: feeNumber,
-          paymentTerms: resolvePaymentTerms(paymentTerms, paymentTermsRows),
+          paymentTerms: resolvePaymentTerms(paymentTerms, paymentTermsRows, paymentTermName),
           extraWorkAllowed,
           ...(internalNotes.trim() ? { internalNotes: internalNotes.trim() } : {}),
         }),
@@ -156,6 +160,8 @@ export default function AdminClientsPage() {
       setBaseFee("0");
       setPaymentTerms("10_days_after_approval");
       setPaymentTermsRows([{ amount: "", unit: "days" }]);
+      setPaymentTermName("");
+      setPaymentTermDialogOpen(false);
       setExtraWorkAllowed(true);
       setInternalNotes("");
       setShowForm(false);
@@ -228,7 +234,7 @@ export default function AdminClientsPage() {
       CLIENT_STATUS_LABELS[c.status] ?? c.status ?? "",
       BILLING_TYPE_LABELS[c.billingType] ?? c.billingType ?? "",
       Number(c.baseFee || 0).toFixed(3),
-      PAYMENT_TERMS_LABELS[c.paymentTerms] ?? c.paymentTerms ?? "",
+      formatPaymentTerms(c.paymentTerms),
       c.extraWorkAllowed ? "Yes" : "No",
       c.assignedStaffName ?? "Manual",
       c.username ?? "",
@@ -490,7 +496,15 @@ export default function AdminClientsPage() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Terms</label>
                   <select
                     value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === "custom") {
+                        setPaymentTermDialogOpen(true);
+                        return;
+                      }
+                      setPaymentTerms(value);
+                      setPaymentTermName("");
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {PAYMENT_TERMS.map((v) => (
@@ -498,12 +512,20 @@ export default function AdminClientsPage() {
                     ))}
                   </select>
                   {paymentTerms === "custom" && (
-                    <div className="mt-2">
-                      <CustomCycleInput
-                        rows={paymentTermsRows}
-                        onChange={setPaymentTermsRows}
-                        label="Custom payment terms"
-                      />
+                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                      <span className="text-xs font-semibold text-slate-800">
+                        {paymentTermName || "Custom"}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        · {paymentTermsRows.find((r) => r.unit === "days")?.amount || 0} days
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentTermDialogOpen(true)}
+                        className="ml-auto text-[11px] font-semibold text-blue-600 hover:underline"
+                      >
+                        Edit term
+                      </button>
                     </div>
                   )}
                 </div>
@@ -549,6 +571,19 @@ export default function AdminClientsPage() {
             </div>
           </form>
         )}
+
+        <PaymentTermDialog
+          open={paymentTermDialogOpen}
+          name={paymentTermName}
+          days={paymentTermsRows.find((r) => r.unit === "days")?.amount || ""}
+          onSave={({ name, days }) => {
+            setPaymentTermName(name);
+            setPaymentTermsRows([{ amount: String(days), unit: "days" }]);
+            setPaymentTerms("custom");
+            setPaymentTermDialogOpen(false);
+          }}
+          onClose={() => setPaymentTermDialogOpen(false)}
+        />
 
         {/* Client accounts */}
         <div id="client-accounts" className="mb-3 flex flex-wrap items-center justify-between gap-2">

@@ -2,11 +2,13 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BellRing, Plus, Send } from "lucide-react";
+import { ArrowLeft, BellRing, Pencil, Plus, Send, Trash2 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import WorkDetailsDrawer from "@/components/WorkDetailsDrawer";
-import { CLIENT_RECORD_STATUS_LABELS } from "@/lib/client-records";
+import { CLIENT_RECORD_STATUSES, CLIENT_RECORD_STATUS_LABELS } from "@/lib/client-records";
 import { computeDueDate } from "@/lib/payment-due";
+
+const WORK_CATEGORIES = ["Accounting", "Design", "Development", "Consulting", "Other"];
 
 function money(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
@@ -49,6 +51,20 @@ export default function AdminClientPaymentPage({
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [savingReminder, setSavingReminder] = useState(false);
   const [reminderError, setReminderError] = useState<string | null>(null);
+  const [editingWorkId, setEditingWorkId] = useState<string | null>(null);
+  const [workDraft, setWorkDraft] = useState({
+    workCategory: "Accounting",
+    title: "",
+    quantity: "1",
+    rate: "0",
+    discountPercent: "0",
+    overallDiscountPercent: "0",
+    taxPercent: "0",
+    recordDate: "",
+    status: "active",
+  });
+  const [savingWork, setSavingWork] = useState(false);
+  const [workError, setWorkError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -92,13 +108,17 @@ export default function AdminClientPaymentPage({
   }, 0);
   const discountTotal = workRecords.reduce((sum, r) => {
     const base = Number(r.quantity || 0) * Number(r.rate || 0);
-    return sum + (base > 0 ? (base * Number(r.discountPercent || 0)) / 100 : 0);
+    if (base <= 0) return sum;
+    const lineDiscount = (base * Number(r.discountPercent || 0)) / 100;
+    const overallDiscount =
+      ((base - lineDiscount) * Number(r.overallDiscountPercent || 0)) / 100;
+    return sum + lineDiscount + overallDiscount;
   }, 0);
   const taxTotal = workRecords.reduce((sum, r) => {
     const base = Number(r.quantity || 0) * Number(r.rate || 0);
     if (base <= 0) return sum;
     const discount = (base * Number(r.discountPercent || 0)) / 100;
-    return sum + ((base - discount) * Number(r.taxPercent ?? 5)) / 100;
+    return sum + ((base - discount) * Number(r.taxPercent ?? 0)) / 100;
   }, 0);
   const grandTotal = workRecords.reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
@@ -258,6 +278,68 @@ export default function AdminClientPaymentPage({
     }
   }
 
+  function startEditWork(r: any) {
+    setEditingWorkId(r.id);
+    setWorkDraft({
+      workCategory: r.workCategory || "Accounting",
+      title: r.title || "",
+      quantity: String(r.quantity ?? 0),
+      rate: String(r.rate ?? 0),
+      discountPercent: String(r.discountPercent ?? 0),
+      overallDiscountPercent: String(r.overallDiscountPercent ?? 0),
+      taxPercent: String(r.taxPercent ?? 0),
+      recordDate: r.recordDate || "",
+      status: r.status || "active",
+    });
+    setWorkError(null);
+  }
+
+  const editBase = Number(workDraft.quantity || 0) * Number(workDraft.rate || 0);
+  const editDiscount = (editBase * Number(workDraft.discountPercent || 0)) / 100;
+  const editNet = Math.max(0, editBase - editDiscount);
+  const editAmount =
+    editNet * (1 - Number(workDraft.overallDiscountPercent || 0) / 100) +
+    (editNet * Number(workDraft.taxPercent || 0)) / 100;
+
+  async function saveWorkEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingWorkId) return;
+    setSavingWork(true);
+    setWorkError(null);
+    try {
+      const res = await fetch(`/api/client-records/${editingWorkId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: workDraft.title.trim() || "Work item",
+          workCategory: workDraft.workCategory,
+          quantity: Number(workDraft.quantity) || 0,
+          rate: Number(workDraft.rate) || 0,
+          discountPercent: Number(workDraft.discountPercent) || 0,
+          overallDiscountPercent: Number(workDraft.overallDiscountPercent) || 0,
+          taxPercent: Number(workDraft.taxPercent) || 0,
+          amount: Number(editAmount.toFixed(3)),
+          recordDate: workDraft.recordDate || null,
+          status: workDraft.status,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not update work item.");
+      setEditingWorkId(null);
+      await load();
+    } catch (err: any) {
+      setWorkError(err.message || "Could not update work item.");
+    } finally {
+      setSavingWork(false);
+    }
+  }
+
+  async function deleteWork(r: any) {
+    if (!window.confirm(`Delete work item "${r.title}"?`)) return;
+    const res = await fetch(`/api/client-records/${r.id}`, { method: "DELETE" });
+    if (res.ok) await load();
+  }
+
   return (
     <AppShell role="admin" title={`${client?.name ?? "Client"} · Payment`} subtitle="Work details and payments">
       <div className="w-full">
@@ -309,7 +391,7 @@ export default function AdminClientPaymentPage({
               <div className="mt-0.5 text-xs font-bold text-slate-900">{money(discountTotal)}</div>
             </div>
             <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Tax (5%)</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Tax</div>
               <div className="mt-0.5 text-xs font-bold text-slate-900">{money(taxTotal)}</div>
             </div>
             <div className="rounded-lg bg-blue-50 px-2.5 py-2">
@@ -430,8 +512,119 @@ export default function AdminClientPaymentPage({
         </div>
 
         <h2 className="mt-6 mb-2 text-sm font-bold text-slate-900">Work Details</h2>
+        {editingWorkId && (
+          <form
+            onSubmit={saveWorkEdit}
+            className="mb-3 rounded-xl border border-blue-200 bg-white p-3"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900">Edit work item</span>
+              <span className="text-[11px] text-slate-500">Amount: {money(editAmount)}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <select
+                value={workDraft.workCategory}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, workCategory: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              >
+                {WORK_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <input
+                value={workDraft.title}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, title: e.target.value }))}
+                placeholder="Description"
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={workDraft.quantity}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, quantity: e.target.value }))}
+                placeholder="Qty"
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={workDraft.rate}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, rate: e.target.value }))}
+                placeholder="Rate (KWD)"
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              />
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={workDraft.discountPercent}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, discountPercent: e.target.value }))}
+                placeholder="Discount %"
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              />
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={workDraft.overallDiscountPercent}
+                onChange={(e) =>
+                  setWorkDraft((p) => ({ ...p, overallDiscountPercent: e.target.value }))
+                }
+                placeholder="Total discount %"
+                title="Total discount applied to the whole work"
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              />
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={workDraft.taxPercent}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, taxPercent: e.target.value }))}
+                placeholder="Tax %"
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              />
+              <input
+                type="date"
+                value={workDraft.recordDate}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, recordDate: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              />
+              <select
+                value={workDraft.status}
+                onChange={(e) => setWorkDraft((p) => ({ ...p, status: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none"
+              >
+                {CLIENT_RECORD_STATUSES.map((s) => (
+                  <option key={s} value={s}>{CLIENT_RECORD_STATUS_LABELS[s]}</option>
+                ))}
+              </select>
+            </div>
+            {workError && <p className="mt-2 text-xs text-red-600">{workError}</p>}
+            <div className="mt-2 flex gap-2">
+              <button
+                type="submit"
+                disabled={savingWork}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {savingWork ? "Saving…" : "Save changes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingWorkId(null)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="w-full min-w-[600px] text-xs">
+          <table className="w-full min-w-[780px] text-xs">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold">Work Category</th>
@@ -439,13 +632,15 @@ export default function AdminClientPaymentPage({
                 <th className="px-2 py-2 text-right font-semibold">Qty / Hours</th>
                 <th className="px-2 py-2 text-right font-semibold">Rate (KWD)</th>
                 <th className="px-2 py-2 text-right font-semibold">Discount %</th>
+                <th className="px-2 py-2 text-right font-semibold">Tax %</th>
                 <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                <th className="px-2 py-2 text-right font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {workRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-slate-400">
+                  <td colSpan={8} className="px-3 py-8 text-center text-slate-400">
                     {loading ? "Loading work details…" : "No work items yet. Use Add work to create one."}
                   </td>
                 </tr>
@@ -459,8 +654,29 @@ export default function AdminClientPaymentPage({
                     <td className="px-2 py-2 text-right">{Number(r.quantity || 0).toFixed(3)}</td>
                     <td className="px-2 py-2 text-right">{money(Number(r.rate || 0))}</td>
                     <td className="px-2 py-2 text-right">{Number(r.discountPercent || 0)}%</td>
+                    <td className="px-2 py-2 text-right">{Number(r.taxPercent || 0)}%</td>
                     <td className="px-3 py-2 text-right font-semibold text-slate-900">
                       {money(Number(r.amount || 0))}
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEditWork(r)}
+                          title="Edit work item"
+                          className="rounded border border-slate-200 p-1.5 text-blue-600 hover:bg-blue-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteWork(r)}
+                          title="Delete work item"
+                          className="rounded border border-slate-200 p-1.5 text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

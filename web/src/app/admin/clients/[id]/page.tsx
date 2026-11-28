@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import CustomCycleInput from "@/components/CustomCycleInput";
+import PaymentTermDialog from "@/components/PaymentTermDialog";
 import WorkDetailsDrawer from "@/components/WorkDetailsDrawer";
 import {
   CLIENT_RECORD_STATUSES,
@@ -29,6 +30,7 @@ import {
   BILLING_TYPE_LABELS,
   BUSINESS_TYPE_LABELS,
   CLIENT_STATUS_LABELS,
+  formatPaymentTerms,
   PAYMENT_TERMS_LABELS,
   PRIMARY_SERVICE_LABELS,
   BILLING_TYPES,
@@ -100,6 +102,8 @@ export default function AdminClientDetailPage({
     internalNotes: "",
     assignedStaffId: "",
   });
+  const [paymentTermName, setPaymentTermName] = useState("");
+  const [paymentTermDialogOpen, setPaymentTermDialogOpen] = useState(false);
   const [records, setRecords] = useState<any[]>([]);
   const [recordTypeFilter, setRecordTypeFilter] = useState<string>("service");
   const [showWorkDrawer, setShowWorkDrawer] = useState(false);
@@ -283,6 +287,7 @@ export default function AdminClientDetailPage({
     setDetailError(null);
     const billing = splitBillingType(client.billingType);
     const terms = splitPaymentTerms(client.paymentTerms);
+    setPaymentTermName(terms.name || "");
     setProfileDraft({
       name: client.name ?? "",
       phone: client.phone ?? "",
@@ -334,7 +339,11 @@ export default function AdminClientDetailPage({
           status: profileDraft.status,
           billingType: resolveBillingType(profileDraft.billingType, profileDraft.billingTypeRows),
           baseFee: feeNumber,
-          paymentTerms: resolvePaymentTerms(profileDraft.paymentTerms, profileDraft.paymentTermsRows),
+          paymentTerms: resolvePaymentTerms(
+            profileDraft.paymentTerms,
+            profileDraft.paymentTermsRows,
+            paymentTermName
+          ),
           extraWorkAllowed: profileDraft.extraWorkAllowed,
           internalNotes: profileDraft.internalNotes.trim() || null,
           assignedStaffId: profileDraft.assignedStaffId || null,
@@ -639,10 +648,10 @@ export default function AdminClientDetailPage({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           <div
             id="client-details"
-            className="order-1 min-w-0 scroll-mt-4 rounded-xl lg:order-2 lg:col-span-2"
+            className="order-1 min-w-0 scroll-mt-4 rounded-xl lg:order-2 lg:col-span-1"
           >
             <div className="mt-6 mb-2 flex items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-slate-900">Client details</h3>
@@ -802,7 +811,15 @@ export default function AdminClientDetailPage({
                   <label className="mb-1 block text-[11px] font-semibold text-slate-700">Payment Terms</label>
                   <select
                     value={profileDraft.paymentTerms}
-                    onChange={(e) => setProfileDraft((p) => ({ ...p, paymentTerms: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === "custom") {
+                        setPaymentTermDialogOpen(true);
+                        return;
+                      }
+                      setProfileDraft((p) => ({ ...p, paymentTerms: value }));
+                      setPaymentTermName("");
+                    }}
                     className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {PAYMENT_TERMS.map((v) => (
@@ -810,13 +827,20 @@ export default function AdminClientDetailPage({
                     ))}
                   </select>
                   {profileDraft.paymentTerms === "custom" && (
-                    <div className="mt-1.5">
-                      <CustomCycleInput
-                        rows={profileDraft.paymentTermsRows}
-                        onChange={(rows) => setProfileDraft((p) => ({ ...p, paymentTermsRows: rows }))}
-                        size="sm"
-                        label="Custom payment terms"
-                      />
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                      <span className="text-[11px] font-semibold text-slate-800">
+                        {paymentTermName || "Custom"}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        · {profileDraft.paymentTermsRows.find((r) => r.unit === "days")?.amount || 0} days
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentTermDialogOpen(true)}
+                        className="ml-auto text-[10px] font-semibold text-blue-600 hover:underline"
+                      >
+                        Edit term
+                      </button>
                     </div>
                   )}
                 </div>
@@ -950,7 +974,7 @@ export default function AdminClientDetailPage({
               <div>
                 <div className="text-[11px] text-slate-500">Payment Terms</div>
                 <div className="text-xs text-slate-800">
-                  {PAYMENT_TERMS_LABELS[client?.paymentTerms] ?? client?.paymentTerms ?? "—"}
+                  {formatPaymentTerms(client?.paymentTerms)}
                 </div>
               </div>
               <div>
@@ -1470,6 +1494,21 @@ export default function AdminClientDetailPage({
           </Link>
         )}
       </div>
+      <PaymentTermDialog
+        open={paymentTermDialogOpen}
+        name={paymentTermName}
+        days={profileDraft.paymentTermsRows.find((r) => r.unit === "days")?.amount || ""}
+        onSave={({ name, days }) => {
+          setPaymentTermName(name);
+          setProfileDraft((p) => ({
+            ...p,
+            paymentTerms: "custom",
+            paymentTermsRows: [{ amount: String(days), unit: "days" }],
+          }));
+          setPaymentTermDialogOpen(false);
+        }}
+        onClose={() => setPaymentTermDialogOpen(false)}
+      />
       <WorkDetailsDrawer
         clientId={id}
         open={showWorkDrawer}

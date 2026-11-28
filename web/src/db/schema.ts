@@ -432,6 +432,11 @@ export const clientRecords = pgTable(
     quantity: numeric("quantity", { precision: 12, scale: 3 }).default("0").notNull(),
     rate: numeric("rate", { precision: 12, scale: 3 }).default("0").notNull(),
     discountPercent: numeric("discount_percent", { precision: 5, scale: 2 }).default("0").notNull(),
+    // Overall discount for the whole saved work batch (%), on top of the
+    // per-line discount. Repeat the value on each line of the same save.
+    overallDiscountPercent: numeric("overall_discount_percent", { precision: 5, scale: 2 })
+      .default("0")
+      .notNull(),
     taxPercent: numeric("tax_percent", { precision: 5, scale: 2 }).default("5").notNull(),
     // Staff id of the admin who created the row (plain text, no FK).
     createdById: text("created_by_id"),

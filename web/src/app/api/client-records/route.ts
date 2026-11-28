@@ -22,6 +22,7 @@ const createRecordSchema = z.object({
   quantity: z.coerce.number().min(0).max(999_999).optional(),
   rate: z.coerce.number().min(0).max(999_999_999).optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional(),
+  overallDiscountPercent: z.coerce.number().min(0).max(100).optional(),
   taxPercent: z.coerce.number().min(0).max(100).optional(),
 });
 
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
       quantity,
       rate,
       discountPercent,
+      overallDiscountPercent,
       taxPercent,
     } = result.data;
     const client = await db.query.clients.findFirst({
@@ -109,7 +111,8 @@ export async function POST(request: Request) {
           quantity: String(quantity ?? 0),
           rate: String(rate ?? 0),
           discountPercent: String(discountPercent ?? 0),
-          taxPercent: String(taxPercent ?? 5),
+          overallDiscountPercent: String(overallDiscountPercent ?? 0),
+          taxPercent: String(taxPercent ?? 0),
           createdById: me.id,
         })
         .returning();
